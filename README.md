@@ -24,7 +24,15 @@ text, number), slot policies (allowedChildren + childTemplate, same-type
 Enter-split). Undo/redo, block multiselection + group delete, and
 group/ungroup (⌘G / ⇧⌘G). A **shipped inline-chrome module** (`attachInlineChrome`) supplies
 the floating toolbar, slash picker, and `+` inserter; a list/tree view exists.
-Two demos: the full builder shell (`demo.ts`) and the **embed showcase**
+The **full builder shell is a library API too**: `createEditorShell({ container,
+content, actions, panels, … })` (src/shell.ts + shell.html) injects the whole
+harness — topbar, list-view rail, inserter, block-settings sidebar, patterns
+explorer, self-skinned (scoped dark tokens) — and gives hosts seams for their
+own document actions (Save/Publish) and extra right-sidebar panels (a CMS
+mounts version history there). The Publr CMS embeds exactly this as the edit
+page for `editor = "block"` content types (`cms/plugins/publr-editor/`).
+Two demos: the full builder shell (`demo.ts` — itself a `createEditorShell`
+host: fixtures, wasm-engine probe, seed) and the **embed showcase**
 (`fields-demo.ts`) — N independent editor instances, one per field: the
 PublrInlineEditor use case (`../.claude/thoughts/template-fields/`).
 
@@ -186,6 +194,8 @@ src/selection.ts  block multiselection — selectionchange mirror + reactive ids
 src/tree.ts       block-tree traversal (flatten / locate / path) for nesting
 src/editor.ts     createEditor — canvas, events, the commit() choke point
 src/chrome-inline.ts  attachInlineChrome — shipped floating toolbar + slash + "+" inserter
+src/shell.ts          createEditorShell — the FULL harness as a library API (host seams: actions/panels)
+src/shell.html        the harness markup (one PublrJS island), injected by createEditorShell
 src/icons.ts      thin adapter over the pinned @publr/icons UI package
 src/demo.ts       full builder demo shell (registers the core blocks via the public API)
 src/fields-demo.ts    embed showcase — N independent editors, one per field

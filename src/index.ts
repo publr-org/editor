@@ -47,9 +47,11 @@ import {
   unregisterPattern,
 } from "./patterns";
 import { blockTypes, getBlockType, registerBlock, unregisterBlock } from "./registry";
+import { CORE_PATTERNS, registerCoreBlocks, registerCorePatterns } from "./blocks";
 import { blockToElement, downcast, upcast } from "./cast";
 import { createEditor } from "./editor";
 import { attachInlineChrome } from "./chrome-inline";
+import { createEditorShell } from "./shell";
 import { DEFAULT_BLOCK_POLICY, resolveBlockPolicy, resolveRootPolicy } from "./policy";
 import { ICONS, iconRef, iconSvg, mountIconSprite } from "./icons";
 import {
@@ -113,6 +115,12 @@ export {
   getBlockType,
   registerBlock,
   unregisterBlock,
+  // The core block/pattern sets, bundled so the library artifact is
+  // batteries-included for embedders (CMS admin, plain <script> hosts).
+  // Registration is still the host's explicit call — no side effects.
+  CORE_PATTERNS,
+  registerCoreBlocks,
+  registerCorePatterns,
   // Patterns — named block compositions stamped as independent copies
   // (editor.insertPattern / replaceWithPattern; registerBlock's sibling).
   PATTERN_ROOT_TYPE,
@@ -138,6 +146,10 @@ export {
   upcast,
   createEditor,
   attachInlineChrome,
+  // The FULL harness (page chrome: topbar, rails, sidebar, patterns
+  // explorer) as a library API — hosts drop it into a container and bring
+  // their own document actions/panels (src/shell.ts).
+  createEditorShell,
   resolveRootPolicy,
   resolveBlockPolicy,
   DEFAULT_BLOCK_POLICY,
@@ -232,6 +244,8 @@ export type {
   ToolbarSpec,
 } from "./registry";
 export type { EditingMode, Editor, EditorOptions } from "./editor";
+export type { MediaAdapter, MediaValue } from "./media-adapter";
+export type { EditorShell, EditorShellOptions, ShellAction, ShellPanel } from "./shell";
 export type { PatternDefinition, PatternType } from "./patterns";
 export type { BlockPolicy, EditorPolicy, PolicyConfig, RootPolicy } from "./policy";
 export type { InlineChromeOptions } from "./chrome-inline";
@@ -259,6 +273,8 @@ if (typeof window !== "undefined" && window.Publr) {
     unregisterBlock,
     getBlockType,
     blockTypes,
+    registerCoreBlocks,
+    registerCorePatterns,
     registerPattern,
     unregisterPattern,
     getPattern,
@@ -270,5 +286,6 @@ if (typeof window !== "undefined" && window.Publr) {
     blockToElement,
     createEditor,
     attachInlineChrome,
+    createEditorShell,
   };
 }

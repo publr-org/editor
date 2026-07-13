@@ -12,7 +12,7 @@
 // host runtime coexistence must be settled in the packaging step before the
 // editor is embedded in a page running its own PublrJS.
 
-import { reactive } from "../vendor/publr/publr.js";
+import { reactive } from "./publr-runtime";
 
 export interface HistoryFlags {
   canUndo: boolean;

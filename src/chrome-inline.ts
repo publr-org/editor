@@ -38,11 +38,12 @@
 //   clicking a control never blurs the carrier or collapses the text
 //   selection it is about to act on.
 
-import { effect } from "../vendor/publr/publr.js";
+import { effect } from "./publr-runtime";
 import type { FieldValue } from "./carriers";
 import type { Editor } from "./editor";
 import { iconSvg } from "./icons";
-import { mediaStoreSupported, putMedia } from "./media-store";
+import { resolveMediaAdapter, toImageValue } from "./media-adapter";
+import type { MediaAdapter } from "./media-adapter";
 import { getPattern, PATTERN_ROOT_TYPE } from "./patterns";
 import { blockTypes, getBlockType } from "./registry";
 import type { ToolbarSpec } from "./registry";
@@ -92,6 +93,15 @@ export interface InlineChromeOptions {
    * carrier — canvas chrome only, serialize never sees it (default true).
    */
   mediaPlaceholder?: boolean;
+  /**
+   * Media persistence seam (see media-adapter.ts). true/undefined = the
+   * built-in OPFS `/media/*` store (upload gated on the service worker the
+   * HOST registers — standalone chrome never registers it); false = no
+   * uploads (URL insertion stays); a MediaAdapter plugs the host's own
+   * upload()/browse() — browse() adds "Media Library" entries to the
+   * placeholder card and the toolbar's Replace menu.
+   */
+  media?: boolean | MediaAdapter;
 }
 
 // --- class vocabulary (literals — the Tailwind scanner reads this file) ------
@@ -231,6 +241,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   const withInserter = options.inserter ?? true;
   const withToolbar = options.toolbar ?? true;
   const withMediaPlaceholder = options.mediaPlaceholder ?? true;
+  const mediaAdapter = resolveMediaAdapter(options.media);
 
   const canvas = editor.canvas;
   const host = options.container ?? canvas.parentElement;
@@ -952,9 +963,10 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       if (e.key === "Escape" && !openPanel && toolbarId) refocusCarrier(toolbarId);
     });
 
-    // Rebuild the Replace dropdown for the current media field: Upload / Insert
-    // from URL / Reset, plus the current source. Reuses uploadTo/uploadsReady
-    // (the media plumbing the empty-block placeholder uses, defined below).
+    // Rebuild the Replace dropdown for the current media field: Media Library
+    // (when the adapter browses) / Upload / Insert from URL / Reset, plus the
+    // current source. Reuses browseTo/uploadTo/uploadsReady (the media
+    // plumbing the empty-block placeholder uses, defined below).
     buildReplacePanel = (panel: HTMLElement, id: string, field: string): void => {
       const block = editor.getBlock(id);
       if (!block) return;
@@ -962,6 +974,19 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       const value =
         cur && typeof cur === "object" ? cur : { src: "", alt: "", width: "", height: "" };
       panel.textContent = "";
+
+      if (mediaAdapter.browse) {
+        const lib = button(`${ITEM} pbe-replace-browse`, "");
+        lib.append(
+          h("span", "flex h-5 w-5 items-center justify-center", iconSvg("gallery", "h-5 w-5")),
+          "Media Library",
+        );
+        lib.addEventListener("click", () => {
+          closePanel();
+          void browseTo(id, field);
+        });
+        panel.appendChild(lib);
+      }
 
       if (uploadsReady()) {
         const up = h("label", `${ITEM} cursor-pointer`);
@@ -1676,11 +1701,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   // --- media placeholder --------------------------------------------------
   // A block whose PRIMARY media is empty (the field a "media" control binds)
   // gets a placeholder card next to the empty carrier: drag-drop / Upload /
-  // Insert from URL. Chrome DOM only — serialize re-renders from the model
-  // and never sees it. Upload needs the /media/* worker; the URL path works
+  // Insert from URL (plus Media Library when the adapter browses). Chrome
+  // DOM only — serialize re-renders from the model and never sees it. All
+  // persistence goes through the resolved media adapter; the URL path works
   // everywhere.
 
-  const uploadsReady = () => mediaStoreSupported() && !!navigator.serviceWorker?.controller;
+  const uploadsReady = () => mediaAdapter.uploadAvailable();
 
   const mediaFieldOf = (type: string | null): string | null => {
     const spec = type
@@ -1689,23 +1715,67 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     return spec?.field ?? null;
   };
 
-  async function uploadTo(id: string, field: string, file: File) {
-    const { url } = await putMedia(file, file.name);
-    let width = "";
-    let height = "";
-    if (file.type.startsWith("image/")) {
-      try {
-        const bmp = await createImageBitmap(file);
-        width = String(bmp.width);
-        height = String(bmp.height);
-        bmp.close();
-      } catch {
-        /* not decodable — dims stay empty */
-      }
+  // Busy/error surface: the placeholder card, when one exists for the block.
+  // Toolbar-initiated work on a filled field has no card — errors log only.
+  const cardOf = (id: string): HTMLElement | null =>
+    [...canvas.querySelectorAll<HTMLElement>(".pbe-media-ph")].find(
+      (el) => el.closest("[data-pb-block]")?.getAttribute("data-pb-id") === id,
+    ) ?? null;
+
+  function setCardBusy(id: string, busy: boolean) {
+    const card = cardOf(id);
+    if (!card) return;
+    if (busy) {
+      card.setAttribute("aria-busy", "true");
+      const err = card.querySelector<HTMLElement>(".pbe-mph-error");
+      if (err) err.hidden = true; // a new attempt clears the previous failure
+    } else {
+      card.removeAttribute("aria-busy");
     }
+  }
+
+  function setCardError(id: string, message: string) {
+    const err = cardOf(id)?.querySelector<HTMLElement>(".pbe-mph-error");
+    if (!err) return;
+    err.textContent = message;
+    err.hidden = false;
+  }
+
+  const prevAltOf = (id: string, field: string): string => {
     const cur = editor.getBlock(id)?.fields[field];
-    const alt = typeof cur === "object" && cur !== null ? cur.alt : "";
-    editor.setField(id, field, { src: url, alt, width, height });
+    return typeof cur === "object" && cur !== null ? cur.alt : "";
+  };
+
+  async function uploadTo(id: string, field: string, file: File) {
+    if (!mediaAdapter.upload) return;
+    const prevAlt = prevAltOf(id, field);
+    setCardBusy(id, true);
+    try {
+      const value = await mediaAdapter.upload(file);
+      editor.setField(id, field, await toImageValue(value, { file, prevAlt }));
+    } catch (err) {
+      console.error("[publr-editor] media upload failed:", err);
+      setCardError(id, "Upload failed.");
+    } finally {
+      setCardBusy(id, false);
+    }
+  }
+
+  async function browseTo(id: string, field: string) {
+    if (!mediaAdapter.browse) return;
+    const cur = editor.getBlock(id)?.fields[field];
+    const current =
+      typeof cur === "object" && cur !== null && cur.src !== "" ? { ...cur } : undefined;
+    setCardBusy(id, true);
+    try {
+      const picked = await mediaAdapter.browse(current);
+      if (picked) editor.setField(id, field, await toImageValue(picked, { prevAlt: current?.alt }));
+    } catch (err) {
+      console.error("[publr-editor] media browse failed:", err);
+      setCardError(id, "Couldn't get media from the library.");
+    } finally {
+      setCardBusy(id, false);
+    }
   }
 
   function buildMediaPlaceholder(id: string, field: string, type: string): HTMLElement {
@@ -1720,12 +1790,16 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       `<p class="m-0 mb-3 text-sm text-muted-foreground">Drag and drop ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun} file, upload, or insert from URL.</p>` +
       `<div class="flex flex-wrap items-center gap-2">` +
       `<label class="pbe-mph-upload inline-flex h-10 cursor-pointer items-center rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90"${uploadsReady() ? "" : " hidden"}>Upload<input type="file" class="hidden"></label>` +
+      (mediaAdapter.browse
+        ? `<button type="button" class="pbe-mph-browse h-10 cursor-pointer rounded-lg border border-input bg-background px-3.5 text-sm font-semibold text-foreground shadow-xs hover:bg-ui-accent">Media Library</button>`
+        : "") +
       `<button type="button" class="pbe-mph-url-btn h-10 cursor-pointer rounded-lg border border-input bg-background px-3.5 text-sm font-semibold text-foreground shadow-xs hover:bg-ui-accent">Insert from URL</button>` +
       `</div>` +
       `<form class="pbe-mph-url-row mt-2 flex items-center gap-1.5" hidden>` +
       `<input type="text" placeholder="Paste or type URL" class="h-10 w-full max-w-96 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25">` +
       `<button type="submit" class="h-10 min-w-10 cursor-pointer rounded-md px-2 text-sm font-semibold hover:bg-ui-accent" aria-label="Apply">↵</button>` +
-      `</form>`;
+      `</form>` +
+      `<p class="pbe-mph-error mt-2 mb-0 text-sm text-red-600" role="alert" hidden></p>`;
 
     // The card is interactive chrome inside the contenteditable canvas:
     // keep its events out of the editor's selection/keyboard machinery
@@ -1743,6 +1817,10 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       fileInput.value = "";
       if (file) void uploadTo(id, field, file);
     });
+
+    card
+      .querySelector<HTMLButtonElement>(".pbe-mph-browse")
+      ?.addEventListener("click", () => void browseTo(id, field));
 
     const urlRow = card.querySelector<HTMLFormElement>(".pbe-mph-url-row")!;
     const urlInput = urlRow.querySelector<HTMLInputElement>("input")!;
@@ -1807,13 +1885,11 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     }
   }
 
-  // The worker claims clients asynchronously on first load — refresh the
-  // Upload affordance once it does.
-  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-    void navigator.serviceWorker.ready.then(() => {
-      if (!detached) syncMediaPlaceholders();
-    });
-  }
+  // Upload availability can settle asynchronously (the OPFS worker claims
+  // clients after first load) — refresh the affordances once it does.
+  void mediaAdapter.ready.then(() => {
+    if (!detached) syncMediaPlaceholders();
+  });
   disposers.push(() => {
     for (const el of canvas.querySelectorAll(".pbe-media-ph")) el.remove();
   });

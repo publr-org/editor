@@ -1,0 +1,2277 @@
+<!-- shell.html — the full-harness PAGE chrome, extracted verbatim from the
+ demo's index.html and injected by createEditorShell() (src/shell.ts) into a
+ host-provided container. The whole shell is ONE PublrJS island: local:chrome.
+ Every piece of chrome below is declarative — data-p-show/-text/-class/-bind/
+ -style/-model/-for against the chrome store's state, actions by name. The
+ imperative opt-outs are the canvas (#canvas, contenteditable), the geometry
+ measurements feeding state, and the HOST SEAMS (#host-actions gets the
+ host's action buttons, #host-panel-toggles + #host-panels its extra
+ sidebars — both rendered imperatively by shell.ts from options).
+
+ The wrapper carries data-p-store="editor": refs that miss the chrome store
+ (history.canUndo, undo, redo) resolve up to the editor's own reactive
+ stores — core state is bound, never mirrored into chrome. -->
+<div class="pbe-shell contents" data-p-store="editor">
+  <div
+    id="editor-shell"
+    data-p-store="local:chrome"
+    class="flex h-full flex-col overflow-hidden bg-background text-[13px] leading-[1.4] text-foreground antialiased"
+  >
+    <!-- Top bar: inserter + history left, document actions
+       right. The tools / list-view controls join the left group later. -->
+    <header
+      id="topbar"
+      class="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-3"
+    >
+      <div class="flex items-center gap-0.5">
+        <button
+          id="inserter-toggle"
+          title="Block inserter"
+          aria-label="Toggle block inserter"
+          data-publr-component="button"
+          class="mr-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs ring-1 ring-transparent ring-inset hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-expanded:bg-primary/90"
+          data-p-bind="aria-expanded:$inserterOpen"
+          data-p-on="mousedown.prevent:swallow;click:toggleInserter"
+        >
+          <svg
+            class="h-6 w-6 fill-current"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            data-p-show="not:inserterOpen"
+          >
+            <g
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 5.25v13.5" />
+              <path d="M5.25 12h13.5" />
+            </g>
+          </svg>
+          <svg
+            class="hidden h-6 w-6 fill-current"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            data-p-show="$inserterOpen"
+          >
+            <g
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M6 6l12 12" />
+              <path d="M18 6L6 18" />
+            </g>
+          </svg>
+        </button>
+        <button
+          id="undo"
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+          class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+          data-p-bind="disabled:not:history.canUndo"
+          data-p-on="mousedown.prevent:swallow;click:undo"
+        >
+          <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <g
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M7.75 6.25L4 10l3.75 3.75" />
+              <path d="M4 10h10.5a5.25 5.25 0 0 1 5.25 5.25v2.25" />
+            </g>
+          </svg>
+        </button>
+        <button
+          id="redo"
+          title="Redo (⇧⌘Z)"
+          aria-label="Redo"
+          class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+          data-p-bind="disabled:not:history.canRedo"
+          data-p-on="mousedown.prevent:swallow;click:redo"
+        >
+          <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <g
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M16.25 6.25L20 10l-3.75 3.75" />
+              <path d="M20 10H9.5a5.25 5.25 0 0 0-5.25 5.25v2.25" />
+            </g>
+          </svg>
+        </button>
+        <button
+          id="tree-toggle"
+          title="List view"
+          aria-label="Toggle list view"
+          class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-expanded:bg-neutral-900 aria-expanded:text-white aria-expanded:hover:bg-neutral-800"
+          data-p-bind="aria-expanded:$treeOpen"
+          data-p-on="mousedown.prevent:swallow;click:toggleTree"
+        >
+          <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <g
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M4 6.5h9.5" />
+              <path d="M10.5 12h9.5" />
+              <path d="M4 17.5h9.5" />
+            </g>
+          </svg>
+        </button>
+      </div>
+      <div class="flex items-center gap-0.5">
+        <button
+          id="preview"
+          title="Preview in new tab"
+          aria-label="Preview in new tab"
+          class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+          data-p-on="mousedown.prevent:swallow;click:preview"
+        >
+          <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <g
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M11 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+              <path d="M13.75 4.5h5.75v5.75" />
+              <path d="M19.5 4.5L11.75 12.25" />
+            </g>
+          </svg>
+        </button>
+        <!-- Options menu: the local:dropdown store contract; the items call
+           chrome actions (resolved up the island chain). -->
+        <div
+          id="more-dropdown"
+          data-p-store="local:dropdown"
+          data-publr-component="dropdown"
+          class="flex"
+        >
+          <div
+            id="more-trigger"
+            aria-haspopup="menu"
+            data-p-bind="aria-expanded:$open"
+            data-p-on="click:toggle"
+            class="inline-block"
+          >
+            <button
+              type="button"
+              title="Options"
+              aria-label="Options"
+              class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+            >
+              <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="5.75" r="1.4" />
+                <circle cx="12" cy="12" r="1.4" />
+                <circle cx="12" cy="18.25" r="1.4" />
+              </svg>
+            </button>
+          </div>
+          <div
+            id="more-content"
+            data-publr-part="content"
+            data-p-show="$open"
+            role="menu"
+            data-p-on="keydown:navKeys;click:itemClick"
+            data-p-portal="true"
+            data-publr-placement="bottom-end"
+            class="absolute z-30 hidden min-w-52 rounded-lg border border-border bg-popover p-1 text-[13px] text-popover-foreground shadow-lg"
+          >
+            <span
+              data-publr-part="label"
+              class="block px-2 py-1.5 text-xs font-semibold text-zinc-500"
+              >Tools</span
+            >
+            <button
+              type="button"
+              id="menu-toggle-output"
+              data-publr-part="item"
+              role="menuitem"
+              class="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-[7px] text-left text-sm font-medium text-zinc-900 hover:bg-canvas-accent hover:text-white focus-visible:bg-canvas-accent focus-visible:text-white focus-visible:outline-none"
+              data-p-text="$outputShown->'Hide wire output'~'Show wire output'"
+              data-p-on="click:toggleOutput"
+            ></button>
+            <button
+              type="button"
+              id="menu-copy-editing"
+              data-publr-part="item"
+              role="menuitem"
+              class="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-[7px] text-left text-sm font-medium text-zinc-900 hover:bg-canvas-accent hover:text-white focus-visible:bg-canvas-accent focus-visible:text-white focus-visible:outline-none"
+              data-p-on="click:copyEditing"
+            >
+              Copy editing HTML
+            </button>
+            <button
+              type="button"
+              id="menu-copy-data"
+              data-publr-part="item"
+              role="menuitem"
+              class="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-[7px] text-left text-sm font-medium text-zinc-900 hover:bg-canvas-accent hover:text-white focus-visible:bg-canvas-accent focus-visible:text-white focus-visible:outline-none"
+              data-p-on="click:copyData"
+            >
+              Copy data HTML
+            </button>
+          </div>
+        </div>
+        <!-- HOST SEAMS (populated imperatively by shell.ts from options):
+           panel toggles first (one icon button per registered host panel),
+           then the host's own document actions (Save / Publish / …). -->
+        <div id="host-panel-toggles" class="flex items-center gap-0.5 empty:hidden"></div>
+        <div
+          id="host-actions"
+          class="ml-1 flex items-center gap-2 border-l border-border pl-3 empty:hidden empty:border-l-0 empty:pl-0"
+        ></div>
+      </div>
+    </header>
+
+    <!-- Isolation editing banner (thoughts/012): the page document is
+       parked and THE editor — full rail, sidebar, list view, toolbar — takes
+       the isolated content. Definition mode (from the library): Save =
+       versioned publish, copies never move. Instance mode (a placed copy's
+       "Edit pattern"): Save applies to that copy only. -->
+    <div
+      id="template-banner"
+      class="flex hidden h-12 shrink-0 items-center justify-between border-b border-accent bg-neutral-50 px-4"
+      data-p-show="$templateMode"
+    >
+      <div class="flex min-w-0 items-center gap-2 text-[13px]">
+        <span class="font-medium">Editing pattern:</span>
+        <span class="font-semibold" data-p-text="$templateLabel"></span>
+        <span class="hidden text-neutral-500 sm:inline" data-p-show="$templateIsInstance"
+          >— changes apply only to this copy</span
+        >
+        <span class="hidden text-neutral-500 sm:inline" data-p-show="not:templateIsInstance"
+          >— publishing updates the library design; placed copies never change</span
+        >
+        <span
+          id="template-error"
+          class="truncate text-red-600"
+          data-p-show="$templateError"
+          data-p-text="$templateError"
+        ></span>
+      </div>
+      <div class="flex shrink-0 gap-2">
+        <button
+          type="button"
+          id="template-cancel"
+          class="cursor-pointer rounded-xs border border-neutral-300 px-4 py-1.5 text-[13px] font-medium text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+          data-p-on="mousedown.prevent:swallow;click:cancelTemplate"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          id="template-save"
+          class="cursor-pointer rounded-xs bg-accent px-4 py-1.5 text-[13px] font-medium text-white hover:bg-accent-hover focus-visible:shadow-[0_0_0_1.5px_#fff,0_0_0_3px_var(--color-accent)] focus-visible:outline-none"
+          data-p-on="mousedown.prevent:swallow;click:saveTemplate"
+          data-p-text="$templateIsInstance->'Apply to this copy'~'Publish pattern'"
+        ></button>
+      </div>
+    </div>
+
+    <div id="main" class="flex min-h-0 flex-1 max-sm:flex-col">
+      <!-- List view: the document tree. Rows are the block tree
+         FLATTENED in chrome state (state.treeRows) — one data-p-for, depth as
+         padding — so the recursive structure needs no recursive templates.
+         Exclusive with the inserter rail. -->
+      <aside
+        id="tree"
+        class="flex hidden w-[350px] shrink-0 flex-col border-r border-neutral-200 bg-white"
+        data-p-show="$treeOpen"
+        data-p-on="keydown.escape:closeTree"
+      >
+        <div class="flex shrink-0 items-center border-b border-neutral-200 pr-2">
+          <div id="tree-tabs" role="tablist" aria-label="Document overview" class="flex flex-1">
+            <button
+              type="button"
+              role="tab"
+              data-ttab="list"
+              class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+              data-p-bind="aria-selected:treeTab|eq|list"
+              data-p-on="click:setTreeTab"
+            >
+              List View
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-ttab="outline"
+              class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+              data-p-bind="aria-selected:treeTab|eq|outline"
+              data-p-on="click:setTreeTab"
+            >
+              Outline
+            </button>
+          </div>
+          <button
+            type="button"
+            id="tree-close"
+            aria-label="Close list view"
+            class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+            data-p-on="click:closeTree"
+          >
+            <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+              <g
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </g>
+            </svg>
+          </button>
+        </div>
+        <div id="tpanel-list" class="flex-1 overflow-y-auto p-2" data-p-show="treeTab|eq|list">
+          <div id="tree-rows">
+            <template data-p-for="row of $treeRows" data-p-key="row.id">
+              <div
+                class="flex items-center rounded-sm"
+                data-p-style="padding-left->row.pad"
+                data-p-class="row.selected->bg-ui-accent+text-accent-foreground~hover:bg-ui-accent"
+              >
+                <button
+                  type="button"
+                  aria-label="Toggle children"
+                  class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center"
+                  data-p-class="not:row.hasChildren->invisible"
+                  data-p-bind="data-id:row.id"
+                  data-p-on="mousedown.prevent:swallow;click.stop:treeToggle"
+                >
+                  <svg
+                    class="h-3 w-3 fill-current transition-transform"
+                    viewBox="0 0 12 12"
+                    aria-hidden="true"
+                    data-p-class="row.expanded->rotate-90"
+                  >
+                    <path
+                      d="M4.25 2.5L8 6 4.25 9.5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+                <!-- mousedown is swallowed (chrome convention): an unprevented
+                   mousedown outside the canvas CLEARS the explicit block
+                   selection — Cmd+click accumulation needs it to survive. -->
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 pr-2 text-left"
+                  data-p-bind="data-id:row.id"
+                  data-p-on="mousedown.prevent:swallow;click:treeSelect"
+                >
+                  <!-- Icon = sprite ref (bindable attribute — PublrJS has no
+                     html injection); blocks without one get a letter badge. -->
+                  <span class="flex w-6 shrink-0 items-center justify-center">
+                    <svg
+                      class="h-6 w-6 fill-current"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      data-p-show="row.icon"
+                    >
+                      <use data-p-bind="href:row.icon" />
+                    </svg>
+                    <span
+                      class="text-[13px] font-bold"
+                      data-p-show="not:row.icon"
+                      data-p-text="row.letter"
+                    ></span>
+                  </span>
+                  <span class="shrink-0 font-medium" data-p-text="row.label"></span>
+                  <span class="truncate opacity-60" data-p-text="row.anchor"></span>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div
+          id="tpanel-outline"
+          class="hidden flex-1 overflow-y-auto"
+          data-p-show="treeTab|eq|outline"
+        >
+          <dl
+            class="grid grid-cols-[auto_1fr] gap-x-10 gap-y-2.5 border-b border-neutral-200 px-4 py-4"
+          >
+            <dt class="text-neutral-700">Characters:</dt>
+            <dd id="stat-chars" class="m-0" data-p-text="$docChars"></dd>
+            <dt class="text-neutral-700">Words:</dt>
+            <dd id="stat-words" class="m-0" data-p-text="$docWords"></dd>
+            <dt class="text-neutral-700">Time to read:</dt>
+            <dd id="stat-readtime" class="m-0" data-p-text="$docReadTime"></dd>
+          </dl>
+          <div id="outline-rows" class="px-4 py-3">
+            <template data-p-for="h of $outlineRows" data-p-key="h.id">
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center py-1.5 text-left hover:text-accent"
+                data-p-bind="data-id:h.id"
+                data-p-on="mousedown.prevent:swallow;click:treeSelect"
+              >
+                <span
+                  class="mt-4 h-px shrink-0 self-start bg-neutral-300"
+                  data-p-style="width->h.guide"
+                ></span>
+                <!-- `~` = else-branch: conflicting utilities SWAP, never stack
+                   (CSS order, not class order, decides ties) -->
+                <span
+                  class="mr-2 ml-1 shrink-0 self-start rounded-sm bg-neutral-200 px-1.5 py-0.5 text-[13px] font-semibold"
+                  data-p-class="h.flagged->bg-amber-300~bg-neutral-200"
+                  data-p-text="h.level"
+                ></span>
+                <span class="min-w-0 py-0.5">
+                  <span
+                    class="block truncate"
+                    data-p-class="h.empty->italic+text-neutral-600"
+                    data-p-text="h.text"
+                  ></span>
+                  <span
+                    class="block hidden truncate italic text-neutral-600"
+                    data-p-show="h.badLevel"
+                    >(Incorrect heading level)</span
+                  >
+                </span>
+              </button>
+            </template>
+            <p class="text-neutral-500" data-p-show="$outlineEmpty">
+              Add headings to create a table of contents for the document.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Full block inserter: left rail, the block library. The
+         Blocks tab renders from state.shelves (grouped + filtered in the
+         chrome store); Patterns and Media are placeholders. -->
+      <aside
+        id="inserter"
+        class="flex hidden w-[350px] shrink-0 flex-col border-r border-neutral-200 bg-white"
+        data-p-show="$inserterOpen"
+        data-p-on="keydown.escape:closeInserter"
+      >
+        <div class="flex shrink-0 items-center border-b border-neutral-200 pr-2">
+          <div id="inserter-tabs" role="tablist" aria-label="Block library" class="flex flex-1">
+            <button
+              type="button"
+              role="tab"
+              data-itab="blocks"
+              class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+              data-p-bind="aria-selected:inserterTab|eq|blocks"
+              data-p-on="click:setInserterTab"
+            >
+              Blocks
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-itab="patterns"
+              class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+              data-p-bind="aria-selected:inserterTab|eq|patterns"
+              data-p-on="click:setInserterTab"
+            >
+              Patterns
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-itab="media"
+              class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+              data-p-bind="aria-selected:inserterTab|eq|media"
+              data-p-on="click:setInserterTab"
+            >
+              Media
+            </button>
+          </div>
+          <button
+            type="button"
+            id="inserter-close"
+            aria-label="Close block inserter"
+            class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+            data-p-on="click:closeInserter"
+          >
+            <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+              <g
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </g>
+            </svg>
+          </button>
+        </div>
+        <div
+          id="ipanel-blocks"
+          class="flex-1 overflow-y-auto p-4"
+          data-p-show="inserterTab|eq|blocks"
+        >
+          <div class="relative mb-2">
+            <svg
+              class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-neutral-900"
+              viewBox="0 0 24 24"
+              fill="none"
+              width="18"
+              height="18"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5" />
+              <path
+                d="M20 20l-3.5-3.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+            <input
+              id="library-search"
+              type="text"
+              placeholder="Search"
+              autocomplete="off"
+              aria-label="Search for blocks"
+              class="w-full rounded-xs border border-neutral-400 py-2.5 pr-3 pl-10 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-accent focus:shadow-[0_0_0_0.5px_var(--color-accent)] focus:outline-none"
+              data-p-model="$query|trim"
+              data-p-on="keydown.enter.prevent:libraryPickFirst"
+            />
+          </div>
+          <div id="library-sections">
+            <template data-p-for="shelf of $shelves" data-p-key="shelf.name">
+              <section class="library-category">
+                <h3
+                  class="library-category-title mt-6 py-2 text-[11px] font-medium tracking-wider text-neutral-500 uppercase"
+                  data-p-text="shelf.name"
+                ></h3>
+                <div class="grid grid-cols-3">
+                  <template data-p-for="b of shelf.blocks" data-p-key="b.type">
+                    <button
+                      type="button"
+                      class="library-item flex cursor-pointer flex-col items-center gap-3 rounded-xs px-1 pt-5 pb-4 text-[13px] text-neutral-900 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none"
+                      data-p-bind="data-block-type:b.type"
+                      data-p-on="click:pickBlock"
+                    >
+                      <span class="icon flex h-6 items-center justify-center">
+                        <svg
+                          class="h-6 w-6 fill-current"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          data-p-show="b.icon"
+                        >
+                          <use data-p-bind="href:b.icon" />
+                        </svg>
+                        <span
+                          class="text-lg font-semibold"
+                          data-p-show="not:b.icon"
+                          data-p-text="b.letter"
+                        ></span>
+                      </span>
+                      <span data-p-text="b.label"></span>
+                    </button>
+                  </template>
+                </div>
+              </section>
+            </template>
+          </div>
+          <p id="library-empty" class="hidden py-4 text-neutral-500" data-p-show="$noResults">
+            No results found.
+          </p>
+        </div>
+        <div
+          id="ipanel-patterns"
+          class="hidden flex-1 flex-col overflow-y-auto p-4"
+          data-p-show="inserterTab|eq|patterns"
+        >
+          <div class="relative mb-4">
+            <svg
+              class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-neutral-900"
+              viewBox="0 0 24 24"
+              fill="none"
+              width="18"
+              height="18"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5" />
+              <path
+                d="M20 20l-3.5-3.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+            <input
+              id="pattern-search"
+              type="text"
+              placeholder="Search"
+              autocomplete="off"
+              aria-label="Search for patterns"
+              class="w-full rounded-xs border border-neutral-400 py-2.5 pr-3 pl-10 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-accent focus:shadow-[0_0_0_0.5px_var(--color-accent)] focus:outline-none"
+              data-p-model="$patternQuery|trim"
+            />
+          </div>
+          <!-- Group rows: picking one opens the preview flyout right of the
+             rail; picking it again folds the flyout. A live search overrides
+             the group pick (the flyout shows matches instead). -->
+          <div id="pattern-groups" class="flex flex-col gap-1">
+            <template data-p-for="g of $patternGroups" data-p-key="g.name">
+              <button
+                type="button"
+                class="pattern-group-row flex w-full cursor-pointer items-center justify-between rounded-xs border px-4 py-3 text-left text-[13px] font-medium focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                data-p-class="g.selected->border-input+bg-ui-accent+text-accent-foreground~border-input+text-foreground+hover:bg-ui-accent"
+                data-p-bind="data-group:g.name"
+                data-p-on="click:pickPatternGroup"
+              >
+                <span data-p-text="g.name"></span>
+                <svg
+                  class="h-4 w-4 fill-current"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  data-p-class="not:g.selected->invisible"
+                >
+                  <g
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M9.5 6l6 6-6 6" />
+                  </g>
+                </svg>
+              </button>
+            </template>
+          </div>
+          <button
+            type="button"
+            id="pattern-explore"
+            class="mt-6 w-full shrink-0 cursor-pointer rounded-xs border border-neutral-900 py-2.5 text-[13px] font-medium text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+            data-p-on="click:openPatternExplorer"
+          >
+            Explore all patterns
+          </button>
+        </div>
+        <div
+          id="ipanel-media"
+          class="hidden flex-1 overflow-y-auto p-4"
+          data-p-show="inserterTab|eq|media"
+        >
+          <p class="text-neutral-500">Media arrives with a later step.</p>
+        </div>
+      </aside>
+
+      <!-- Patterns preview flyout: opens right of the rail when a group is
+         selected (or a search is typed) on the Patterns tab. Cards are LIVE
+         previews — the fragment rendered through the real cast pipeline and
+         scaled down (filled imperatively; PublrJS has no HTML-injection
+         binding by design). -->
+      <aside
+        id="pattern-flyout"
+        class="flex hidden w-[350px] shrink-0 flex-col border-r border-border bg-card"
+        data-p-show="$patternFlyoutOpen"
+      >
+        <h2
+          class="shrink-0 px-4 pt-4 text-[15px] font-semibold"
+          data-p-text="$patternFlyoutTitle"
+        ></h2>
+        <p class="shrink-0 px-4 pt-1 pb-3 text-[13px] text-neutral-500">
+          Click a pattern to add it to the canvas.
+        </p>
+        <div class="flex-1 overflow-y-auto px-4 pb-4">
+          <template data-p-for="p of $patternItems" data-p-key="p.name">
+            <div class="pattern-card group mb-4">
+              <button
+                type="button"
+                class="group block w-full cursor-pointer text-left focus-visible:outline-none"
+                data-p-bind="data-pattern:p.name;aria-label:p.label"
+                data-p-on="click:pickPattern"
+              >
+                <span
+                  class="block w-full overflow-hidden rounded-xs border border-neutral-200 bg-white group-hover:border-accent group-focus-visible:border-accent"
+                  data-p-bind="data-pattern-preview:p.name"
+                ></span>
+              </button>
+              <span class="mt-1.5 flex items-center justify-between">
+                <span class="text-xs font-medium text-neutral-700" data-p-text="p.label"></span>
+                <!-- the LIBRARY's edit affordance — publishing never moves placed copies.
+                   tabindex=-1: keyboard focus walks CARD to CARD, one stop per
+                   pattern — Edit stays a pointer affordance. -->
+                <button
+                  type="button"
+                  tabindex="-1"
+                  class="pattern-edit cursor-pointer rounded-xs px-1.5 py-0.5 text-[11px] font-medium text-neutral-500 hover:bg-neutral-100 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                  aria-label="Edit pattern in the library"
+                  data-p-bind="data-pattern:p.name"
+                  data-p-on="click:editDefinition"
+                >
+                  Edit
+                </button>
+              </span>
+            </div>
+          </template>
+          <p class="text-[13px] text-neutral-500" data-p-show="$patternNoResults">
+            No patterns found.
+          </p>
+        </div>
+      </aside>
+
+      <div id="editor-column" class="flex min-w-0 flex-1 flex-col max-sm:basis-1/2">
+        <div id="editor-content" class="flex-1 overflow-y-auto">
+          <div class="wrap relative mx-auto w-full px-5 pt-12 pb-20 text-[15px] leading-[1.6]">
+            <!-- The in-canvas chrome (floating toolbar, "/" quick picker, inline +
+               inserter) is NOT in this markup: demo.ts attaches the SHIPPED layer
+               (attachInlineChrome) against this .wrap — the same batteries every
+               embedder gets. Only page chrome is hand-built here. -->
+            <main id="canvas" class="min-h-60 cursor-text pb-24"></main>
+
+            <!-- Dev panes: hidden behind the ⋮ menu's "Show wire output". -->
+            <section id="output-section" class="hidden" data-p-show="$outputShown">
+              <h2 class="mt-7 mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                Downcast editing pipeline (full wire contract, live)
+              </h2>
+              <pre
+                id="output-editing"
+                class="m-0 rounded-lg bg-zinc-900 p-4 font-mono text-xs leading-normal break-words whitespace-pre-wrap text-zinc-300"
+                data-p-text="$wireEditing"
+              ></pre>
+              <h2 class="mt-7 mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                Downcast data pipeline (published shape — data-pb-* stripped)
+              </h2>
+              <pre
+                id="output-data"
+                class="m-0 rounded-lg bg-zinc-900 p-4 font-mono text-xs leading-normal break-words whitespace-pre-wrap text-zinc-300"
+                data-p-text="$wireData"
+              ></pre>
+            </section>
+          </div>
+        </div>
+        <footer
+          id="footer"
+          class="flex h-[25px] shrink-0 items-center border-t border-neutral-200 bg-white px-[18px] text-xs"
+        >
+          <span id="breadcrumb" data-p-text="$breadcrumb"></span>
+        </footer>
+      </div>
+
+      <aside
+        id="sidebar"
+        data-pbe-keep-selection
+        class="flex w-[281px] shrink-0 flex-col overflow-y-auto border-l border-neutral-200 bg-white max-sm:min-h-0 max-sm:w-full max-sm:flex-1 max-sm:basis-1/2 max-sm:border-t max-sm:border-l-0"
+      >
+        <div
+          id="sidebar-tabs"
+          role="tablist"
+          aria-label="Editor settings"
+          class="flex shrink-0 border-b border-neutral-200"
+        >
+          <button
+            type="button"
+            role="tab"
+            data-tab="document"
+            class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+            data-p-bind="aria-selected:sidebarTab|eq|document"
+            data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
+          >
+            Document
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-tab="block"
+            class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+            data-p-bind="aria-selected:sidebarTab|eq|block"
+            data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
+          >
+            Block
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-tab="design"
+            class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+            data-p-bind="aria-selected:sidebarTab|eq|design"
+            data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
+          >
+            Design
+          </button>
+        </div>
+        <div id="panel-document" class="p-4" role="tabpanel" data-p-show="sidebarTab|eq|document">
+          <!-- document overview arrives with a later step -->
+        </div>
+        <div id="panel-block" class="hidden p-4" role="tabpanel" data-p-show="sidebarTab|eq|block">
+          <p
+            id="block-empty"
+            class="m-0 text-neutral-500"
+            data-p-show="not:blockSelected"
+            data-p-text="$emptyNote"
+          ></p>
+          <div id="block-card" class="hidden" data-p-show="$blockSelected">
+            <div class="flex items-start gap-3">
+              <span id="block-card-icon" class="flex h-6 w-6 shrink-0 items-center justify-center">
+                <svg
+                  class="h-6 w-6 fill-current"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  data-p-show="$blockIcon"
+                >
+                  <use data-p-bind="href:$blockIcon" />
+                </svg>
+                <span
+                  class="text-[15px] font-bold"
+                  data-p-show="not:blockIcon"
+                  data-p-text="$blockLetter"
+                ></span>
+              </span>
+              <div>
+                <div class="mb-1 flex items-center gap-2">
+                  <span
+                    id="block-card-title"
+                    class="font-semibold"
+                    data-p-text="$blockLabel"
+                  ></span>
+                  <span
+                    id="block-card-pattern-chip"
+                    class="hidden rounded-xs bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600"
+                    data-p-show="$blockIsPattern"
+                    >Pattern</span
+                  >
+                </div>
+                <p
+                  id="block-card-description"
+                  class="m-0 text-neutral-500"
+                  data-p-text="$blockDescription"
+                ></p>
+              </div>
+            </div>
+            <div
+              class="mt-5 flex border-b border-neutral-200"
+              role="tablist"
+              aria-label="Block inspector"
+              data-p-show="not:blockIsPattern"
+            >
+              <button
+                type="button"
+                role="tab"
+                data-itab="settings"
+                class="relative h-10 flex-1 cursor-pointer text-[13px] font-medium aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+                data-p-bind="aria-selected:blockInspectorTab|eq|settings"
+                data-p-on="mousedown.prevent:swallow;click:setBlockInspectorTab"
+              >
+                Settings
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-itab="styles"
+                class="relative hidden h-10 flex-1 cursor-pointer text-[13px] font-medium aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+                data-p-show="$blockHasStyles"
+                data-p-bind="aria-selected:blockInspectorTab|eq|styles;disabled:not:blockHasStyles"
+                data-p-on="mousedown.prevent:swallow;click:setBlockInspectorTab"
+              >
+                Styles
+              </button>
+            </div>
+            <!-- Pattern instance (thoughts/012): a fully DECOUPLED copy.
+               One action — Edit pattern, over THIS copy — plus the copy's
+               Content outline. Template-only options land
+               here later. -->
+            <div
+              id="pattern-actions"
+              class="mt-5 flex hidden flex-col gap-2"
+              data-p-show="$blockIsPattern"
+            >
+              <button
+                type="button"
+                id="sidebar-edit-pattern"
+                class="w-full cursor-pointer rounded-xs border border-accent py-2.5 text-[13px] font-medium text-accent hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                data-p-on="click:sidebarEditPattern"
+              >
+                Edit pattern
+              </button>
+              <div id="pattern-content" class="mt-4">
+                <h3
+                  class="m-0 border-b border-neutral-200 pb-2 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
+                >
+                  Content
+                </h3>
+                <template data-p-for="row of $blockPatternContent" data-p-key="row.id">
+                  <button
+                    type="button"
+                    class="flex w-full cursor-pointer items-center gap-2 rounded-xs px-1 py-2 text-left text-[13px] focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                    data-p-class="row.selected->bg-ui-accent+text-accent-foreground~hover:bg-ui-accent"
+                    data-p-bind="data-id:row.id"
+                    data-p-on="mousedown.prevent:swallow;click:selectPatternChild"
+                  >
+                    <span class="flex h-5 w-5 shrink-0 items-center justify-center">
+                      <svg
+                        class="h-5 w-5 fill-current"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        data-p-show="row.icon"
+                      >
+                        <use data-p-bind="href:row.icon" />
+                      </svg>
+                      <span
+                        class="text-[13px] font-bold"
+                        data-p-show="not:row.icon"
+                        data-p-text="row.letter"
+                      ></span>
+                    </span>
+                    <span class="shrink-0 font-medium" data-p-text="row.label"></span>
+                    <span
+                      class="truncate"
+                      data-p-class="row.selected->text-muted-foreground~text-muted-foreground"
+                      data-p-text="row.anchor"
+                    ></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+            <!-- Declared block settings (registry SettingSpecs joined with the
+               selected block in chrome state). ONE branch per control kind,
+               switched on the row's precomputed isChoice/isToggle/… flags.
+               Every control writes through a dataset-routed action: the
+               dataset carries primitive + target. -->
+            <div id="block-settings" class="hidden" data-p-show="blockInspectorTab|eq|settings">
+              <template data-p-for="row of $blockSettings" data-p-key="row.key">
+                <div class="mt-5" role="group" data-p-bind="aria-label:row.label">
+                  <div
+                    class="mb-3 flex items-center justify-between border-b border-neutral-200 pb-2"
+                    data-p-show="row.showSection"
+                  >
+                    <button
+                      type="button"
+                      class="flex cursor-pointer items-center gap-1 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
+                      data-p-bind="data-section:row.sectionKey;aria-expanded:row.sectionExpanded"
+                      data-p-on="mousedown.prevent:swallow;click:toggleSettingSection"
+                    >
+                      <span data-p-text="row.section"></span><span aria-hidden="true">⌄</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                      data-p-bind="data-id:row.id;data-role:row.sectionRole"
+                      data-p-on="mousedown.prevent:swallow;click:resetSettingSection"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <div class="hidden" data-p-show="row.sectionExpanded">
+                    <!-- toggle-group: option buttons (field / transform / island-bound) -->
+                    <div class="flex flex-wrap gap-1" data-p-show="row.isChoice">
+                      <template data-p-for="opt of row.options" data-p-key="opt.value">
+                        <!-- Icon when the option declares one, label text otherwise;
+                         either way the label stays the accessible name. -->
+                        <button
+                          type="button"
+                          class="flex h-10 min-w-10 cursor-pointer items-center justify-center rounded-xs px-1.5 text-[13px] font-semibold text-neutral-500 hover:text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-pressed:bg-neutral-100 aria-pressed:text-neutral-900 aria-pressed:shadow-[inset_0_0_0_1px_var(--color-neutral-400)]"
+                          data-p-bind="data-id:row.id;data-mode:row.mode;data-field:row.field;data-setting:row.setting;data-value:opt.value;aria-pressed:opt.pressed;aria-label:opt.label;title:opt.label"
+                          data-p-on="mousedown.prevent:swallow;click:applySetting"
+                        >
+                          <svg
+                            class="h-6 w-6 fill-current"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            data-p-show="opt.icon"
+                          >
+                            <use data-p-bind="href:opt.icon" />
+                          </svg>
+                          <span data-p-show="not:opt.icon" data-p-text="opt.label"></span>
+                        </button>
+                      </template>
+                    </div>
+                    <!-- toggle: visible label + switch -->
+                    <div class="flex items-center justify-between" data-p-show="row.isToggle">
+                      <span
+                        class="text-[13px] font-medium text-neutral-700"
+                        data-p-text="row.label"
+                      ></span>
+                      <button
+                        type="button"
+                        role="switch"
+                        class="relative h-5 w-9 cursor-pointer rounded-full bg-neutral-300 transition-colors after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform aria-checked:bg-[var(--color-accent)] aria-checked:after:translate-x-4 focus-visible:shadow-[0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                        data-p-bind="data-id:row.id;data-setting:row.setting;data-pressed:row.value;aria-checked:row.pressed;aria-label:row.label"
+                        data-p-on="mousedown.prevent:swallow;click:toggleSetting"
+                      ></button>
+                    </div>
+                    <!-- select: native dropdown. `selected` rides the option (correct
+                     initial pick even before the select's value bind applies);
+                     `value` on the select re-applies on later model changes. -->
+                    <label class="block" data-p-show="row.isSelect">
+                      <span
+                        class="mb-1 block text-[13px] font-medium text-neutral-700"
+                        data-p-text="row.label"
+                      ></span>
+                      <select
+                        class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px] focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
+                        data-p-bind="data-id:row.id;data-key:row.key;data-setting:row.setting;value:row.value"
+                        data-p-on="change:applyInputSetting"
+                      >
+                        <template data-p-for="opt of row.options" data-p-key="opt.value">
+                          <option
+                            data-p-bind="value:opt.value;selected:opt.pressed"
+                            data-p-text="opt.label"
+                          ></option>
+                        </template>
+                      </select>
+                    </label>
+                    <!-- text -->
+                    <label class="block" data-p-show="row.isText">
+                      <span
+                        class="mb-1 block text-[13px] font-medium text-neutral-700"
+                        data-p-text="row.label"
+                      ></span>
+                      <input
+                        type="text"
+                        class="h-10 w-full rounded-xs border border-neutral-300 bg-white px-2 text-[13px] focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
+                        data-p-bind="data-id:row.id;data-key:row.key;data-setting:row.setting;data-field:row.field;value:row.value;placeholder:row.placeholder"
+                        data-p-on="change:applyInputSetting"
+                      />
+                    </label>
+                    <!-- number: min/max/step ride only when declared (null unbinds) -->
+                    <label class="block" data-p-show="row.isNumber">
+                      <span
+                        class="mb-1 block text-[13px] font-medium text-neutral-700"
+                        data-p-text="row.label"
+                      ></span>
+                      <input
+                        type="number"
+                        data-kind="number"
+                        class="h-10 w-full rounded-xs border border-neutral-300 bg-white px-2 text-[13px] focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
+                        data-p-bind="data-id:row.id;data-key:row.key;data-setting:row.setting;value:row.value;min:row.min;max:row.max;step:row.step;aria-invalid:row.invalid"
+                        data-p-on="change:applyInputSetting"
+                      />
+                    </label>
+                    <!-- media (sidebar shape): "Add image" when empty,
+                     thumbnail + Replace/Remove when set, then ALT TEXT.
+                     URL insertion lives in the canvas placeholder card. -->
+                    <div data-p-show="row.isMedia">
+                      <span
+                        class="mb-2 block text-[13px] font-medium text-neutral-700"
+                        data-p-text="row.label"
+                      ></span>
+                      <label
+                        class="mb-2 flex w-full cursor-pointer items-center justify-center rounded-xs border border-neutral-300 px-3 py-2.5 text-[13px] font-medium text-neutral-900 hover:border-neutral-400"
+                        data-p-show="row.showAdd"
+                      >
+                        <span data-p-text="row.addLabel"></span>
+                        <input
+                          type="file"
+                          class="hidden"
+                          data-p-bind="data-id:row.id;data-field:row.field;data-key:row.key"
+                          data-p-on="change:uploadMedia"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        class="mb-2 flex w-full cursor-pointer items-center justify-center rounded-xs border border-neutral-300 px-3 py-2.5 text-[13px] font-medium text-neutral-900 hover:border-neutral-400"
+                        data-p-show="row.showBrowseEmpty"
+                        data-p-bind="data-id:row.id;data-field:row.field;data-key:row.key"
+                        data-p-on="mousedown.prevent:swallow;click:browseMedia"
+                      >
+                        Media Library
+                      </button>
+                      <div data-p-show="row.hasMedia">
+                        <img
+                          alt=""
+                          class="mb-2 max-h-32 w-full rounded-xs bg-neutral-100 object-contain"
+                          data-p-bind="src:row.mediaSrc"
+                        />
+                        <div class="mb-2 flex items-center gap-1.5">
+                          <label
+                            class="inline-flex h-10 cursor-pointer items-center rounded-xs border border-neutral-300 px-3 text-[13px] font-medium hover:border-neutral-400"
+                            data-p-show="row.canUpload"
+                          >
+                            Replace
+                            <input
+                              type="file"
+                              class="hidden"
+                              data-p-bind="data-id:row.id;data-field:row.field;data-key:row.key"
+                              data-p-on="change:uploadMedia"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            class="inline-flex h-10 cursor-pointer items-center rounded-xs border border-neutral-300 px-3 text-[13px] font-medium hover:border-neutral-400"
+                            data-p-show="row.showBrowse"
+                            data-p-bind="data-id:row.id;data-field:row.field;data-key:row.key"
+                            data-p-on="mousedown.prevent:swallow;click:browseMedia"
+                          >
+                            Media Library
+                          </button>
+                          <button
+                            type="button"
+                            class="h-10 cursor-pointer rounded-xs px-2 text-[13px] font-medium text-neutral-500 hover:text-neutral-900"
+                            data-p-bind="data-id:row.id;data-field:row.field"
+                            data-p-on="mousedown.prevent:swallow;click:clearMedia"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      <span
+                        class="mt-2 mb-1 block text-[11px] font-semibold tracking-wide text-neutral-700 uppercase"
+                        >Alternative text</span
+                      >
+                      <textarea
+                        rows="3"
+                        class="w-full resize-y rounded-xs border border-neutral-300 bg-white px-2 py-1.5 text-[13px] focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
+                        aria-label="Alternative text"
+                        data-p-bind="data-id:row.id;data-field:row.field;value:row.mediaAlt"
+                        data-p-on="change:applyMediaAlt"
+                      ></textarea>
+                      <span class="mt-1 block text-xs text-neutral-500"
+                        >Describe the purpose of the media. Leave empty if decorative.</span
+                      >
+                    </div>
+                    <p
+                      class="mt-2 mb-0 text-xs leading-relaxed text-red-600"
+                      role="alert"
+                      data-p-show="row.error"
+                      data-p-text="row.error"
+                    ></p>
+                    <p
+                      class="mt-2 mb-0 text-xs leading-relaxed text-neutral-500"
+                      data-p-show="row.help"
+                      data-p-text="row.help"
+                    ></p>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <div id="block-styles" class="hidden" data-p-show="blockInspectorTab|eq|styles">
+              <div class="flex h-11 items-center justify-between border-b border-neutral-200">
+                <span class="text-[13px] font-semibold text-neutral-900">Block styles</span>
+                <div class="relative flex items-center gap-3">
+                  <button
+                    type="button"
+                    class="cursor-pointer text-[12px] font-medium text-neutral-500 hover:text-neutral-900 disabled:cursor-default disabled:opacity-30"
+                    data-p-bind="disabled:not:styleHasValues"
+                    data-p-on="mousedown.prevent:swallow;click:resetBlockStyles"
+                  >
+                    Reset all
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xs text-xl hover:bg-neutral-100"
+                    aria-label="Style options"
+                    data-p-bind="aria-expanded:styleOptionalOpen;disabled:not:optionalStyleControls.length"
+                    data-p-on="mousedown.prevent:swallow;click:toggleStyleOptions"
+                  >
+                    ⋮
+                  </button>
+                  <div
+                    class="absolute top-10 right-0 z-20 hidden w-56 rounded-xs border border-neutral-300 bg-white p-1 shadow-lg"
+                    data-p-show="$styleOptionalOpen"
+                  >
+                    <span
+                      class="block px-2 py-1.5 text-[11px] font-semibold tracking-wide text-neutral-500 uppercase"
+                      >Optional controls</span
+                    >
+                    <template
+                      data-p-for="control of $optionalStyleControls"
+                      data-p-key="control.prop"
+                    >
+                      <button
+                        type="button"
+                        class="flex h-10 w-full cursor-pointer items-center justify-between rounded-xs px-2 text-left text-[13px] hover:bg-neutral-100 aria-pressed:bg-neutral-100"
+                        data-p-bind="data-prop:control.prop;aria-pressed:control.enabled"
+                        data-p-on="mousedown.prevent:swallow;click:toggleOptionalStyle"
+                      >
+                        <span data-p-text="control.label"></span>
+                        <span data-p-show="control.enabled">✓</span>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+              <!-- Unresolved utilities (E4): utility-shaped classes on this
+               block whose token the theme lacks — Define… jumps to the Design
+               tab prefilled (the paste-a-Tailwind-template onboarding loop). -->
+              <div
+                class="mt-6 rounded-xs border border-amber-300 bg-amber-50 p-3"
+                data-p-show="$unresolvedChips.length"
+              >
+                <span class="mb-2 block text-[11px] font-semibold text-amber-900"
+                  >Not in your theme</span
+                >
+                <template data-p-for="chip of $unresolvedChips" data-p-key="chip.cls">
+                  <div class="mb-1.5 flex items-center justify-between gap-2 last:mb-0">
+                    <code
+                      class="truncate text-[11px] text-amber-900"
+                      data-p-text="chip.cls"
+                      data-p-bind="title:chip.label"
+                    ></code>
+                    <button
+                      type="button"
+                      class="shrink-0 cursor-pointer rounded-xs border border-amber-400 px-2 py-0.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100"
+                      data-p-bind="data-ns:chip.ns;data-suffix:chip.suffix"
+                      data-p-on="mousedown.prevent:swallow;click:defineFromChip"
+                    >
+                      Define…
+                    </button>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Universal STYLE controls (Phase C), grouped into panels
+               (Styles / Typography / Color / Dimensions / Border). Shown per
+               the block's supports/variations; values via editor.setStyle,
+               disabled when policy isn't stylable. The control vocabulary:
+               segmented scales (equal columns, internal dividers, active =
+               solid dark), filled color swatches (inset ring keeps light
+               colors legible), and the variation grid with a Default chip. -->
+
+              <!-- Styles (C6): Default + named variations -->
+              <details
+                open
+                class="border-t border-neutral-200 py-5"
+                data-p-show="$variationOptions.length"
+              >
+                <summary
+                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="block text-[15px] font-semibold text-neutral-900">Styles</span>
+                  <button
+                    type="button"
+                    data-panel="styles"
+                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                  >
+                    Reset
+                  </button>
+                </summary>
+                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Styles">
+                  <template data-p-for="v of $variationOptions" data-p-key="v.name">
+                    <button
+                      type="button"
+                      class="flex h-10 cursor-pointer items-center justify-center rounded-xs border border-neutral-300 bg-white px-2 text-[13px] font-medium text-neutral-900 hover:border-neutral-400 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-pressed:border-neutral-900 aria-pressed:bg-neutral-900 aria-pressed:text-white disabled:cursor-default disabled:opacity-40"
+                      data-p-bind="data-name:v.name;aria-pressed:v.pressed;disabled:$styleDisabled;aria-label:v.label"
+                      data-p-on="mousedown.prevent:swallow;click:applyVariation"
+                      data-p-text="v.label"
+                    ></button>
+                  </template>
+                </div>
+              </details>
+
+              <!-- Typography (C1 font size + C5 extras) -->
+              <details
+                open
+                class="border-t border-neutral-200 py-5"
+                data-p-show="$styleFontSizeShown"
+              >
+                <summary
+                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="block text-[15px] font-semibold text-neutral-900">Typography</span>
+                  <button
+                    type="button"
+                    data-panel="typography"
+                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                  >
+                    Reset
+                  </button>
+                </summary>
+                <span class="mb-1.5 block text-[12px] text-neutral-500">Font size</span>
+                <div
+                  class="flex overflow-hidden rounded-xs border border-neutral-300"
+                  role="group"
+                  aria-label="Font size"
+                  data-p-show="not:fontSizeIsSelect"
+                >
+                  <template data-p-for="opt of $fontSizeOptions" data-p-key="opt.key">
+                    <button
+                      type="button"
+                      class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-neutral-300 bg-white text-[13px] font-medium text-neutral-700 last:border-r-0 hover:bg-neutral-50 focus-visible:relative focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-pressed:bg-neutral-900 aria-pressed:text-white disabled:cursor-default disabled:opacity-40"
+                      data-p-bind="data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label"
+                      data-p-on="mousedown.prevent:swallow;click:applyFontSize"
+                      data-p-text="opt.label"
+                    ></button>
+                  </template>
+                </div>
+                <select
+                  class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px] font-medium text-neutral-700 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40"
+                  aria-label="Font size"
+                  data-prop="fontSize"
+                  data-p-show="$fontSizeIsSelect"
+                  data-p-bind="disabled:$styleDisabled"
+                  data-p-on="change:applyStyleSelect"
+                >
+                  <option value="">Default</option>
+                  <template data-p-for="opt of $fontSizeOptions" data-p-key="opt.key">
+                    <option
+                      data-p-bind="value:opt.key;selected:opt.pressed"
+                      data-p-text="opt.label"
+                    ></option>
+                  </template>
+                </select>
+                <details class="pbe-custom-value">
+                  <summary>Custom value</summary>
+                  <input
+                    type="text"
+                    placeholder="For example 17px"
+                    aria-label="Custom font size"
+                    data-prop="fontSize"
+                    data-p-bind="value:$fontSizeValue;disabled:$styleDisabled"
+                    data-p-on="change:applyStyleInput"
+                  />
+                </details>
+                <template data-p-for="row of $typographyRows" data-p-key="row.prop">
+                  <div class="mt-4">
+                    <span
+                      class="mb-1.5 block text-[12px] text-neutral-500"
+                      data-p-text="row.label"
+                    ></span>
+                    <div
+                      class="flex overflow-hidden rounded-xs border border-neutral-300"
+                      role="group"
+                      data-p-bind="aria-label:row.label"
+                      data-p-show="row.isSegmented"
+                    >
+                      <template data-p-for="opt of row.options" data-p-key="opt.key">
+                        <button
+                          type="button"
+                          class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-neutral-300 bg-white text-[13px] font-medium text-neutral-700 last:border-r-0 hover:bg-neutral-50 focus-visible:relative focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-pressed:bg-neutral-900 aria-pressed:text-white disabled:cursor-default disabled:opacity-40"
+                          data-p-bind="data-prop:row.prop;data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label"
+                          data-p-on="mousedown.prevent:swallow;click:applyDimension"
+                          data-p-text="opt.label"
+                        ></button>
+                      </template>
+                    </div>
+                    <div class="pbe-scale pbe-scale--editable" data-p-show="row.isRange">
+                      <div class="pbe-scale__track" aria-hidden="true">
+                        <template data-p-for="opt of row.options" data-p-key="opt.key"
+                          ><span></span
+                        ></template>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        step="1"
+                        class="pbe-scale__input"
+                        data-p-bind="data-prop:row.prop;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
+                        data-p-on="change:applyStyleRange"
+                      />
+                      <input
+                        type="text"
+                        class="pbe-scale__editor"
+                        placeholder="Default"
+                        data-p-bind="data-prop:row.prop;value:row.value;disabled:$styleDisabled;aria-label:row.label"
+                        data-p-on="change:applyStyleInput"
+                      />
+                    </div>
+                    <select
+                      class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px] font-medium text-neutral-700 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40"
+                      data-p-show="row.isSelect"
+                      data-p-bind="data-prop:row.prop;aria-label:row.label;disabled:$styleDisabled"
+                      data-p-on="change:applyStyleSelect"
+                    >
+                      <option value="">Default</option>
+                      <template data-p-for="opt of row.options" data-p-key="opt.key">
+                        <option
+                          data-p-bind="value:opt.key;selected:opt.pressed"
+                          data-p-text="opt.label"
+                        ></option>
+                      </template>
+                    </select>
+                    <details class="pbe-custom-value" data-p-show="row.showCustomDisclosure">
+                      <summary>Custom value</summary>
+                      <input
+                        type="text"
+                        placeholder="Token step or CSS value"
+                        data-p-bind="data-prop:row.prop;value:row.value;aria-label:row.label;disabled:$styleDisabled"
+                        data-p-on="change:applyStyleInput"
+                      />
+                    </details>
+                  </div>
+                </template>
+              </details>
+
+              <!-- Color (C2): Text / Background swatch rows -->
+              <details
+                open
+                class="border-t border-neutral-200 py-5"
+                data-p-show="$colorRows.length"
+              >
+                <summary
+                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="block text-[15px] font-semibold text-neutral-900">Color</span>
+                  <button
+                    type="button"
+                    data-panel="color"
+                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                  >
+                    Reset
+                  </button>
+                </summary>
+                <template data-p-for="row of $colorRows" data-p-key="row.prop">
+                  <div class="mt-4 first:mt-0">
+                    <div class="mb-1.5 flex items-center justify-between">
+                      <span class="text-[12px] text-neutral-500" data-p-text="row.label"></span>
+                      <button
+                        type="button"
+                        class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
+                        data-p-bind="data-prop:row.prop;disabled:$styleDisabled"
+                        data-p-on="mousedown.prevent:swallow;click:applyColor"
+                        data-p-show="row.value"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div
+                      class="flex flex-wrap gap-2"
+                      role="group"
+                      data-p-bind="aria-label:row.label"
+                      data-p-show="not:row.grid"
+                    >
+                      <template data-p-for="sw of row.swatches" data-p-key="sw.key">
+                        <button
+                          type="button"
+                          class="h-7 w-7 cursor-pointer rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] transition-transform hover:scale-110 focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_#fff,0_0_0_4px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40 aria-pressed:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_#fff,0_0_0_4px_var(--color-accent)]"
+                          data-p-style="background-color->sw.css"
+                          data-p-bind="data-prop:row.prop;data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
+                          data-p-on="mousedown.prevent:swallow;click:applyColor"
+                        ></button>
+                      </template>
+                    </div>
+                    <!-- Big palettes (the full Tailwind default: 22 families ×
+                     11 steps) render as a family grid of small dots. -->
+                    <div
+                      class="flex flex-col gap-1"
+                      role="group"
+                      data-p-bind="aria-label:row.label"
+                      data-p-show="row.grid"
+                    >
+                      <template data-p-for="fam of row.families" data-p-key="fam.family">
+                        <div class="flex items-center gap-1">
+                          <template data-p-for="sw of fam.swatches" data-p-key="sw.key">
+                            <button
+                              type="button"
+                              class="h-4 w-4 cursor-pointer rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] transition-transform hover:scale-125 focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40 aria-pressed:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_1.5px_#fff,0_0_0_3px_var(--color-accent)]"
+                              data-p-style="background-color->sw.css"
+                              data-p-bind="data-prop:row.prop;data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
+                              data-p-on="mousedown.prevent:swallow;click:applyColor"
+                            ></button>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </details>
+
+              <!-- Dimensions: Webflow-style box model + token scales. -->
+              <details
+                id="block-dimensions"
+                open
+                class="border-t border-neutral-200 py-5"
+                data-p-show="$dimensionPanelShown"
+              >
+                <summary
+                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="block text-[15px] font-semibold text-neutral-900">Dimensions</span>
+                  <button
+                    type="button"
+                    data-panel="spacing,dimensions"
+                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                  >
+                    Reset
+                  </button>
+                </summary>
+                <div class="pbe-box-model mb-5" data-p-show="$spacingBoxShown">
+                  <div class="pbe-box-model__layer pbe-box-model__margin">
+                    <span class="pbe-box-model__label">Margin</span>
+                    <button
+                      type="button"
+                      data-kind="margin"
+                      class="pbe-box-model__link"
+                      data-p-show="$boxMarginShown"
+                      data-p-bind="disabled:$styleDisabled;aria-label:marginSidesLabel;title:marginSidesLabel;aria-pressed:marginSidesLinked"
+                      data-p-on="mousedown.prevent:swallow;click:toggleSpacingSides"
+                    >
+                      <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
+                        <g
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path
+                            d="M13.75 10.25a3.5 3.5 0 0 1 0 4.95l-2.55 2.55a3.5 3.5 0 0 1-4.95-4.95l1.3-1.3"
+                          />
+                          <path
+                            d="M10.25 13.75a3.5 3.5 0 0 1 0-4.95l2.55-2.55a3.5 3.5 0 0 1 4.95 4.95l-1.3 1.3"
+                          />
+                        </g>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="pbe-box-model__value"
+                      data-kind="margin"
+                      data-side="Top"
+                      data-position="Top"
+                      aria-label="Edit margin top"
+                      data-p-show="$boxMarginShown"
+                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Top;disabled:$styleDisabled"
+                      data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                      data-p-text="$boxMarginTop"
+                    ></button>
+                    <button
+                      type="button"
+                      class="pbe-box-model__value"
+                      data-kind="margin"
+                      data-side="Right"
+                      data-position="Right"
+                      aria-label="Edit margin right"
+                      data-p-show="$boxMarginShown"
+                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Right;disabled:$styleDisabled"
+                      data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                      data-p-text="$boxMarginRight"
+                    ></button>
+                    <button
+                      type="button"
+                      class="pbe-box-model__value"
+                      data-kind="margin"
+                      data-side="Bottom"
+                      data-position="Bottom"
+                      aria-label="Edit margin bottom"
+                      data-p-show="$boxMarginShown"
+                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Bottom;disabled:$styleDisabled"
+                      data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                      data-p-text="$boxMarginBottom"
+                    ></button>
+                    <button
+                      type="button"
+                      class="pbe-box-model__value"
+                      data-kind="margin"
+                      data-side="Left"
+                      data-position="Left"
+                      aria-label="Edit margin left"
+                      data-p-show="$boxMarginShown"
+                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Left;disabled:$styleDisabled"
+                      data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                      data-p-text="$boxMarginLeft"
+                    ></button>
+                    <div class="pbe-box-model__layer pbe-box-model__padding">
+                      <span class="pbe-box-model__label">Padding</span>
+                      <button
+                        type="button"
+                        data-kind="padding"
+                        class="pbe-box-model__link"
+                        data-p-show="$boxPaddingShown"
+                        data-p-bind="disabled:$styleDisabled;aria-label:paddingSidesLabel;title:paddingSidesLabel;aria-pressed:paddingSidesLinked"
+                        data-p-on="mousedown.prevent:swallow;click:toggleSpacingSides"
+                      >
+                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
+                          <g
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path
+                              d="M13.75 10.25a3.5 3.5 0 0 1 0 4.95l-2.55 2.55a3.5 3.5 0 0 1-4.95-4.95l1.3-1.3"
+                            />
+                            <path
+                              d="M10.25 13.75a3.5 3.5 0 0 1 0-4.95l2.55-2.55a3.5 3.5 0 0 1 4.95 4.95l-1.3 1.3"
+                            />
+                          </g>
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="pbe-box-model__value"
+                        data-kind="padding"
+                        data-side="Top"
+                        data-position="Top"
+                        aria-label="Edit padding top"
+                        data-p-show="$boxPaddingShown"
+                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Top;disabled:$styleDisabled"
+                        data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                        data-p-text="$boxPaddingTop"
+                      ></button>
+                      <button
+                        type="button"
+                        class="pbe-box-model__value"
+                        data-kind="padding"
+                        data-side="Right"
+                        data-position="Right"
+                        aria-label="Edit padding right"
+                        data-p-show="$boxPaddingShown"
+                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Right;disabled:$styleDisabled"
+                        data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                        data-p-text="$boxPaddingRight"
+                      ></button>
+                      <button
+                        type="button"
+                        class="pbe-box-model__value"
+                        data-kind="padding"
+                        data-side="Bottom"
+                        data-position="Bottom"
+                        aria-label="Edit padding bottom"
+                        data-p-show="$boxPaddingShown"
+                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Bottom;disabled:$styleDisabled"
+                        data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                        data-p-text="$boxPaddingBottom"
+                      ></button>
+                      <button
+                        type="button"
+                        class="pbe-box-model__value"
+                        data-kind="padding"
+                        data-side="Left"
+                        data-position="Left"
+                        aria-label="Edit padding left"
+                        data-p-show="$boxPaddingShown"
+                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Left;disabled:$styleDisabled"
+                        data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                        data-p-text="$boxPaddingLeft"
+                      ></button>
+                      <div class="pbe-box-model__content">Content</div>
+                    </div>
+                  </div>
+                  <div class="pbe-box-model__control">
+                    <span class="pbe-box-model__control-label" data-p-text="$boxActiveLabel"></span>
+                    <div class="pbe-scale pbe-scale--editable">
+                      <div class="pbe-scale__track" aria-hidden="true">
+                        <template data-p-for="opt of $boxSpacingOptions" data-p-key="opt.key"
+                          ><span></span
+                        ></template>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        step="1"
+                        class="pbe-scale__input"
+                        data-p-bind="max:boxActiveRangeMax;value:boxActiveRangeIndex;disabled:$styleDisabled;aria-label:boxActiveLabel"
+                        data-p-on="change:applyBoxScale"
+                      />
+                      <input
+                        type="text"
+                        class="pbe-scale__editor"
+                        placeholder="Default"
+                        data-p-bind="data-kind:boxActiveKind;data-side:boxActiveSide;value:boxActiveValue;disabled:$styleDisabled;aria-label:boxActiveLabel"
+                        data-p-on="change:applyBoxSpacing"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <template data-p-for="row of $dimensionRows" data-p-key="row.prop">
+                  <div class="mt-4 first:mt-0">
+                    <span
+                      class="mb-1.5 block text-[12px] text-neutral-500"
+                      data-p-text="row.label"
+                    ></span>
+                    <div
+                      class="flex overflow-hidden rounded-xs border border-neutral-300"
+                      role="group"
+                      data-p-bind="aria-label:row.label"
+                      data-p-show="row.isSegmented"
+                    >
+                      <template data-p-for="opt of row.options" data-p-key="opt.key">
+                        <button
+                          type="button"
+                          class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-neutral-300 bg-white text-[13px] font-medium text-neutral-700 last:border-r-0 hover:bg-neutral-50 focus-visible:relative focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-pressed:bg-neutral-900 aria-pressed:text-white disabled:cursor-default disabled:opacity-40"
+                          data-p-bind="data-prop:row.prop;data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label"
+                          data-p-on="mousedown.prevent:swallow;click:applyDimension"
+                          data-p-text="opt.label"
+                        ></button>
+                      </template>
+                    </div>
+                    <div class="pbe-scale pbe-scale--editable" data-p-show="row.isRange">
+                      <div class="pbe-scale__track" aria-hidden="true">
+                        <template data-p-for="opt of row.options" data-p-key="opt.key"
+                          ><span></span
+                        ></template>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        step="1"
+                        class="pbe-scale__input"
+                        data-p-bind="data-prop:row.prop;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
+                        data-p-on="change:applyStyleRange"
+                      />
+                      <input
+                        type="text"
+                        class="pbe-scale__editor"
+                        placeholder="Default"
+                        data-p-bind="data-prop:row.prop;value:row.value;disabled:$styleDisabled;aria-label:row.label"
+                        data-p-on="change:applyStyleInput"
+                      />
+                    </div>
+                    <select
+                      class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px] focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
+                      data-p-show="row.isSelect"
+                      data-p-bind="data-prop:row.prop;aria-label:row.label;disabled:$styleDisabled"
+                      data-p-on="change:applyStyleSelect"
+                    >
+                      <option value="">Default</option>
+                      <template data-p-for="opt of row.options" data-p-key="opt.key">
+                        <option
+                          data-p-bind="value:opt.key;selected:opt.pressed"
+                          data-p-text="opt.label"
+                        ></option>
+                      </template>
+                    </select>
+                    <details class="pbe-custom-value" data-p-show="row.showCustomDisclosure">
+                      <summary>Custom value</summary>
+                      <input
+                        type="text"
+                        placeholder="Token step or CSS value"
+                        data-p-bind="data-prop:row.prop;value:row.value;aria-label:row.label;disabled:$styleDisabled"
+                        data-p-on="change:applyStyleInput"
+                      />
+                    </details>
+                  </div>
+                </template>
+              </details>
+
+              <details
+                open
+                class="border-t border-neutral-200 py-5"
+                data-p-show="$layoutRows.length"
+              >
+                <summary
+                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="block text-[15px] font-semibold text-neutral-900">Layout</span>
+                  <button
+                    type="button"
+                    data-panel="layout"
+                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                  >
+                    Reset
+                  </button>
+                </summary>
+                <template data-p-for="row of $layoutRows" data-p-key="row.prop">
+                  <div class="mt-4 first:mt-0">
+                    <span
+                      class="mb-1.5 block text-[12px] text-neutral-500"
+                      data-p-text="row.label"
+                    ></span>
+                    <div
+                      class="flex overflow-hidden rounded-xs border border-neutral-300"
+                      role="group"
+                      data-p-bind="aria-label:row.label"
+                      data-p-show="row.isSegmented"
+                    >
+                      <template data-p-for="opt of row.options" data-p-key="opt.key">
+                        <button
+                          type="button"
+                          class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-neutral-300 bg-white px-1 text-[12px] font-medium last:border-r-0 aria-pressed:bg-neutral-900 aria-pressed:text-white"
+                          data-p-bind="data-prop:row.prop;data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label"
+                          data-p-on="mousedown.prevent:swallow;click:applyDimension"
+                          data-p-text="opt.label"
+                        ></button>
+                      </template>
+                    </div>
+                    <div class="pbe-scale pbe-scale--editable" data-p-show="row.isRange">
+                      <div class="pbe-scale__track" aria-hidden="true">
+                        <template data-p-for="opt of row.options" data-p-key="opt.key"
+                          ><span></span
+                        ></template>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        step="1"
+                        class="pbe-scale__input"
+                        data-p-bind="data-prop:row.prop;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
+                        data-p-on="change:applyStyleRange"
+                      />
+                      <input
+                        type="text"
+                        class="pbe-scale__editor"
+                        placeholder="Default"
+                        data-p-bind="data-prop:row.prop;value:row.value;disabled:$styleDisabled;aria-label:row.label"
+                        data-p-on="change:applyStyleInput"
+                      />
+                    </div>
+                    <select
+                      class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px]"
+                      data-p-show="row.isSelect"
+                      data-p-bind="data-prop:row.prop;aria-label:row.label;disabled:$styleDisabled"
+                      data-p-on="change:applyStyleSelect"
+                    >
+                      <option value="">Default</option>
+                      <template data-p-for="opt of row.options" data-p-key="opt.key">
+                        <option
+                          data-p-bind="value:opt.key;selected:opt.pressed"
+                          data-p-text="opt.label"
+                        ></option>
+                      </template>
+                    </select>
+                    <details class="pbe-custom-value" data-p-show="row.showCustomDisclosure">
+                      <summary>Custom value</summary>
+                      <input
+                        type="text"
+                        placeholder="Token step or CSS value"
+                        data-p-bind="data-prop:row.prop;value:row.value;aria-label:row.label;disabled:$styleDisabled"
+                        data-p-on="change:applyStyleInput"
+                      />
+                    </details>
+                  </div>
+                </template>
+              </details>
+
+              <!-- Border: discrete width/radius scales plus style and color. -->
+              <details open class="border-t border-neutral-200 py-5" data-p-show="$borderShown">
+                <summary
+                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
+                >
+                  <span class="block text-[15px] font-semibold text-neutral-900">Border</span>
+                  <button
+                    type="button"
+                    data-panel="border"
+                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
+                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                  >
+                    Reset
+                  </button>
+                </summary>
+                <div class="mb-4" data-p-show="$borderStyleOptions.length">
+                  <span class="mb-1.5 block text-[12px] text-neutral-500">Style</span>
+                  <div class="flex overflow-hidden rounded-xs border border-neutral-300">
+                    <template data-p-for="opt of $borderStyleOptions" data-p-key="opt.key">
+                      <button
+                        type="button"
+                        class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-neutral-300 bg-white px-1 text-[11px] font-medium last:border-r-0 aria-pressed:bg-neutral-900 aria-pressed:text-white"
+                        data-prop="borderStyle"
+                        data-p-bind="data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label"
+                        data-p-on="mousedown.prevent:swallow;click:applyDimension"
+                        data-p-text="opt.label"
+                      ></button>
+                    </template>
+                  </div>
+                </div>
+                <div data-p-show="$borderWidthOptions.length">
+                  <span class="mb-1.5 block text-[12px] text-neutral-500">Width</span>
+                  <div class="pbe-scale pbe-scale--editable">
+                    <div class="pbe-scale__track" aria-hidden="true">
+                      <template data-p-for="opt of $borderWidthOptions" data-p-key="opt.key"
+                        ><span></span
+                      ></template>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      step="1"
+                      class="pbe-scale__input"
+                      data-prop="borderWidth"
+                      aria-label="Border width"
+                      data-p-bind="max:borderWidthRangeMax;value:borderWidthRangeIndex;disabled:$styleDisabled"
+                      data-p-on="change:applyBorderRange"
+                    />
+                    <input
+                      type="text"
+                      class="pbe-scale__editor"
+                      placeholder="Default"
+                      data-prop="borderWidth"
+                      aria-label="Border width"
+                      data-p-bind="value:$borderWidthValue;disabled:$styleDisabled"
+                      data-p-on="change:applyStyleInput"
+                    />
+                  </div>
+                </div>
+                <div class="mt-4" data-p-show="$borderColorShown">
+                  <span class="mb-1.5 block text-[12px] text-neutral-500">Color</span>
+                  <div
+                    class="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Border color"
+                    data-p-show="not:borderColorGrid"
+                  >
+                    <template data-p-for="sw of $borderColorSwatches" data-p-key="sw.key">
+                      <button
+                        type="button"
+                        class="h-7 w-7 cursor-pointer rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] transition-transform hover:scale-110 focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_#fff,0_0_0_4px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40 aria-pressed:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_#fff,0_0_0_4px_var(--color-accent)]"
+                        data-prop="borderColor"
+                        data-p-style="background-color->sw.css"
+                        data-p-bind="data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
+                        data-p-on="mousedown.prevent:swallow;click:applyColor"
+                      ></button>
+                    </template>
+                  </div>
+                  <div
+                    class="flex flex-col gap-1"
+                    role="group"
+                    aria-label="Border color"
+                    data-p-show="$borderColorGrid"
+                  >
+                    <template data-p-for="fam of $borderColorFamilies" data-p-key="fam.family">
+                      <div class="flex items-center gap-1">
+                        <template data-p-for="sw of fam.swatches" data-p-key="sw.key">
+                          <button
+                            type="button"
+                            class="h-4 w-4 cursor-pointer rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] transition-transform hover:scale-125 focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40 aria-pressed:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_1.5px_#fff,0_0_0_3px_var(--color-accent)]"
+                            data-prop="borderColor"
+                            data-p-style="background-color->sw.css"
+                            data-p-bind="data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
+                            data-p-on="mousedown.prevent:swallow;click:applyColor"
+                          ></button>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="mt-4" data-p-show="$borderRadiusOptions.length">
+                  <span class="mb-1.5 block text-[12px] text-neutral-500">Radius</span>
+                  <div class="pbe-scale pbe-scale--editable">
+                    <div class="pbe-scale__track" aria-hidden="true">
+                      <template data-p-for="opt of $borderRadiusOptions" data-p-key="opt.key"
+                        ><span></span
+                      ></template>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      step="1"
+                      class="pbe-scale__input"
+                      data-prop="borderRadius"
+                      aria-label="Border radius"
+                      data-p-bind="max:borderRadiusRangeMax;value:borderRadiusRangeIndex;disabled:$styleDisabled"
+                      data-p-on="change:applyBorderRange"
+                    />
+                    <input
+                      type="text"
+                      class="pbe-scale__editor"
+                      placeholder="Default"
+                      data-prop="borderRadius"
+                      aria-label="Border radius"
+                      data-p-bind="value:$borderRadiusValue;disabled:$styleDisabled"
+                      data-p-on="change:applyStyleInput"
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <!-- Design tab (E4): the visual THEME editor. Sections per token
+           namespace; every edit re-installs the theme (editor.setTheme) and
+           refreshes canvas CSS + controls. Import/export = v4 @theme CSS. -->
+        <div
+          id="panel-design"
+          class="hidden p-4"
+          role="tabpanel"
+          data-p-show="sidebarTab|eq|design"
+        >
+          <!-- Define… banner: landed here from an unresolved chip -->
+          <div
+            class="mb-4 rounded-xs border border-amber-300 bg-amber-50 p-3"
+            data-p-show="$defineShown"
+            data-define
+          >
+            <span class="mb-2 block text-[12px] font-semibold text-amber-900"
+              >Define a missing token</span
+            >
+            <input
+              class="mb-1.5 h-8 w-full rounded-xs border border-neutral-300 bg-white px-2 font-mono text-[12px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+              placeholder="token name (e.g. text-xxxxl)"
+              aria-label="Token name"
+              data-p-bind="value:$defineName"
+            />
+            <input
+              class="h-8 w-full rounded-xs border border-neutral-300 bg-white px-2 font-mono text-[12px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+              placeholder="value (e.g. 6rem)"
+              aria-label="Token value"
+            />
+            <div class="mt-2 flex gap-2">
+              <button
+                type="button"
+                class="h-8 cursor-pointer rounded-xs bg-neutral-900 px-3 text-[12px] font-semibold text-white hover:bg-neutral-800"
+                data-p-on="click:designDefine"
+              >
+                Add token
+              </button>
+              <button
+                type="button"
+                class="h-8 cursor-pointer rounded-xs px-3 text-[12px] font-medium text-neutral-600 hover:bg-neutral-100"
+                data-p-on="click:defineDismiss"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-1 flex items-baseline justify-between">
+            <span class="text-[15px] font-semibold text-neutral-900">Theme</span>
+          </div>
+          <p class="mb-4 text-[11px] text-neutral-500">
+            CSS engine: <span data-p-text="$engineLabel"></span>
+          </p>
+
+          <div class="mb-2">
+            <span class="mb-1.5 block text-[12px] text-neutral-500"
+              >Spacing multiplier (--spacing)</span
+            >
+            <input
+              class="h-8 w-full rounded-xs border border-neutral-300 bg-white px-2 font-mono text-[12px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+              aria-label="Spacing multiplier"
+              data-p-bind="value:$designSpacing"
+              data-p-on="change:designSetSpacing"
+            />
+          </div>
+
+          <template data-p-for="sec of $designSections" data-p-key="sec.ns">
+            <div class="border-t border-neutral-200 py-4">
+              <span
+                class="mb-2 block text-[13px] font-semibold text-neutral-900"
+                data-p-text="sec.label"
+              ></span>
+              <template data-p-for="row of sec.rows" data-p-key="row.name">
+                <div class="mb-1.5 flex items-center gap-2">
+                  <span
+                    class="h-4 w-4 shrink-0 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)]"
+                    data-p-show="row.isColor"
+                    data-p-style="background-color->row.value"
+                  ></span>
+                  <code
+                    class="w-20 shrink-0 truncate text-[11px] text-neutral-600"
+                    data-p-text="row.key"
+                    data-p-bind="title:row.name"
+                  ></code>
+                  <input
+                    class="h-8 w-full min-w-0 flex-1 rounded-xs border border-neutral-300 bg-white px-2 font-mono text-[11px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                    data-p-bind="value:row.value;data-name:row.name;aria-label:row.name"
+                    data-p-on="change:designUpdateToken"
+                  />
+                  <button
+                    type="button"
+                    class="h-6 w-6 shrink-0 cursor-pointer rounded-xs text-[13px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                    title="Remove token"
+                    data-p-bind="data-name:row.name"
+                    data-p-on="click:designRemoveToken"
+                  >
+                    ×
+                  </button>
+                </div>
+              </template>
+              <div class="mt-2 flex items-center gap-2" data-add>
+                <input
+                  class="h-8 w-20 shrink-0 rounded-xs border border-neutral-300 bg-white px-2 font-mono text-[11px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                  placeholder="key"
+                  aria-label="New token key"
+                />
+                <input
+                  class="h-8 w-full min-w-0 flex-1 rounded-xs border border-neutral-300 bg-white px-2 font-mono text-[11px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                  placeholder="value"
+                  aria-label="New token value"
+                />
+                <button
+                  type="button"
+                  class="h-8 shrink-0 cursor-pointer rounded-xs border border-neutral-300 px-2 text-[12px] font-semibold text-neutral-900 hover:border-neutral-400"
+                  data-p-bind="data-ns:sec.ns"
+                  data-p-on="click:designAddToken"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <div class="border-t border-neutral-200 py-4" data-import>
+            <span class="mb-2 block text-[13px] font-semibold text-neutral-900"
+              >Import Tailwind config</span
+            >
+            <p class="mb-2 text-[12px] text-neutral-500">
+              Paste CSS containing v4 <code>@theme</code> blocks — it becomes this site's theme. (v3
+              JS configs: run <code>npx @tailwindcss/upgrade</code> first.)
+            </p>
+            <textarea
+              class="h-24 w-full rounded-xs border border-neutral-300 bg-white p-2 font-mono text-[11px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+              placeholder="@theme { --text-xxxxl: 6rem; }"
+              aria-label="Theme CSS to import"
+            ></textarea>
+            <p
+              class="mt-1 text-[11px] text-red-600"
+              data-p-show="$designImportError"
+              data-p-text="$designImportError"
+            ></p>
+            <button
+              type="button"
+              class="mt-2 h-8 cursor-pointer rounded-xs bg-neutral-900 px-3 text-[12px] font-semibold text-white hover:bg-neutral-800"
+              data-p-on="click:designImport"
+            >
+              Import
+            </button>
+          </div>
+
+          <div class="border-t border-neutral-200 py-4">
+            <span class="mb-2 block text-[13px] font-semibold text-neutral-900">Export</span>
+            <pre
+              class="max-h-48 overflow-auto rounded-xs bg-neutral-50 p-2 font-mono text-[10px] leading-[1.5] text-neutral-700 select-all"
+              data-p-text="$designExport"
+            ></pre>
+          </div>
+
+          <!-- E5 (future): shown only when the engine implements
+             classesFromCss — paste CSS, get the equivalent utility classes. -->
+          <div
+            class="border-t border-neutral-200 py-4"
+            data-p-show="$cssImportShown"
+            data-css-import
+          >
+            <span class="mb-2 block text-[13px] font-semibold text-neutral-900">CSS → classes</span>
+            <textarea
+              class="h-20 w-full rounded-xs border border-neutral-300 bg-white p-2 font-mono text-[11px] text-neutral-900 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+              placeholder="p { font-size: 1.5rem }"
+              aria-label="CSS to convert"
+            ></textarea>
+            <button
+              type="button"
+              class="mt-2 h-8 cursor-pointer rounded-xs bg-neutral-900 px-3 text-[12px] font-semibold text-white hover:bg-neutral-800"
+              data-p-on="click:cssToClasses"
+            >
+              Convert
+            </button>
+            <code
+              class="mt-2 block text-[11px]"
+              data-p-show="$cssImportResult"
+              data-p-text="$cssImportResult"
+            ></code>
+          </div>
+        </div>
+      </aside>
+
+      <!-- HOST PANELS: extra right sidebars registered via options.panels
+         (e.g. a CMS's version history / publish rail). One <aside> per panel,
+         appended by shell.ts; visibility is toggled by the matching topbar
+         icon in #host-panel-toggles. -->
+      <div id="host-panels" class="flex shrink-0"></div>
+    </div>
+
+    <!-- Patterns explorer: the full-library dialog behind "Explore all
+       patterns" — search + category list left, a grid of live previews
+       right. Picking a pattern inserts it and closes the dialog. -->
+    <div
+      id="pattern-explorer"
+      class="fixed inset-0 z-50 flex hidden items-center justify-center bg-black/70 p-4"
+      data-p-show="$explorerOpen"
+      data-p-on="click:closePatternExplorer;keydown.escape:closePatternExplorer"
+    >
+      <div
+        class="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-[0_10px_40px_rgb(0_0_0/0.35)]"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Patterns"
+        data-p-on="click.stop:swallow"
+      >
+        <header class="flex shrink-0 items-center justify-between px-6 pt-5 pb-3">
+          <h2 class="text-lg font-semibold">Patterns</h2>
+          <button
+            type="button"
+            aria-label="Close patterns explorer"
+            class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+            data-p-on="click:closePatternExplorer"
+          >
+            <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+              <g
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </g>
+            </svg>
+          </button>
+        </header>
+        <div class="flex min-h-0 flex-1">
+          <div class="w-64 shrink-0 overflow-y-auto px-6 pb-6">
+            <input
+              id="explorer-search"
+              type="text"
+              placeholder="Search"
+              autocomplete="off"
+              aria-label="Search for patterns"
+              class="w-full rounded-xs border border-neutral-400 px-3 py-2.5 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-accent focus:shadow-[0_0_0_0.5px_var(--color-accent)] focus:outline-none"
+              data-p-model="$explorerQuery|trim"
+            />
+            <div class="mt-4 flex flex-col gap-0.5">
+              <template data-p-for="g of $explorerGroups" data-p-key="g.name">
+                <button
+                  type="button"
+                  class="block w-full cursor-pointer rounded-xs px-3 py-2 text-left text-[13px] font-medium focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                  data-p-class="g.selected->bg-ui-accent+text-accent-foreground~text-foreground+hover:bg-ui-accent"
+                  data-p-bind="data-group:g.name"
+                  data-p-on="click:setExplorerGroup"
+                >
+                  <span data-p-text="g.name"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto px-6 pb-8">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(420px,1fr))] gap-8">
+              <template data-p-for="p of $explorerItems" data-p-key="p.name">
+                <div class="explorer-card group self-start">
+                  <button
+                    type="button"
+                    class="group block w-full cursor-pointer text-left focus-visible:outline-none"
+                    data-p-bind="data-pattern:p.name;aria-label:p.label"
+                    data-p-on="click:explorerPick"
+                  >
+                    <span
+                      class="block w-full overflow-hidden rounded-xs border border-neutral-200 bg-white group-hover:border-accent group-focus-visible:border-accent"
+                      data-p-bind="data-pattern-preview:p.name"
+                    ></span>
+                  </button>
+                  <span class="mt-2 flex items-center justify-between">
+                    <span class="text-[13px] text-neutral-900" data-p-text="p.label"></span>
+                    <!-- tabindex=-1: one focus stop per card (see the flyout note) -->
+                    <button
+                      type="button"
+                      tabindex="-1"
+                      class="pattern-edit cursor-pointer rounded-xs px-1.5 py-0.5 text-[11px] font-medium text-neutral-500 hover:bg-neutral-100 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
+                      aria-label="Edit pattern in the library"
+                      data-p-bind="data-pattern:p.name"
+                      data-p-on="click:editDefinitionFromExplorer"
+                    >
+                      Edit
+                    </button>
+                  </span>
+                </div>
+              </template>
+            </div>
+            <p class="text-[13px] text-neutral-500" data-p-show="$explorerNoResults">
+              No patterns found.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

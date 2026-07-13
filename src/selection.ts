@@ -27,7 +27,7 @@
 // block extends from the caret's block. Keyboard multiselection
 // (Shift+arrows) is a later, deliberate feature.
 
-import { reactive } from "../vendor/publr/publr.js";
+import { reactive } from "./publr-runtime";
 import { EDITABLE_SELECTOR, RAW_TYPE } from "./carriers";
 import type { Block } from "./carriers";
 import { flattenBlocks, locateBlock, pathToBlock, siblingRun } from "./tree";

@@ -1,7 +1,9 @@
 // Core block library — one file per block, each exporting { type, definition }.
-// This module is deliberately NOT re-exported from src/index.ts: the editor
-// engine ships without an opinion about the block set; hosts (the demos, the
-// CMS) import this library and call registerCoreBlocks(), or cherry-pick.
+// registerCoreBlocks/registerCorePatterns are re-exported from src/index.ts so
+// the one-file library build is batteries-included (a CMS embedding the dist
+// bundle needs the block set inside the artifact), but registration stays the
+// host's explicit call: nothing registers as a side effect, and ESM consumers
+// can still cherry-pick.
 //
 // Even these "core" blocks go through the public registration API — there is
 // no privileged path: Publr core, plugins, and the devtools console all call

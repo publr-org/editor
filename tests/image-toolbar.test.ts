@@ -13,7 +13,7 @@ import {
   unregisterBlock,
   upcast,
 } from "../src/index";
-import type { BlockDefinition, Editor } from "../src/index";
+import type { BlockDefinition, Editor, InlineChromeOptions } from "../src/index";
 import { registerCoreBlocks } from "../src/blocks";
 
 beforeAll(() => registerCoreBlocks());
@@ -170,14 +170,14 @@ describe("chrome: the image floating toolbar", () => {
 
   const IMG = `<figure data-pb-block="image" data-pb-id="img1"><img data-pb-image="image" src="/a.jpg" alt=""><figcaption data-pb-rich="caption">A caption</figcaption></figure>`;
 
-  function setup(html: string) {
+  function setup(html: string, media?: InlineChromeOptions["media"]) {
     host = document.createElement("div");
     canvas = document.createElement("main");
     host.appendChild(canvas);
     document.body.appendChild(host);
     editor = createEditor({ canvas, defaultBlock: "paragraph", groupBlock: "group" });
     editor.loadHtml(html);
-    detach = attachInlineChrome(editor, { container: host });
+    detach = attachInlineChrome(editor, { container: host, media });
     return editor;
   }
   afterEach(() => {
@@ -231,6 +231,38 @@ describe("chrome: the image floating toolbar", () => {
     expect(panel.querySelector("a")?.getAttribute("href")).toBe("/a.jpg");
     panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(document.activeElement).toBe(byLabel("Replace"));
+  });
+
+  test("the Replace dropdown's Media Library entry browses with the CURRENT value", async () => {
+    const browse = vi.fn().mockResolvedValue({
+      src: "/cms/media/swap.png",
+      alt: "Swapped",
+      width: "10",
+      height: "20",
+    });
+    const upload = vi.fn().mockResolvedValue({ src: "/unused.png" });
+    setup(IMG, { browse, upload });
+    editor.selectBlock("img1");
+    await vi.waitFor(() => expect(byLabel("Replace")).toBeTruthy());
+    byLabel("Replace")!.click();
+    const panel = host.querySelector<HTMLElement>(".pbe-replace")!;
+    // adapter affordances render alongside the built-ins, library first
+    const items = [...panel.querySelectorAll("button, label")].map((b) => b.textContent!.trim());
+    expect(items[0]).toBe("Media Library");
+    expect(panel.textContent).toContain("Upload");
+    panel.querySelector<HTMLButtonElement>(".pbe-replace-browse")!.click();
+    expect(panel.hidden).toBe(true); // panel closes on pick
+    await vi.waitFor(() =>
+      expect(browse).toHaveBeenCalledWith({ src: "/a.jpg", alt: "", width: "", height: "" }),
+    );
+    await vi.waitFor(() =>
+      expect(editor.getBlock("img1")!.fields.image).toEqual({
+        src: "/cms/media/swap.png",
+        alt: "Swapped",
+        width: "10",
+        height: "20",
+      }),
+    );
   });
 
   test("Escape closes the shared link popover and returns focus to its trigger", async () => {

@@ -11,6 +11,10 @@ declare module "*.css?raw" {
   const text: string;
   export default text;
 }
+declare module "*.html?raw" {
+  const text: string;
+  export default text;
+}
 
 // URL asset imports (vite ?url) — the vendored JIT wasm engine, fetched by the
 // css-engine worker. Bundler rewrites this to the emitted asset URL.

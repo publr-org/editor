@@ -361,12 +361,26 @@ export function createEditor({
     if (event.button !== 0 || !patternsOpaque) return;
     const el = event.target instanceof Element ? event.target.closest("[data-pb-id]") : null;
     const path = el ? pathToBlock(model.blocks, el.getAttribute("data-pb-id")!) : null;
-    const root = path?.find(isInstanceRoot);
-    if (!root) return;
+    if (!path) return;
+    const rootIdx = path.findIndex(isInstanceRoot);
+    if (rootIdx === -1) return;
+    // Clicking INSIDE an editable unit needs no affordance — the click already
+    // lands where editing happens. Flash only for clicks on the opaque rest.
+    if (path.slice(rootIdx + 1).some(isPatternContentBlock)) return;
+    const root = path[rootIdx];
     // DETACHED veils, not classes on the units: any style set on the unit
     // itself (position, ::after) can fight its own layout classes — a
-    // fixed-position sibling in the body can't perturb anything.
-    for (const el of document.querySelectorAll(".pbe-flash-veil")) el.remove(); // rapid re-clicks
+    // fixed-position sibling in the body can't perturb anything. They live in
+    // a clip box sized to the canvas so partially off-screen units never
+    // bleed over the sidebars.
+    for (const el of document.querySelectorAll(".pbe-flash-clip")) el.remove(); // rapid re-clicks
+    const cr = canvas.getBoundingClientRect();
+    const clip = document.createElement("div");
+    clip.className = "pbe-flash-clip";
+    clip.style.left = `${cr.left}px`;
+    clip.style.top = `${cr.top}px`;
+    clip.style.width = `${cr.width}px`;
+    clip.style.height = `${cr.height}px`;
     for (const b of patternContentBlocks(root)) {
       const unit = canvas.querySelector<HTMLElement>(`[data-pb-id="${CSS.escape(b.id)}"]`);
       if (!unit) continue;
@@ -374,13 +388,21 @@ export function createEditor({
       if (!r.width || !r.height) continue;
       const veil = document.createElement("div");
       veil.className = "pbe-flash-veil";
-      veil.style.left = `${r.left - 3}px`;
-      veil.style.top = `${r.top - 3}px`;
+      veil.style.left = `${r.left - cr.left - 3}px`;
+      veil.style.top = `${r.top - cr.top - 3}px`;
       veil.style.width = `${r.width + 6}px`;
       veil.style.height = `${r.height + 6}px`;
-      document.body.appendChild(veil);
-      veil.addEventListener("animationend", () => veil.remove(), { once: true });
+      clip.appendChild(veil);
+      veil.addEventListener(
+        "animationend",
+        () => {
+          veil.remove();
+          if (!clip.childElementCount) clip.remove();
+        },
+        { once: true },
+      );
     }
+    if (clip.childElementCount) document.body.appendChild(clip);
   }
   canvas.addEventListener("mousedown", onPatternFlash);
 
@@ -621,13 +643,27 @@ export function createEditor({
     ];
   }
 
+  // Vertical-only scroll: scrollIntoView has no "leave horizontal alone"
+  // option, and its inline panning strands a wide canvas sideways with no
+  // gesture to bring it back. Snapshot every ancestor's scrollLeft, let the
+  // browser do the (instant) scroll, then put the horizontal axis back.
+  function scrollBlockIntoView(el: Element, block: ScrollLogicalPosition = "nearest") {
+    const saved: Array<[Element, number]> = [];
+    for (let n = el.parentElement; n; n = n.parentElement) saved.push([n, n.scrollLeft]);
+    const x = window.scrollX;
+    el.scrollIntoView({ block, inline: "nearest" });
+    for (const [n, left] of saved) if (n.scrollLeft !== left) n.scrollLeft = left;
+    if (window.scrollX !== x) window.scrollTo(x, window.scrollY);
+  }
+
   // Where a fresh insert lands (call after renderCanvas): a CONTAINER selects
   // as a whole block — the user just placed a structure, and a caret in its
   // first text field misreads the intent (same rule as
   // selectBlock). Leaf blocks still take the caret.
   function landOnInserted(block: Block) {
     if (block.children) {
-      rootOf(block.id)?.scrollIntoView({ block: "nearest" });
+      const r = rootOf(block.id);
+      if (r) scrollBlockIntoView(r);
       blockSel.select(block.id);
     } else {
       focusEdge(block.id, "start");
@@ -639,7 +675,8 @@ export function createEditor({
   // definition (a single root is necessarily a container; multiple roots
   // select as a run).
   function landOnStamp(stamped: Block[]) {
-    rootOf(stamped[0].id)?.scrollIntoView({ block: "nearest" });
+    const stampRoot = rootOf(stamped[0].id);
+    if (stampRoot) scrollBlockIntoView(stampRoot);
     if (stamped.length > 1) blockSel.range(stamped[0].id, stamped[stamped.length - 1].id);
     else blockSel.select(stamped[0].id);
     ensureCanvasFocus();
@@ -1360,11 +1397,11 @@ export function createEditor({
       canvas.classList.toggle("pbe-patterns-opaque", on);
     },
 
-    selectBlock(id: string, opts: { toggle?: boolean; range?: boolean } = {}) {
+    selectBlock(id: string, opts: { toggle?: boolean; range?: boolean; center?: boolean } = {}) {
       const block = findBlock(id);
       const root = rootOf(id);
       if (!block || !root) return;
-      root.scrollIntoView({ block: "nearest" });
+      scrollBlockIntoView(root, opts.center ? "center" : "nearest");
       if (opts.toggle) {
         blockSel.toggle(id);
         return;
@@ -1669,7 +1706,8 @@ export function createEditor({
         { label: `set children of ${id} (${children.length} blocks)` },
       );
       renderCanvas();
-      rootOf(id)?.scrollIntoView({ block: "nearest" });
+      const newRoot = rootOf(id);
+      if (newRoot) scrollBlockIntoView(newRoot);
       blockSel.select(id);
       ensureCanvasFocus();
       return block;
