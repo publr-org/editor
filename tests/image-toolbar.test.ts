@@ -265,6 +265,26 @@ describe("chrome: the image floating toolbar", () => {
     );
   });
 
+  test("a Replace-menu upload on a filled image floats a busy pill over the block", async () => {
+    let resolveUpload!: (v: { src: string; width: string; height: string }) => void;
+    const upload = vi.fn().mockReturnValue(new Promise((r) => (resolveUpload = r)));
+    setup(IMG, { upload });
+    editor.selectBlock("img1");
+    await vi.waitFor(() => expect(byLabel("Replace")).toBeTruthy());
+    byLabel("Replace")!.click();
+    const fileInput = host.querySelector<HTMLInputElement>(".pbe-replace input[type=file]")!;
+    const dt = new DataTransfer();
+    dt.items.add(new File(["x"], "swap.png", { type: "image/png" }));
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    // no placeholder card on a filled field — the floating pill is the feedback
+    await vi.waitFor(() => expect(host.querySelector(".pbe-media-busy")).toBeTruthy());
+    expect(host.querySelector(".pbe-media-busy")!.textContent).toContain("Uploading…");
+    resolveUpload({ src: "/cms/media/swap.png", width: "5", height: "5" });
+    await vi.waitFor(() => expect(host.querySelector(".pbe-media-busy")).toBeNull());
+    expect(editor.getBlock("img1")!.fields.image).toMatchObject({ src: "/cms/media/swap.png" });
+  });
+
   test("Escape closes the shared link popover and returns focus to its trigger", async () => {
     setup(IMG);
     editor.selectBlock("img1");

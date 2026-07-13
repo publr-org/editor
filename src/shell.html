@@ -1069,6 +1069,34 @@
                         class="mb-2 block text-[13px] font-medium text-neutral-700"
                         data-p-text="row.label"
                       ></span>
+                      <div
+                        class="mb-2 flex items-center gap-2 rounded-xs border border-neutral-200 px-3 py-2.5 text-[13px] font-medium text-neutral-500"
+                        role="status"
+                        data-p-show="row.mediaBusy"
+                      >
+                        <svg
+                          class="h-4 w-4 animate-spin"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <circle
+                            cx="12"
+                            cy="12"
+                            r="9"
+                            stroke="currentColor"
+                            stroke-opacity="0.25"
+                            stroke-width="2.5"
+                          />
+                          <path
+                            d="M21 12a9 9 0 0 0-9-9"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                        <span data-p-text="row.mediaBusyLabel"></span>
+                      </div>
                       <label
                         class="mb-2 flex w-full cursor-pointer items-center justify-center rounded-xs border border-neutral-300 px-3 py-2.5 text-[13px] font-medium text-neutral-900 hover:border-neutral-400"
                         data-p-show="row.showAdd"
@@ -1096,7 +1124,7 @@
                           class="mb-2 max-h-32 w-full rounded-xs bg-neutral-100 object-contain"
                           data-p-bind="src:row.mediaSrc"
                         />
-                        <div class="mb-2 flex items-center gap-1.5">
+                        <div class="mb-2 flex items-center gap-1.5" data-p-show="row.mediaIdle">
                           <label
                             class="inline-flex h-10 cursor-pointer items-center rounded-xs border border-neutral-300 px-3 text-[13px] font-medium hover:border-neutral-400"
                             data-p-show="row.canUpload"

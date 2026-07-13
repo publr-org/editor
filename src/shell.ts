@@ -595,6 +595,9 @@ Publr.store("chrome", () => {
     blockHasStyles: false,
     settingSectionOpen: {} as Record<string, boolean>,
     settingErrors: {} as Record<string, string>,
+    // media rows with an adapter upload/browse in flight (key = row key,
+    // value = spinner label) — the row swaps its actions for a spinner
+    mediaBusy: {} as Record<string, string>,
     styleHasValues: false,
     styleOptionalOpen: false,
     styleOptional: {} as Record<string, boolean>,
@@ -1145,11 +1148,20 @@ Publr.store("chrome", () => {
           mediaSrc: media?.src ?? "",
           mediaAlt: media?.alt ?? "",
           hasMedia: !!media?.src,
-          showAdd: !media?.src && mediaAdapter.uploadAvailable(),
+          // While an upload/browse is in flight the action affordances swap
+          // for the mediaBusy spinner row — hence the !busy gates below.
+          mediaBusy: !!state.mediaBusy[`${block.id}:${index}`],
+          mediaBusyLabel: state.mediaBusy[`${block.id}:${index}`] ?? "",
+          mediaIdle: !state.mediaBusy[`${block.id}:${index}`],
+          showAdd:
+            !media?.src &&
+            mediaAdapter.uploadAvailable() &&
+            !state.mediaBusy[`${block.id}:${index}`],
           addLabel: `Add ${s.label.toLowerCase()}`,
-          canUpload: mediaAdapter.uploadAvailable(),
-          showBrowse: !!mediaAdapter.browse,
-          showBrowseEmpty: !media?.src && !!mediaAdapter.browse,
+          canUpload: mediaAdapter.uploadAvailable() && !state.mediaBusy[`${block.id}:${index}`],
+          showBrowse: !!mediaAdapter.browse && !state.mediaBusy[`${block.id}:${index}`],
+          showBrowseEmpty:
+            !media?.src && !!mediaAdapter.browse && !state.mediaBusy[`${block.id}:${index}`],
           section: roleLabel[role],
           sectionRole: role,
           sectionKey: `${block.id}:${role}`,
@@ -2219,7 +2231,11 @@ Publr.store("chrome", () => {
         const file = input.files?.[0];
         input.value = ""; // same-file re-selects must fire change again
         if (!d.id || !d.field || !file || !mediaAdapter.upload) return;
-        if (d.key) delete state.settingErrors[d.key];
+        if (d.key) {
+          delete state.settingErrors[d.key];
+          state.mediaBusy[d.key] = "Uploading…"; // row swaps to the spinner
+          syncBlockPanel();
+        }
         const cur = imageValue(d.id, d.field);
         try {
           const value = await mediaAdapter.upload(file);
@@ -2227,12 +2243,20 @@ Publr.store("chrome", () => {
         } catch (err) {
           console.error("[publr-editor] media upload failed:", err);
           if (d.key) state.settingErrors[d.key] = "Upload failed.";
+        } finally {
+          if (d.key) delete state.mediaBusy[d.key];
           syncBlockPanel();
         }
       },
       async browseMedia(d: Dataset) {
         if (!d.id || !d.field || !mediaAdapter.browse) return;
-        if (d.key) delete state.settingErrors[d.key];
+        if (d.key) {
+          delete state.settingErrors[d.key];
+          // guard against double-opens; the host's library UI is the main
+          // feedback while browse is pending
+          state.mediaBusy[d.key] = "Media library open…";
+          syncBlockPanel();
+        }
         const cur = imageValue(d.id, d.field);
         try {
           const picked = await mediaAdapter.browse(cur.src ? { ...cur } : undefined);
@@ -2241,6 +2265,8 @@ Publr.store("chrome", () => {
         } catch (err) {
           console.error("[publr-editor] media browse failed:", err);
           if (d.key) state.settingErrors[d.key] = "Couldn't get media from the library.";
+        } finally {
+          if (d.key) delete state.mediaBusy[d.key];
           syncBlockPanel();
         }
       },

@@ -203,6 +203,22 @@ describe("media adapter (host upload/browse seam)", () => {
     expect(card()!.querySelector(".pbe-mph-url-btn")).not.toBeNull();
   });
 
+  test("the card shows a spinner row while an upload is in flight", async () => {
+    let resolveUpload!: (v: { src: string; width: number; height: number }) => void;
+    const upload = vi.fn().mockReturnValue(new Promise((r) => (resolveUpload = r)));
+    setup(EMPTY_IMAGE, { upload });
+    pickFile(
+      card()!.querySelector<HTMLInputElement>("input[type=file]")!,
+      new File(["x"], "a.png", { type: "image/png" }),
+    );
+    await vi.waitFor(() => expect(card()!.getAttribute("aria-busy")).toBe("true"));
+    const busy = card()!.querySelector<HTMLElement>(".pbe-mph-busy")!;
+    expect(busy.hidden).toBe(false);
+    expect(busy.textContent).toContain("Uploading…");
+    resolveUpload({ src: "/cms/media/slow.png", width: 8, height: 6 });
+    await vi.waitFor(() => expect(card()).toBeNull()); // resolved → field set → card gone
+  });
+
   test("a failed upload surfaces on the card and leaves the field untouched", async () => {
     const upload = vi.fn().mockRejectedValue(new Error("boom"));
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});

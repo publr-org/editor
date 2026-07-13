@@ -137,7 +137,12 @@ function demoMediaAdapter(): PublrEditor.MediaAdapter {
     sample("Dune", "#b45309", 640, 800),
   ];
   return {
-    upload: async (file) => ({ src: URL.createObjectURL(file) }),
+    // Simulated latency so the busy states are visible (a real backend
+    // upload takes a moment; instant resolution would hide the spinner).
+    upload: async (file) => {
+      await new Promise((r) => setTimeout(r, 800));
+      return { src: URL.createObjectURL(file) };
+    },
     browse: (current) =>
       new Promise((resolve) => {
         const overlay = document.createElement("div");

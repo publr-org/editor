@@ -1722,16 +1722,53 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       (el) => el.closest("[data-pb-block]")?.getAttribute("data-pb-id") === id,
     ) ?? null;
 
-  function setCardBusy(id: string, busy: boolean) {
+  // Visible in-flight feedback for adapter work (uploads can take a moment
+  // against a real backend). The placeholder card shows a spinner row and
+  // goes inert (aria-busy — chrome.css dims it); work on a filled field has
+  // no card, so a floating spinner pill parks over the block instead.
+  const SPINNER_SVG = `<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.25" stroke-width="2.5"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+
+  const busyPills = new Map<string, HTMLElement>();
+
+  /** Show busy feedback for block `id`; returns the cleanup. `label` null =
+   * inert guard only (browse — the host's own UI is the feedback). */
+  function beginMediaBusy(id: string, label: string | null): () => void {
     const card = cardOf(id);
-    if (!card) return;
-    if (busy) {
+    if (card) {
       card.setAttribute("aria-busy", "true");
       const err = card.querySelector<HTMLElement>(".pbe-mph-error");
       if (err) err.hidden = true; // a new attempt clears the previous failure
-    } else {
-      card.removeAttribute("aria-busy");
+      const busy = card.querySelector<HTMLElement>(".pbe-mph-busy");
+      if (busy && label) {
+        busy.querySelector("span")!.textContent = label;
+        busy.hidden = false;
+      }
+      return () => {
+        card.removeAttribute("aria-busy");
+        if (busy) busy.hidden = true;
+      };
     }
+    const root = rootOf(id);
+    if (!label || !root || busyPills.has(id)) return () => {};
+    const pill = mount(
+      h(
+        "div",
+        "pbe-ui pbe-media-busy absolute z-40 flex items-center gap-2 rounded-full border border-border bg-popover px-3 py-1.5 text-sm font-medium text-popover-foreground shadow-lg",
+      ),
+    );
+    pill.setAttribute("role", "status");
+    pill.innerHTML = `${SPINNER_SVG}<span>${label}</span>`;
+    const rect = root.getBoundingClientRect();
+    park(
+      pill,
+      rect.top + rect.height / 2 - pill.offsetHeight / 2,
+      rect.left + rect.width / 2 - pill.offsetWidth / 2,
+    );
+    busyPills.set(id, pill);
+    return () => {
+      pill.remove();
+      busyPills.delete(id);
+    };
   }
 
   function setCardError(id: string, message: string) {
@@ -1749,7 +1786,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   async function uploadTo(id: string, field: string, file: File) {
     if (!mediaAdapter.upload) return;
     const prevAlt = prevAltOf(id, field);
-    setCardBusy(id, true);
+    const done = beginMediaBusy(id, "Uploading…");
     try {
       const value = await mediaAdapter.upload(file);
       editor.setField(id, field, await toImageValue(value, { file, prevAlt }));
@@ -1757,7 +1794,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       console.error("[publr-editor] media upload failed:", err);
       setCardError(id, "Upload failed.");
     } finally {
-      setCardBusy(id, false);
+      done();
     }
   }
 
@@ -1766,7 +1803,9 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     const cur = editor.getBlock(id)?.fields[field];
     const current =
       typeof cur === "object" && cur !== null && cur.src !== "" ? { ...cur } : undefined;
-    setCardBusy(id, true);
+    // No spinner label: the host's own library UI is the visible feedback
+    // while browse is pending; the card just goes inert against double-opens.
+    const done = beginMediaBusy(id, null);
     try {
       const picked = await mediaAdapter.browse(current);
       if (picked) editor.setField(id, field, await toImageValue(picked, { prevAlt: current?.alt }));
@@ -1774,7 +1813,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       console.error("[publr-editor] media browse failed:", err);
       setCardError(id, "Couldn't get media from the library.");
     } finally {
-      setCardBusy(id, false);
+      done();
     }
   }
 
@@ -1799,6 +1838,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       `<input type="text" placeholder="Paste or type URL" class="h-10 w-full max-w-96 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25">` +
       `<button type="submit" class="h-10 min-w-10 cursor-pointer rounded-md px-2 text-sm font-semibold hover:bg-ui-accent" aria-label="Apply">↵</button>` +
       `</form>` +
+      `<div class="pbe-mph-busy mt-3 flex items-center gap-2 text-sm font-medium text-muted-foreground" role="status" hidden>${SPINNER_SVG}<span>Uploading…</span></div>` +
       `<p class="pbe-mph-error mt-2 mb-0 text-sm text-red-600" role="alert" hidden></p>`;
 
     // The card is interactive chrome inside the contenteditable canvas:
@@ -1892,6 +1932,8 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   });
   disposers.push(() => {
     for (const el of canvas.querySelectorAll(".pbe-media-ph")) el.remove();
+    for (const pill of busyPills.values()) pill.remove();
+    busyPills.clear();
   });
 
   // Click anywhere outside an open panel dismisses it.
