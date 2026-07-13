@@ -203,6 +203,18 @@ describe("media adapter (host upload/browse seam)", () => {
     expect(card()!.querySelector(".pbe-mph-url-btn")).not.toBeNull();
   });
 
+  test("hidden card rows are really display:none without any host preflight", () => {
+    // This vitest page ships no preflight [hidden] rule — like a CMS admin
+    // page. The chrome must hide its own rows (flex class + hidden attr).
+    setup(EMPTY_IMAGE, { upload: vi.fn(), browse: vi.fn() });
+    const urlRow = card()!.querySelector<HTMLElement>(".pbe-mph-url-row")!;
+    const busyRow = card()!.querySelector<HTMLElement>(".pbe-mph-busy")!;
+    expect(getComputedStyle(urlRow).display).toBe("none");
+    expect(getComputedStyle(busyRow).display).toBe("none");
+    card()!.querySelector<HTMLButtonElement>(".pbe-mph-url-btn")!.click();
+    expect(getComputedStyle(urlRow).display).not.toBe("none");
+  });
+
   test("the card shows a spinner row while an upload is in flight", async () => {
     let resolveUpload!: (v: { src: string; width: number; height: number }) => void;
     const upload = vi.fn().mockReturnValue(new Promise((r) => (resolveUpload = r)));

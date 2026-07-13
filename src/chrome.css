@@ -73,9 +73,13 @@
 /* --- floating-UI plumbing ----------------------------------------------------
    Chrome roots carry Tailwind display classes (flex/grid); the [hidden]
    attribute is the open/closed switch and must win. Unlayered on purpose:
-   author CSS outside a layer beats the layered utilities. */
+   author CSS outside a layer beats the layered utilities. The descendant
+   variant covers rows INSIDE chrome (the media card's URL/busy rows) — hosts
+   without a preflight have no [hidden] rule of their own, so the library
+   must not rely on one. */
 
-.pbe-ui[hidden] {
+.pbe-ui[hidden],
+.pbe-ui [hidden] {
   display: none !important;
 }
 
