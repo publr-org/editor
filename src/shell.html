@@ -37,7 +37,7 @@
             class="h-6 w-6 fill-current"
             viewBox="0 0 24 24"
             aria-hidden="true"
-            data-p-show="not:inserterOpen"
+            data-p-show="not $inserterOpen"
           >
             <g
               fill="none"
@@ -73,7 +73,7 @@
           title="Undo (⌘Z)"
           aria-label="Undo"
           class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-          data-p-bind="disabled:not:history.canUndo"
+          data-p-bind="disabled:not $history.canUndo"
           data-p-on="mousedown.prevent:swallow;click:undo"
         >
           <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
@@ -94,7 +94,7 @@
           title="Redo (⇧⌘Z)"
           aria-label="Redo"
           class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-          data-p-bind="disabled:not:history.canRedo"
+          data-p-bind="disabled:not $history.canRedo"
           data-p-on="mousedown.prevent:swallow;click:redo"
         >
           <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
@@ -204,7 +204,7 @@
               data-publr-part="item"
               role="menuitem"
               class="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-[7px] text-left text-sm font-medium text-zinc-900 hover:bg-canvas-accent hover:text-white focus-visible:bg-canvas-accent focus-visible:text-white focus-visible:outline-none"
-              data-p-text="$outputShown->'Hide wire output'~'Show wire output'"
+              data-p-text="$outputShown -> 'Hide wire output' ~ 'Show wire output'"
               data-p-on="click:toggleOutput"
             ></button>
             <button
@@ -256,7 +256,7 @@
         <span class="hidden text-neutral-500 sm:inline" data-p-show="$templateIsInstance"
           >— changes apply only to this copy</span
         >
-        <span class="hidden text-neutral-500 sm:inline" data-p-show="not:templateIsInstance"
+        <span class="hidden text-neutral-500 sm:inline" data-p-show="not $templateIsInstance"
           >— publishing updates the library design; placed copies never change</span
         >
         <span
@@ -280,7 +280,7 @@
           id="template-save"
           class="cursor-pointer rounded-xs bg-accent px-4 py-1.5 text-[13px] font-medium text-white hover:bg-accent-hover focus-visible:shadow-[0_0_0_1.5px_#fff,0_0_0_3px_var(--color-accent)] focus-visible:outline-none"
           data-p-on="mousedown.prevent:swallow;click:saveTemplate"
-          data-p-text="$templateIsInstance->'Apply to this copy'~'Publish pattern'"
+          data-p-text="$templateIsInstance -> 'Apply to this copy' ~ 'Publish pattern'"
         ></button>
       </div>
     </div>
@@ -303,7 +303,7 @@
               role="tab"
               data-ttab="list"
               class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-              data-p-bind="aria-selected:treeTab|eq|list"
+              data-p-bind="aria-selected:$treeTab == list"
               data-p-on="click:setTreeTab"
             >
               List View
@@ -313,7 +313,7 @@
               role="tab"
               data-ttab="outline"
               class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-              data-p-bind="aria-selected:treeTab|eq|outline"
+              data-p-bind="aria-selected:$treeTab == outline"
               data-p-on="click:setTreeTab"
             >
               Outline
@@ -340,19 +340,19 @@
             </svg>
           </button>
         </div>
-        <div id="tpanel-list" class="flex-1 overflow-y-auto p-2" data-p-show="treeTab|eq|list">
+        <div id="tpanel-list" class="flex-1 overflow-y-auto p-2" data-p-show="$treeTab == list">
           <div id="tree-rows">
             <template data-p-for="row of $treeRows" data-p-key="row.id">
               <div
                 class="flex items-center rounded-sm"
                 data-p-style="padding-left->row.pad"
-                data-p-class="row.selected->bg-ui-accent+text-accent-foreground~hover:bg-ui-accent"
+                data-p-class="row.selected -> bg-ui-accent text-accent-foreground ~ hover:bg-ui-accent"
               >
                 <button
                   type="button"
                   aria-label="Toggle children"
                   class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center"
-                  data-p-class="not:row.hasChildren->invisible"
+                  data-p-class="not row.hasChildren -> invisible"
                   data-p-bind="data-id:row.id"
                   data-p-on="mousedown.prevent:swallow;click.stop:treeToggle"
                 >
@@ -360,7 +360,7 @@
                     class="h-3 w-3 fill-current transition-transform"
                     viewBox="0 0 12 12"
                     aria-hidden="true"
-                    data-p-class="row.expanded->rotate-90"
+                    data-p-class="row.expanded -> rotate-90"
                   >
                     <path
                       d="M4.25 2.5L8 6 4.25 9.5"
@@ -394,7 +394,7 @@
                     </svg>
                     <span
                       class="text-[13px] font-bold"
-                      data-p-show="not:row.icon"
+                      data-p-show="not row.icon"
                       data-p-text="row.letter"
                     ></span>
                   </span>
@@ -408,7 +408,7 @@
         <div
           id="tpanel-outline"
           class="hidden flex-1 overflow-y-auto"
-          data-p-show="treeTab|eq|outline"
+          data-p-show="$treeTab == outline"
         >
           <dl
             class="grid grid-cols-[auto_1fr] gap-x-10 gap-y-2.5 border-b border-neutral-200 px-4 py-4"
@@ -436,13 +436,13 @@
                    (CSS order, not class order, decides ties) -->
                 <span
                   class="mr-2 ml-1 shrink-0 self-start rounded-sm bg-neutral-200 px-1.5 py-0.5 text-[13px] font-semibold"
-                  data-p-class="h.flagged->bg-amber-300~bg-neutral-200"
+                  data-p-class="h.flagged -> bg-amber-300 ~ bg-neutral-200"
                   data-p-text="h.level"
                 ></span>
                 <span class="min-w-0 py-0.5">
                   <span
                     class="block truncate"
-                    data-p-class="h.empty->italic+text-neutral-600"
+                    data-p-class="h.empty -> italic text-neutral-600"
                     data-p-text="h.text"
                   ></span>
                   <span
@@ -476,7 +476,7 @@
               role="tab"
               data-itab="blocks"
               class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-              data-p-bind="aria-selected:inserterTab|eq|blocks"
+              data-p-bind="aria-selected:$inserterTab == blocks"
               data-p-on="click:setInserterTab"
             >
               Blocks
@@ -486,7 +486,7 @@
               role="tab"
               data-itab="patterns"
               class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-              data-p-bind="aria-selected:inserterTab|eq|patterns"
+              data-p-bind="aria-selected:$inserterTab == patterns"
               data-p-on="click:setInserterTab"
             >
               Patterns
@@ -496,7 +496,7 @@
               role="tab"
               data-itab="media"
               class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-              data-p-bind="aria-selected:inserterTab|eq|media"
+              data-p-bind="aria-selected:$inserterTab == media"
               data-p-on="click:setInserterTab"
             >
               Media
@@ -526,7 +526,7 @@
         <div
           id="ipanel-blocks"
           class="flex-1 overflow-y-auto p-4"
-          data-p-show="inserterTab|eq|blocks"
+          data-p-show="$inserterTab == blocks"
         >
           <div class="relative mb-2">
             <svg
@@ -582,7 +582,7 @@
                         </svg>
                         <span
                           class="text-lg font-semibold"
-                          data-p-show="not:b.icon"
+                          data-p-show="not b.icon"
                           data-p-text="b.letter"
                         ></span>
                       </span>
@@ -600,7 +600,7 @@
         <div
           id="ipanel-patterns"
           class="hidden flex-1 flex-col overflow-y-auto p-4"
-          data-p-show="inserterTab|eq|patterns"
+          data-p-show="$inserterTab == patterns"
         >
           <div class="relative mb-4">
             <svg
@@ -637,7 +637,7 @@
               <button
                 type="button"
                 class="pattern-group-row flex w-full cursor-pointer items-center justify-between rounded-xs border px-4 py-3 text-left text-[13px] font-medium focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
-                data-p-class="g.selected->border-input+bg-ui-accent+text-accent-foreground~border-input+text-foreground+hover:bg-ui-accent"
+                data-p-class="g.selected -> border-input bg-ui-accent text-accent-foreground ~ border-input text-foreground hover:bg-ui-accent"
                 data-p-bind="data-group:g.name"
                 data-p-on="click:pickPatternGroup"
               >
@@ -646,7 +646,7 @@
                   class="h-4 w-4 fill-current"
                   viewBox="0 0 24 24"
                   aria-hidden="true"
-                  data-p-class="not:g.selected->invisible"
+                  data-p-class="not g.selected -> invisible"
                 >
                   <g
                     fill="none"
@@ -673,7 +673,7 @@
         <div
           id="ipanel-media"
           class="hidden flex-1 overflow-y-auto p-4"
-          data-p-show="inserterTab|eq|media"
+          data-p-show="$inserterTab == media"
         >
           <p class="text-neutral-500">Media arrives with a later step.</p>
         </div>
@@ -788,7 +788,7 @@
             role="tab"
             data-tab="document"
             class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-            data-p-bind="aria-selected:sidebarTab|eq|document"
+            data-p-bind="aria-selected:$sidebarTab == document"
             data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
           >
             Document
@@ -798,7 +798,7 @@
             role="tab"
             data-tab="block"
             class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-            data-p-bind="aria-selected:sidebarTab|eq|block"
+            data-p-bind="aria-selected:$sidebarTab == block"
             data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
           >
             Block
@@ -808,20 +808,20 @@
             role="tab"
             data-tab="design"
             class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-            data-p-bind="aria-selected:sidebarTab|eq|design"
+            data-p-bind="aria-selected:$sidebarTab == design"
             data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
           >
             Design
           </button>
         </div>
-        <div id="panel-document" class="p-4" role="tabpanel" data-p-show="sidebarTab|eq|document">
+        <div id="panel-document" class="p-4" role="tabpanel" data-p-show="$sidebarTab == document">
           <!-- document overview arrives with a later step -->
         </div>
-        <div id="panel-block" class="hidden p-4" role="tabpanel" data-p-show="sidebarTab|eq|block">
+        <div id="panel-block" class="hidden p-4" role="tabpanel" data-p-show="$sidebarTab == block">
           <p
             id="block-empty"
             class="m-0 text-neutral-500"
-            data-p-show="not:blockSelected"
+            data-p-show="not $blockSelected"
             data-p-text="$emptyNote"
           ></p>
           <div id="block-card" class="hidden" data-p-show="$blockSelected">
@@ -837,7 +837,7 @@
                 </svg>
                 <span
                   class="text-[15px] font-bold"
-                  data-p-show="not:blockIcon"
+                  data-p-show="not $blockIcon"
                   data-p-text="$blockLetter"
                 ></span>
               </span>
@@ -866,14 +866,14 @@
               class="mt-5 flex border-b border-neutral-200"
               role="tablist"
               aria-label="Block inspector"
-              data-p-show="not:blockIsPattern"
+              data-p-show="not $blockIsPattern"
             >
               <button
                 type="button"
                 role="tab"
                 data-itab="settings"
                 class="relative h-10 flex-1 cursor-pointer text-[13px] font-medium aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
-                data-p-bind="aria-selected:blockInspectorTab|eq|settings"
+                data-p-bind="aria-selected:$blockInspectorTab == settings"
                 data-p-on="mousedown.prevent:swallow;click:setBlockInspectorTab"
               >
                 Settings
@@ -884,7 +884,7 @@
                 data-itab="styles"
                 class="relative hidden h-10 flex-1 cursor-pointer text-[13px] font-medium aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
                 data-p-show="$blockHasStyles"
-                data-p-bind="aria-selected:blockInspectorTab|eq|styles;disabled:not:blockHasStyles"
+                data-p-bind="aria-selected:$blockInspectorTab == styles;disabled:not $blockHasStyles"
                 data-p-on="mousedown.prevent:swallow;click:setBlockInspectorTab"
               >
                 Styles
@@ -917,7 +917,7 @@
                   <button
                     type="button"
                     class="flex w-full cursor-pointer items-center gap-2 rounded-xs px-1 py-2 text-left text-[13px] focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
-                    data-p-class="row.selected->bg-ui-accent+text-accent-foreground~hover:bg-ui-accent"
+                    data-p-class="row.selected -> bg-ui-accent text-accent-foreground ~ hover:bg-ui-accent"
                     data-p-bind="data-id:row.id"
                     data-p-on="mousedown.prevent:swallow;click:selectPatternChild"
                   >
@@ -932,14 +932,14 @@
                       </svg>
                       <span
                         class="text-[13px] font-bold"
-                        data-p-show="not:row.icon"
+                        data-p-show="not row.icon"
                         data-p-text="row.letter"
                       ></span>
                     </span>
                     <span class="shrink-0 font-medium" data-p-text="row.label"></span>
                     <span
                       class="truncate"
-                      data-p-class="row.selected->text-muted-foreground~text-muted-foreground"
+                      data-p-class="row.selected -> text-muted-foreground ~ text-muted-foreground"
                       data-p-text="row.anchor"
                     ></span>
                   </button>
@@ -951,7 +951,7 @@
                switched on the row's precomputed isChoice/isToggle/… flags.
                Every control writes through a dataset-routed action: the
                dataset carries primitive + target. -->
-            <div id="block-settings" class="hidden" data-p-show="blockInspectorTab|eq|settings">
+            <div id="block-settings" class="hidden" data-p-show="$blockInspectorTab == settings">
               <template data-p-for="row of $blockSettings" data-p-key="row.key">
                 <div class="mt-5" role="group" data-p-bind="aria-label:row.label">
                   <div
@@ -995,7 +995,7 @@
                           >
                             <use data-p-bind="href:opt.icon" />
                           </svg>
-                          <span data-p-show="not:opt.icon" data-p-text="opt.label"></span>
+                          <span data-p-show="not opt.icon" data-p-text="opt.label"></span>
                         </button>
                       </template>
                     </div>
@@ -1187,14 +1187,14 @@
               </template>
             </div>
 
-            <div id="block-styles" class="hidden" data-p-show="blockInspectorTab|eq|styles">
+            <div id="block-styles" class="hidden" data-p-show="$blockInspectorTab == styles">
               <div class="flex h-11 items-center justify-between border-b border-neutral-200">
                 <span class="text-[13px] font-semibold text-neutral-900">Block styles</span>
                 <div class="relative flex items-center gap-3">
                   <button
                     type="button"
                     class="cursor-pointer text-[12px] font-medium text-neutral-500 hover:text-neutral-900 disabled:cursor-default disabled:opacity-30"
-                    data-p-bind="disabled:not:styleHasValues"
+                    data-p-bind="disabled:not $styleHasValues"
                     data-p-on="mousedown.prevent:swallow;click:resetBlockStyles"
                   >
                     Reset all
@@ -1203,7 +1203,7 @@
                     type="button"
                     class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xs text-xl hover:bg-neutral-100"
                     aria-label="Style options"
-                    data-p-bind="aria-expanded:styleOptionalOpen;disabled:not:optionalStyleControls.length"
+                    data-p-bind="aria-expanded:styleOptionalOpen;disabled:not $optionalStyleControls.length"
                     data-p-on="mousedown.prevent:swallow;click:toggleStyleOptions"
                   >
                     ⋮
@@ -1326,7 +1326,7 @@
                   class="flex overflow-hidden rounded-xs border border-neutral-300"
                   role="group"
                   aria-label="Font size"
-                  data-p-show="not:fontSizeIsSelect"
+                  data-p-show="not $fontSizeIsSelect"
                 >
                   <template data-p-for="opt of $fontSizeOptions" data-p-key="opt.key">
                     <button
@@ -1473,7 +1473,7 @@
                       class="flex flex-wrap gap-2"
                       role="group"
                       data-p-bind="aria-label:row.label"
-                      data-p-show="not:row.grid"
+                      data-p-show="not row.grid"
                     >
                       <template data-p-for="sw of row.swatches" data-p-key="sw.key">
                         <button
@@ -1567,7 +1567,7 @@
                       data-position="Top"
                       aria-label="Edit margin top"
                       data-p-show="$boxMarginShown"
-                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Top;disabled:$styleDisabled"
+                      data-p-bind="aria-pressed:$boxActiveKey == margin-Top;disabled:$styleDisabled"
                       data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                       data-p-text="$boxMarginTop"
                     ></button>
@@ -1579,7 +1579,7 @@
                       data-position="Right"
                       aria-label="Edit margin right"
                       data-p-show="$boxMarginShown"
-                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Right;disabled:$styleDisabled"
+                      data-p-bind="aria-pressed:$boxActiveKey == margin-Right;disabled:$styleDisabled"
                       data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                       data-p-text="$boxMarginRight"
                     ></button>
@@ -1591,7 +1591,7 @@
                       data-position="Bottom"
                       aria-label="Edit margin bottom"
                       data-p-show="$boxMarginShown"
-                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Bottom;disabled:$styleDisabled"
+                      data-p-bind="aria-pressed:$boxActiveKey == margin-Bottom;disabled:$styleDisabled"
                       data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                       data-p-text="$boxMarginBottom"
                     ></button>
@@ -1603,7 +1603,7 @@
                       data-position="Left"
                       aria-label="Edit margin left"
                       data-p-show="$boxMarginShown"
-                      data-p-bind="aria-pressed:boxActiveKey|eq|margin-Left;disabled:$styleDisabled"
+                      data-p-bind="aria-pressed:$boxActiveKey == margin-Left;disabled:$styleDisabled"
                       data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                       data-p-text="$boxMarginLeft"
                     ></button>
@@ -1642,7 +1642,7 @@
                         data-position="Top"
                         aria-label="Edit padding top"
                         data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Top;disabled:$styleDisabled"
+                        data-p-bind="aria-pressed:$boxActiveKey == padding-Top;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                         data-p-text="$boxPaddingTop"
                       ></button>
@@ -1654,7 +1654,7 @@
                         data-position="Right"
                         aria-label="Edit padding right"
                         data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Right;disabled:$styleDisabled"
+                        data-p-bind="aria-pressed:$boxActiveKey == padding-Right;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                         data-p-text="$boxPaddingRight"
                       ></button>
@@ -1666,7 +1666,7 @@
                         data-position="Bottom"
                         aria-label="Edit padding bottom"
                         data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Bottom;disabled:$styleDisabled"
+                        data-p-bind="aria-pressed:$boxActiveKey == padding-Bottom;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                         data-p-text="$boxPaddingBottom"
                       ></button>
@@ -1678,7 +1678,7 @@
                         data-position="Left"
                         aria-label="Edit padding left"
                         data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:boxActiveKey|eq|padding-Left;disabled:$styleDisabled"
+                        data-p-bind="aria-pressed:$boxActiveKey == padding-Left;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                         data-p-text="$boxPaddingLeft"
                       ></button>
@@ -1936,7 +1936,7 @@
                     class="flex flex-wrap gap-2"
                     role="group"
                     aria-label="Border color"
-                    data-p-show="not:borderColorGrid"
+                    data-p-show="not $borderColorGrid"
                   >
                     <template data-p-for="sw of $borderColorSwatches" data-p-key="sw.key">
                       <button
@@ -2012,7 +2012,7 @@
           id="panel-design"
           class="hidden p-4"
           role="tabpanel"
-          data-p-show="sidebarTab|eq|design"
+          data-p-show="$sidebarTab == design"
         >
           <!-- Define… banner: landed here from an unresolved chip -->
           <div
@@ -2253,7 +2253,7 @@
                 <button
                   type="button"
                   class="block w-full cursor-pointer rounded-xs px-3 py-2 text-left text-[13px] font-medium focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none"
-                  data-p-class="g.selected->bg-ui-accent+text-accent-foreground~text-foreground+hover:bg-ui-accent"
+                  data-p-class="g.selected -> bg-ui-accent text-accent-foreground ~ text-foreground hover:bg-ui-accent"
                   data-p-bind="data-group:g.name"
                   data-p-on="click:setExplorerGroup"
                 >

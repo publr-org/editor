@@ -212,14 +212,14 @@ describe("downcast pipelines: editor vs data", () => {
   // must leave them alone.
   const SEED = `
     <h1 data-pb-block="heading" data-pb-tag="level" data-pb-text="text" class="text-5xl">Title</h1>
-    <p data-pb-block="paragraph" data-pb-rich="body">Rich <em data-p-text="state.count">inline</em></p>`;
+    <p data-pb-block="paragraph" data-pb-rich="body">Rich <em data-p-text="$count">inline</em></p>`;
 
   test("data pipeline strips data-pb-*; content, classes, and data-p-* survive", () => {
     const published = downcast(upcast(parse(SEED)), "data");
     expect(published).not.toContain("data-pb-");
     expect(published).toContain("<h1");
     expect(published).toContain('class="text-5xl"');
-    expect(published).toContain('<em data-p-text="state.count">inline</em>'); // runtime vocabulary is not ours to strip
+    expect(published).toContain('<em data-p-text="$count">inline</em>'); // runtime vocabulary is not ours to strip
   });
 
   test("editor pipeline is the default and keeps the full wire contract", () => {
@@ -235,14 +235,14 @@ describe("downcast pipelines: editor vs data", () => {
     const m = upcast(
       parse(
         `<div data-pb-block="hero" data-pb-text="title">Hi<script type="application/json" data-pb-settings>{"x":1}</` +
-          `script><span data-p-show="state.open">peek</span></div>`,
+          `script><span data-p-show="$open">peek</span></div>`,
       ),
     );
     expect(m.blocks[0].type).toBe(RAW_TYPE);
     const published = downcast(m, "data");
     expect(published).not.toContain("data-pb-");
     expect(published).not.toContain("application/json");
-    expect(published).toContain('<span data-p-show="state.open">peek</span>');
+    expect(published).toContain('<span data-p-show="$open">peek</span>');
   });
 
   test("data pipeline output re-upcasts as raw-html — degraded, never lost", () => {
@@ -260,7 +260,7 @@ describe("downcast pipelines: editor vs data", () => {
     expect(editor.serialize({ pipeline: "editor" })).toBe(editor.serialize());
     const published = editor.serialize({ pipeline: "data" });
     expect(published).not.toContain("data-pb-");
-    expect(published).toContain('<em data-p-text="state.count">inline</em>');
+    expect(published).toContain('<em data-p-text="$count">inline</em>');
     editor.destroy();
     canvas.remove();
   });

@@ -39,10 +39,11 @@ body {
    template classes render unstyled, bridge → compiled live. */
 @source not "../tests";
 
-/* Classes the scanner can't see: data-p-class wire strings join classes with
-   '+' (toolbar on-states), and the alignment utilities are WRITTEN AT RUNTIME
-   onto editor blocks as authored classes (stand-ins for the JIT-compiled
-   utilities in production). */
+/* Safelist: the alignment utilities are WRITTEN AT RUNTIME onto editor
+   blocks as authored classes (stand-ins for the JIT-compiled utilities in
+   production), and the toolbar on-state classes historically hid inside
+   '+'-joined wire strings (binding grammar v2 wires are whitespace-separated
+   and scanner-visible now; these lines stay as a safety net). */
 @source inline("bg-canvas-accent hover:bg-canvas-accent text-white");
 @source inline("bg-accent invisible rotate-90");
 @source inline("bg-amber-300 italic text-neutral-600");

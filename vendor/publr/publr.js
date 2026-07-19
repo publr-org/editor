@@ -293,55 +293,120 @@ function subscribe(...args) {
 //#endregion
 //#region src/core/parse.ts
 /**
-* Evaluate `value <op> literal` for a predicate spec's `[ref, op, literal]`
-* parts. Callers guard `parts.length >= 3`; unknown ops evaluate to false,
-* eq/ne compare stringified, lt/gt/ge/le compare numerically (NaN → false).
+* The one wire tokenizer: split `s` on any of `delims` (checked in array
+* order, so longer tokens go first where prefixes overlap: `>=` before `>`)
+* at most `limit` times. Never splits inside quoted literals ('…' or "…") or
+* inside […]/{…} at depth 0, so arbitrary-value classes like
+* `grid-cols-[repeat(2,minmax(0,1fr))]`, match blocks, and quoted payloads
+* containing delimiters travel as single segments. The delimiter check runs
+* BEFORE bracket tracking, so `{` / `}` themselves work as delimiters (the
+* match-form parser splits on them).
 */
-var evaluatePredicate = (value, parts) => {
-	const op = parts[1];
-	const literal = parts[2];
-	const n = Number(value);
-	const m = +literal;
-	return op === "eq" ? String(value) === literal : op === "ne" ? String(value) !== literal : op === "lt" ? n < m : op === "gt" ? n > m : op === "ge" ? n >= m : op === "le" && n <= m;
-};
-var stripStatePrefix = (path) => path.replace(/^\$|^state\./, "");
-var resolvePath = (root, path) => path.trim().split(".").reduce((obj, key) => obj?.[key], root);
-var parseBindings = (value, separator) => {
-	const bindings = [];
-	if (value) for (const part of value.split(";")) {
-		const index = part.indexOf(separator);
-		if (index < 0) continue;
-		const lhs = part.slice(0, index).trim();
-		const rhs = part.slice(index + separator.length).trim();
-		if (lhs && rhs) bindings.push([lhs, rhs]);
-	}
-	return bindings;
-};
-var parsePredicateSpec = (spec) => {
-	const parts = spec.split("|");
-	const negate = parts[0].startsWith("not:");
-	if (negate) parts[0] = parts[0].slice(4);
-	return [parts, negate];
-};
-var splitOutsideQuotes = (s, delim) => {
+var scan = (s, delims, limit = Infinity) => {
+	const out = [];
 	let quote = null;
-	for (let i = 0; i < s.length; i++) {
+	let depth = 0;
+	let start = 0;
+	let i = 0;
+	outer: while (i < s.length) {
 		const ch = s[i];
 		if (quote) {
 			if (ch === quote) quote = null;
-			continue;
+		} else {
+			if (!depth && out.length < limit) {
+				for (const d of delims) if (s.startsWith(d, i)) {
+					out.push(s.slice(start, i));
+					i += d.length;
+					start = i;
+					continue outer;
+				}
+			}
+			if (ch === "'" || ch === "\"") quote = ch;
+			else if (ch === "[" || ch === "{") depth++;
+			else if ((ch === "]" || ch === "}") && depth) depth--;
 		}
-		if (ch === "'" || ch === "\"") {
-			quote = ch;
-			continue;
-		}
-		if (s.startsWith(delim, i)) return [s.slice(0, i), s.slice(i + delim.length)];
+		i++;
 	}
-	return [s, null];
+	out.push(s.slice(start));
+	return out;
+};
+var stripStatePrefix = (path) => path[0] === "$" ? path.slice(1) : path;
+var resolvePath = (root, path) => path.trim().split(".").reduce((obj, key) => obj?.[key], root);
+var parseBindings = (value, separator) => {
+	const bindings = [];
+	if (value) for (const part of scan(value, [";"])) {
+		const [lhs, rhs] = scan(part, [separator], 1);
+		if (rhs != null && lhs.trim() && rhs.trim()) bindings.push([lhs.trim(), rhs.trim()]);
+	}
+	return bindings;
 };
 var unquoteLiteral = (s) => {
 	const m = /^\s*(['"])([^]*)\1\s*$/.exec(s);
 	return m && m[2];
+};
+var OPS = [
+	"==",
+	"!=",
+	">=",
+	"<=",
+	">",
+	"<",
+	" contains "
+];
+var parsePredicate = (spec) => {
+	let s = spec.trim();
+	const negate = /^not\s/.test(s);
+	if (negate) s = s.slice(4).trim();
+	for (const op of OPS) {
+		const [ref, lit] = scan(s, [op], 1);
+		if (lit != null) return [
+			ref.trim(),
+			negate,
+			op,
+			unquoteLiteral(lit) ?? lit.trim()
+		];
+	}
+	return [s, negate];
+};
+/**
+* Evaluate `value <op> literal`. ==/!= compare stringified, the ordered ops
+* compare numerically (NaN → false), `contains` is duck-typed `includes` —
+* one impl covers arrays and strings.
+*/
+var evaluatePredicate = (value, op, literal) => {
+	const n = Number(value);
+	const m = +literal;
+	return op === "==" ? String(value) === literal : op === "!=" ? String(value) !== literal : op === ">" ? n > m : op === "<" ? n < m : op === ">=" ? n >= m : op === "<=" ? n <= m : value?.includes?.(literal) ?? false;
+};
+var parseMatch = (group) => {
+	const [head, blockRest] = scan(group, ["{"], 1);
+	if (blockRest == null || /^\$[\w.]*\}/.test(blockRest)) return null;
+	const [armsText, tail] = scan(blockRest, ["}"], 1);
+	const arms = [];
+	for (const arm of scan(armsText, [",", "\n"])) {
+		const [keyRaw, payload] = scan(arm, [":"], 1);
+		if (payload != null && keyRaw.trim()) arms.push([unquoteLiteral(keyRaw) ?? keyRaw.trim(), payload.trim()]);
+	}
+	let template = null;
+	const after = (tail ?? "").trim();
+	if (after.startsWith("=>")) template = scan(scan(after, ["{"], 1)[1] ?? "", ["}"], 1)[0];
+	return [
+		head.trim(),
+		arms,
+		template
+	];
+};
+/**
+* The shared match evaluator (class, text, and bind all route through it):
+* keys `true`/`false` test truthiness/falsiness of the value, `_` is the
+* default, every other key tests `String(value) === key`. Undefined when
+* nothing matches and there is no default.
+*/
+var matchArm = (arms, value) => {
+	let fallback;
+	for (const [key, payload] of arms) if (key === "_") fallback = payload;
+	else if (key === "true" ? value : key === "false" ? !value : String(value) === key) return payload;
+	return fallback;
 };
 //#endregion
 //#region src/core/store.ts
@@ -479,17 +544,17 @@ var bindRef = (el, ref, callback) => {
 	if (store) effect(() => callback(store, rest));
 };
 /**
-* The shared pipeline behind -show / -class / -bind / -if and conditional
-* literal payloads: parse `not:` / `ref|op|literal`, resolve the ref against
-* its owning store, and re-run `apply` with the (possibly negated) value on
-* every change. Plain refs pass their RAW value through (predicates and
-* negation produce booleans).
+* The shared pipeline behind -show / -class / -bind / -if and every
+* value-producing group: parse `['not'] ref [op literal]`, resolve the ref
+* against its owning store, and re-run `apply` with the (possibly negated)
+* value on every change. Plain refs pass their RAW value through (predicates
+* and negation produce booleans).
 */
 var bindPredicate = (el, spec, apply) => {
-	const [parts, negate] = parsePredicateSpec(spec);
-	bindRef(el, parts[0], (store, rest) => {
+	const [ref, negate, op, literal] = parsePredicate(spec);
+	bindRef(el, ref, (store, rest) => {
 		const raw = resolveValuePath(store, rest);
-		const value = parts.length >= 3 ? evaluatePredicate(raw, parts) : raw;
+		const value = op ? evaluatePredicate(raw, op, literal) : raw;
 		apply(negate ? !value : value);
 	});
 };
@@ -542,70 +607,102 @@ var wireOn = (el, attr) => {
 		}, modifiers.includes("once") ? { once: true } : false);
 	}
 };
-var wireLiteralSpec = (el, spec, write) => {
-	const [head, arrowRest] = splitOutsideQuotes(spec, "->");
-	if (arrowRest != null) {
-		const [onRaw, offRaw] = splitOutsideQuotes(arrowRest, "~");
-		const onValue = unquoteLiteral(onRaw);
-		const offValue = offRaw == null ? "" : unquoteLiteral(offRaw);
-		if (onValue == null || offValue == null) return false;
-		bindPredicate(el, head.trim(), (on) => write(on ? onValue : offValue));
-		return true;
-	}
-	const [refPart, fallbackRaw] = splitOutsideQuotes(spec, "~");
-	if (fallbackRaw == null) return false;
-	const fallback = unquoteLiteral(fallbackRaw);
-	if (fallback == null) return false;
-	bindRef(el, refPart.trim(), (store, rest) => {
-		const value = resolveValuePath(store, rest);
-		write(value == null || value === "" ? fallback : value);
+var bindValue = (el, spec, write) => {
+	const armsFor = (m) => bindPredicate(el, m[0], (value) => {
+		const payload = matchArm(m[1], value);
+		write(payload == null ? payload : unquoteLiteral(payload));
 	});
-	return true;
+	const [head, arrowRest] = scan(spec, ["->"], 1);
+	if (arrowRest != null) {
+		const [onRaw, offRaw = "''"] = scan(arrowRest, ["~"], 1);
+		armsFor([head, [["true", onRaw], ["false", offRaw]]]);
+		return;
+	}
+	const m = parseMatch(spec);
+	if (m) {
+		armsFor(m);
+		return;
+	}
+	const [refPart, fallbackRaw] = scan(spec, ["~"], 1);
+	if (fallbackRaw != null) {
+		const fallback = unquoteLiteral(fallbackRaw) ?? "";
+		bindRef(el, refPart.trim(), (store, rest) => {
+			const value = resolveValuePath(store, rest);
+			write(value == null || value === "" ? fallback : value);
+		});
+		return;
+	}
+	bindPredicate(el, spec, write);
 };
 var wireText = (el, attr) => {
 	const ref = ga(el, attr);
-	if (!ref) return;
-	const write = (text) => {
+	if (ref) bindValue(el, ref, (text) => {
 		el.textContent = text ?? "";
-	};
-	if (!wireLiteralSpec(el, ref, write)) bindRef(el, ref, (store, rest) => write(resolveValuePath(store, rest)));
+	});
 };
-var scanSplit = (s, delims, limit) => {
-	const out = [];
-	let depth = 0;
-	let start = 0;
-	for (let i = 0; i <= s.length; i++) {
-		const ch = s[i];
-		if (i === s.length || depth === 0 && delims.includes(ch) && out.length < limit) {
-			out.push(s.slice(start, i));
-			start = i + 1;
-		} else if (ch === "[") depth++;
-		else if (ch === "]" && depth > 0) depth--;
-	}
-	return out;
+var splitClasses = (s) => scan(s, [
+	" ",
+	"	",
+	"\n",
+	"\r"
+]).filter(Boolean);
+var fillHoles = (el, patterns, token) => patterns.map((p) => p.replace(/\{\$([\w.]*)\}/g, (_, name) => {
+	if (!name) return token;
+	const [store, rest] = resolveRef(name, el);
+	return (store && resolveValuePath(store, rest)) ?? "";
+})).filter(Boolean);
+var templateApplier = (el, patterns) => {
+	let last = [];
+	return (token) => {
+		for (const name of last) el.classList.remove(name);
+		last = token == null ? [] : fillHoles(el, patterns, token);
+		for (const name of last) el.classList.add(name);
+	};
 };
 /**
-* Toggle `onClasses` with the predicate and `offClasses` against it — one
-* binding, exactly one branch active, so paired utilities SWAP instead of
-* stacking (conflicting classes stacked on one element resolve by CSS order,
-* not by which was toggled last).
+* The class engine: one binding per group, arm payloads are class lists.
+* Remove every NON-matched arm's classes before adding the matched arm's —
+* an atomic swap even over server-rendered classes, and shared classes
+* survive (remove runs first), so paired utilities SWAP instead of stacking
+* (conflicting classes stacked on one element resolve by CSS order, not by
+* which was toggled last). The flat `->`/`~` form and data-p-show route
+* through here as two-arm true/false matches.
 */
-var bindClasses = (el, spec, onClasses, offClasses) => {
-	bindPredicate(el, spec, (value) => {
-		for (const name of onClasses) el.classList.toggle(name, !!value);
-		for (const name of offClasses) el.classList.toggle(name, !value);
+var bindClassArms = (el, disc, arms) => {
+	bindPredicate(el, disc, (value) => {
+		const matched = matchArm(arms, value);
+		for (const [, payload] of arms) if (payload !== matched) for (const name of splitClasses(payload)) el.classList.remove(name);
+		for (const name of splitClasses(matched ?? "")) el.classList.add(name);
 	});
 };
 var wireShow = (el, attr) => {
 	const spec = ga(el, attr);
-	if (spec) bindClasses(el, spec, [], ["hidden"]);
+	if (spec) bindClassArms(el, spec, [["false", "hidden"]]);
 };
 var wireClass = (el, attr) => {
-	for (const [refSpec, classList] of parseBindings(ga(el, attr), "->")) {
-		const [onPart, offPart = ""] = scanSplit(classList, "~", 1);
-		const onClasses = scanSplit(onPart, "+ 	\n\r", Infinity).filter(Boolean);
-		const offClasses = scanSplit(offPart, "+ 	\n\r", Infinity).filter(Boolean);
-		if (onClasses.length || offClasses.length) bindClasses(el, refSpec, onClasses, offClasses);
+	for (const group of scan(ga(el, attr) || "", [";"])) {
+		const [head, arrowRest] = scan(group, ["->"], 1);
+		if (arrowRest != null) {
+			const [onPart, offPart = ""] = scan(arrowRest, ["~"], 1);
+			bindClassArms(el, head, [["true", onPart], ["false", offPart]]);
+			continue;
+		}
+		const m = parseMatch(group);
+		if (m) {
+			const [disc, arms, template] = m;
+			if (template == null) bindClassArms(el, disc, arms);
+			else {
+				const apply = templateApplier(el, splitClasses(template));
+				bindPredicate(el, disc, (value) => apply(matchArm(arms, value)));
+			}
+			continue;
+		}
+		if (/\{\$/.test(group)) {
+			const apply = templateApplier(el, splitClasses(group));
+			effect(() => {
+				apply("");
+			});
+		}
 	}
 };
 var setBoundAttribute = (el, attr, value) => {
@@ -628,10 +725,7 @@ var setBoundAttribute = (el, attr, value) => {
 	el.setAttribute(attr, value === true ? "" : String(value));
 };
 var wireBind = (el, attr) => {
-	for (const [name, ref] of parseBindings(ga(el, attr), ":")) {
-		const write = (value) => setBoundAttribute(el, name, value);
-		if (!wireLiteralSpec(el, ref, write)) bindPredicate(el, ref, write);
-	}
+	for (const [name, ref] of parseBindings(ga(el, attr), ":")) bindValue(el, ref, (value) => setBoundAttribute(el, name, value));
 };
 var wireStyle = (el, attr) => {
 	for (const [property, ref] of parseBindings(ga(el, attr), "->")) bindRef(el, ref, (store, rest) => {
@@ -908,7 +1002,10 @@ var unmountObserver = null;
 var ensureUnmountObserver = () => {
 	if (unmountObserver || typeof MutationObserver === "undefined") return;
 	unmountObserver = new MutationObserver((mutations) => {
-		for (const m of mutations) m.removedNodes.forEach((node) => destroy(node));
+		for (const m of mutations) m.removedNodes.forEach((node) => {
+			if (node.isConnected) return;
+			destroy(node);
+		});
 	});
 	unmountObserver.observe(document.documentElement, {
 		childList: true,

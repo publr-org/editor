@@ -139,6 +139,10 @@ export interface EditorShellOptions {
   onThemeCss?: () => void;
   actions?: ShellAction[];
   panels?: ShellPanel[];
+  /** Host preview seam. A function replaces the built-in quick preview (the
+   * self-contained new-tab export) — hosts with a real rendering pipeline
+   * (the CMS) drive preview themselves. `false` hides the preview button. */
+  preview?: ((editor: Editor) => void) | false;
 }
 
 export interface EditorShell {
@@ -1901,6 +1905,12 @@ Publr.store("chrome", () => {
       // inline backend alike). No engine → the theme :root + inline styles
       // still render the inline backend; the classes backend needs the engine.
       preview() {
+        // Host seam first: a provided preview() owns the whole flow (the CMS
+        // renders through its real pipeline instead of this quick export).
+        if (typeof shellOptions?.preview === "function") {
+          shellOptions.preview(editor);
+          return;
+        }
         const html = editor.serialize({ pipeline: "data" });
         // Open synchronously (a click-driven window.open survives; an async one
         // is popup-blocked), then stream the compiled doc in.
@@ -2634,7 +2644,7 @@ const ACTION_QUIET =
 // top-bar toggles as tertiary selected controls (see chrome.css) — the same
 // treatment the tree/inserter toggles get.
 const PANEL_TOGGLE =
-  "flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-neutral-900 hover:bg-neutral-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none";
+  "flex h-9 w-9 cursor-pointer items-center justify-center rounded-xs text-foreground hover:bg-ui-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none";
 
 function renderHostUi(
   container: HTMLElement,
@@ -2703,7 +2713,7 @@ function renderHostUi(
     close.type = "button";
     close.setAttribute("aria-label", `Close ${panel.title}`);
     close.className =
-      "flex h-7 w-7 cursor-pointer items-center justify-center rounded-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900";
+      "flex h-7 w-7 cursor-pointer items-center justify-center rounded-xs text-muted-foreground hover:bg-ui-accent hover:text-foreground";
     close.textContent = "×";
     close.addEventListener("click", () => setOpen(panel.id, false));
     head.append(title, close);
@@ -2760,6 +2770,9 @@ export async function createEditorShell(options: EditorShellOptions): Promise<Ed
   const setAppearance = (mode: "dark" | "light") =>
     shellRoot?.classList.toggle("dark", mode !== "light");
   setAppearance(options.appearance ?? "dark");
+  // preview:false = the host has no preview surface; drop the button before
+  // hydration rather than leaving a dead control.
+  if (options.preview === false) container.querySelector("#preview")?.remove();
   hydrate(container);
 
   const editor = refs.editor;
