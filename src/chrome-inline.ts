@@ -7,9 +7,8 @@
 // - "/" in an empty default block → quick block picker: the MOST-USED shelf
 //   by default, live-filtered as the user keeps typing ("/gro" → Group). The
 //   caret never leaves the block — the menu is driven from the document.
-// - the empty default block's ghost row carries the inline + → the block
-//   INSERTER (search + grid): the most-used shelf up front, search reaches
-//   the full registry
+// - hovering a block's top/bottom edge reveals an insertion line + → the
+//   block INSERTER (search + grid), anchored before/after that exact sibling
 // - both pickers offer a "Pattern" entry when the host provides
 //   onBrowsePatterns — the escalation into the host's full pattern dialog
 //   (patterns themselves never leak into the block lists)
@@ -47,10 +46,15 @@ import type { MediaAdapter } from "./media-adapter";
 import { getPattern, PATTERN_ROOT_TYPE } from "./patterns";
 import { blockTypes, getBlockType } from "./registry";
 import type { ToolbarSpec } from "./registry";
+import { containerWidths } from "./theme";
 import { locateBlock } from "./tree";
 // The stylesheet behind the class literals below. The lib build extracts it
 // into dist/publr-editor.css (the emitted JS carries no CSS import).
 import "./chrome.css";
+// The same compiled sheet is also embedded into the private in-canvas chrome
+// root. The global artifact still owns canvas/component + full-shell rules;
+// toolbar/picker utilities resolve inside this shadow tree as well.
+import chromeCss from "./chrome.css?inline";
 
 export interface InlineChromeOptions {
   /**
@@ -60,25 +64,23 @@ export interface InlineChromeOptions {
   container?: HTMLElement;
   /** "/" quick picker (default true). */
   slash?: boolean;
-  /** Inline + inserter on the empty default block's ghost row (default true). */
+  /** Hover-edge + inserter between blocks (default true). */
   inserter?: boolean;
   /**
    * Renders a "Browse all" footer in the + inserter panel — the escalation
    * slot for hosts that have a bigger block library (the demo shell opens
-   * its library rail). Called with the block the panel targeted, which the
-   * host should treat as the insertion anchor (familiar block-editor semantics:
-   * an empty default block gets REPLACED by the eventual pick).
+   * its library rail). Hover-edge insertion supplies the exact before/after
+   * placement; slash/legacy insertion supplies only the target id.
    */
-  onBrowseAll?: (targetId: string | null) => void;
+  onBrowseAll?: (targetId: string | null, placement?: InlineInsertionPlacement) => void;
   /**
    * Renders a "Pattern" entry in the "/" quick picker and the + inserter
    * grid — the escalation into the host's FULL pattern selection dialog
-   * (the demo shell opens its pattern explorer). Called with the block the
-   * picker targeted; the host should treat it as the insertion anchor (an
-   * empty default block gets REPLACED by the eventual pick). Absent = no
-   * entry, the pickers stay blocks-only.
+   * (the demo shell opens its pattern explorer). Receives the same target and
+   * optional placement as onBrowseAll. Absent = no entry, the pickers stay
+   * blocks-only.
    */
-  onBrowsePatterns?: (targetId: string | null) => void;
+  onBrowsePatterns?: (targetId: string | null, placement?: InlineInsertionPlacement) => void;
   /** Floating block toolbar (default true). */
   toolbar?: boolean;
   /**
@@ -102,6 +104,13 @@ export interface InlineChromeOptions {
    * placeholder card and the toolbar's Replace menu.
    */
   media?: boolean | MediaAdapter;
+  /** Host mode gate for registry blocks (for example template-only slots). */
+  allowBlock?: (type: string) => boolean;
+}
+
+export interface InlineInsertionPlacement {
+  anchorId: string;
+  edge: "before" | "after";
 }
 
 // --- class vocabulary (literals — the Tailwind scanner reads this file) ------
@@ -172,47 +181,10 @@ const badgeOf = (type: string): string => {
 
 // --- small DOM helpers ---------------------------------------------------------
 
-function h<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  html?: string,
-): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  if (className) el.className = className;
-  if (html != null) el.innerHTML = html;
-  return el;
-}
-
-function button(className: string, html: string, title?: string): HTMLButtonElement {
-  const b = h("button", className, html);
-  b.type = "button";
-  if (title) {
-    b.title = title;
-    b.setAttribute("aria-label", title);
-  }
-  return b;
-}
-
 const setOn = (btn: HTMLButtonElement, on: boolean) => {
   BTN_ON.forEach((c) => btn.classList.toggle(c, on));
   BTN_ON_SWAPS.forEach((c) => btn.classList.toggle(c, !on));
 };
-
-async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const input = document.createElement("textarea");
-  input.value = text;
-  input.setAttribute("readonly", "");
-  input.style.position = "fixed";
-  input.style.opacity = "0";
-  document.body.appendChild(input);
-  input.select();
-  document.execCommand("copy");
-  input.remove();
-}
 
 // A reusable URL + open-in-new-tab popover, driven per open() by the caller's
 // current value and apply/remove callbacks — shared by the block-level media
@@ -244,16 +216,129 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   const mediaAdapter = resolveMediaAdapter(options.media);
 
   const canvas = editor.canvas;
+  const ownerDocument = canvas.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView ?? window;
+  // Imperative chrome belongs to the editable document's realm. Keeping
+  // creation and selection here is what makes the same layer work when the
+  // canvas is hosted in an iframe for real responsive media queries.
+  const h = <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    className: string,
+    html?: string,
+  ): HTMLElementTagNameMap[K] => {
+    const node = ownerDocument.createElement(tag);
+    if (className) node.className = className;
+    if (html != null) node.innerHTML = html;
+    return node;
+  };
+  const button = (className: string, html: string, title?: string): HTMLButtonElement => {
+    const node = h("button", className, html);
+    node.type = "button";
+    if (title) {
+      node.title = title;
+      node.setAttribute("aria-label", title);
+    }
+    return node;
+  };
+  const copyText = async (text: string): Promise<void> => {
+    if (ownerWindow.navigator.clipboard?.writeText) {
+      await ownerWindow.navigator.clipboard.writeText(text);
+      return;
+    }
+    const input = ownerDocument.createElement("textarea");
+    input.value = text;
+    input.setAttribute("readonly", "");
+    input.style.cssText = "position:fixed;opacity:0";
+    ownerDocument.body.appendChild(input);
+    input.select();
+    ownerDocument.execCommand("copy");
+    input.remove();
+  };
   const host = options.container ?? canvas.parentElement;
   if (!host) throw new Error("PublrEditor: attachInlineChrome needs a positioned container");
-  if (getComputedStyle(host).position === "static") host.style.position = "relative";
+  if (ownerWindow.getComputedStyle(host).position === "static") host.style.position = "relative";
   canvas.classList.add("pbe-canvas"); // scope hook for the shipped canvas-owned CSS
+
+  // All floating/in-canvas chrome shares one hard cascade boundary. The host
+  // fills the positioning container but is pointer-transparent; its mounted
+  // controls opt back into hit testing. Site CSS cannot select into this root,
+  // and the utility sheet inside it cannot select website content outside.
+  const chromeHost = ownerDocument.createElement("pbe-inline-chrome");
+  chromeHost.setAttribute("data-pbe-inline-chrome", "");
+  chromeHost.setAttribute("data-pbe-keep-selection", "");
+  for (const name of [
+    "background",
+    "foreground",
+    "popover",
+    "popover-foreground",
+    "primary",
+    "primary-foreground",
+    "muted",
+    "muted-foreground",
+    "accent",
+    "accent-foreground",
+    "border",
+    "input",
+    "ring",
+  ]) {
+    const property = `--pbe-chrome-${name}`;
+    const value = ownerWindow.getComputedStyle(host).getPropertyValue(property).trim();
+    if (value) chromeHost.style.setProperty(property, value);
+  }
+  const chromeRoot = chromeHost.attachShadow({ mode: "open" });
+  const chromeStyle = ownerDocument.createElement("style");
+  chromeStyle.textContent = `${chromeCss}\n
+    :host {
+      all: initial;
+      position: absolute;
+      inset: 0;
+      display: block;
+      overflow: visible;
+      pointer-events: none;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .pbe-inline-chrome-layer {
+      position: absolute;
+      inset: 0;
+      overflow: visible;
+      pointer-events: none;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--pbe-chrome-foreground, #18181b);
+      --color-background: var(--pbe-chrome-background, #fff);
+      --color-foreground: var(--pbe-chrome-foreground, #18181b);
+      --color-popover: var(--pbe-chrome-popover, #fff);
+      --color-popover-foreground: var(--pbe-chrome-popover-foreground, #18181b);
+      --color-primary: var(--pbe-chrome-primary, #287cc1);
+      --color-primary-foreground: var(--pbe-chrome-primary-foreground, #fff);
+      --color-muted: var(--pbe-chrome-muted, #f4f4f5);
+      --color-muted-foreground: var(--pbe-chrome-muted-foreground, #71717a);
+      --color-ui-accent: var(--pbe-chrome-accent, #f4f4f5);
+      --color-accent: var(--pbe-chrome-primary, #287cc1);
+      --color-accent-foreground: var(--pbe-chrome-accent-foreground, #27272a);
+      --color-border: var(--pbe-chrome-border, #e4e4e7);
+      --color-input: var(--pbe-chrome-input, #d4d4d8);
+      --color-ring: var(--pbe-chrome-ring, #287cc1);
+      --color-pbe-accent: var(--pbe-chrome-ring, #287cc1);
+      --spacing: 0.25rem;
+      --text-sm: 0.875rem;
+      --text-sm--line-height: 1.25rem;
+      --radius-md: 0.375rem;
+      --radius-lg: 0.5rem;
+    }
+    .pbe-inline-chrome-layer > * { pointer-events: auto; }
+  `;
+  const chromeLayer = ownerDocument.createElement("div");
+  chromeLayer.className = "pbe-inline-chrome-layer";
+  chromeRoot.append(chromeStyle, chromeLayer);
+  host.appendChild(chromeHost);
 
   let detached = false;
   const disposers: (() => void)[] = [];
   const mounted: HTMLElement[] = [];
   const mount = <T extends HTMLElement>(el: T): T => {
-    host.appendChild(el);
+    chromeLayer.appendChild(el);
     mounted.push(el);
     return el;
   };
@@ -261,15 +346,631 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     type: K,
     fn: (e: DocumentEventMap[K]) => void,
   ) => {
-    document.addEventListener(type, fn);
-    disposers.push(() => document.removeEventListener(type, fn));
+    ownerDocument.addEventListener(type, fn);
+    disposers.push(() => ownerDocument.removeEventListener(type, fn));
   };
 
   const rootOf = (id: string) =>
     canvas.querySelector<HTMLElement>(`[data-pb-id="${CSS.escape(id)}"]`);
 
+  // ---------------------------------------------------------------------------
+  // block hover preselection
+  // ---------------------------------------------------------------------------
+  // Default-mode blocks use the same inspect-then-act vocabulary as browser
+  // DevTools: moving over the canvas reveals the exact block box and its
+  // identity; clicking that surface hands off to the editor's existing
+  // caret/block flow. Content-only descendants of an opaque placed pattern
+  // deliberately opt out — direct copy editing there remains unchanged.
+
+  canvas.classList.add("pbe-block-hover-model");
+  const hoverOutline = withToolbar
+    ? mount(h("div", "pbe-ui pbe-hover-outline absolute z-20"))
+    : null;
+  const hoverLabel = withToolbar
+    ? mount(
+        h(
+          "div",
+          "pbe-ui pbe-hover-label absolute z-20 flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-semibold shadow-md",
+        ),
+      )
+    : null;
+  const hoverIcon = hoverLabel ? h("span", "flex size-4 items-center justify-center") : null;
+  const hoverName = hoverLabel ? h("span", "whitespace-nowrap") : null;
+  const hoverPart = (name: string) => {
+    const part = h("div", `pbe-hover-box-part pbe-hover-${name}`);
+    part.dataset.boxPart = name;
+    hoverOutline?.appendChild(part);
+    return part;
+  };
+  const hoverBoxParts = hoverOutline
+    ? {
+        content: hoverPart("content"),
+        paddingTop: hoverPart("padding-top"),
+        paddingRight: hoverPart("padding-right"),
+        paddingBottom: hoverPart("padding-bottom"),
+        paddingLeft: hoverPart("padding-left"),
+        borderTop: hoverPart("border-top"),
+        borderRight: hoverPart("border-right"),
+        borderBottom: hoverPart("border-bottom"),
+        borderLeft: hoverPart("border-left"),
+        marginTop: hoverPart("margin-top"),
+        marginRight: hoverPart("margin-right"),
+        marginBottom: hoverPart("margin-bottom"),
+        marginLeft: hoverPart("margin-left"),
+      }
+    : null;
+  if (hoverLabel && hoverIcon && hoverName) {
+    hoverLabel.append(hoverIcon, hoverName);
+    hoverLabel.setAttribute("aria-hidden", "true");
+  }
+  if (hoverOutline) hoverOutline.hidden = true;
+  if (hoverLabel) hoverLabel.hidden = true;
+
+  let hoverId: string | null = null;
+  let hoverLayoutParts: HTMLElement[] = [];
+
+  const rawRootOf = (target: EventTarget | null): HTMLElement | null => {
+    const root =
+      target instanceof ownerWindow.Element ? target.closest<HTMLElement>("[data-pb-id]") : null;
+    return root && canvas.contains(root) ? root : null;
+  };
+
+  const radiusPair = (value: string): [number, number] => {
+    const parts = value.split(/\s+/).map((part) => Number.parseFloat(part) || 0);
+    return [parts[0] ?? 0, parts[1] ?? parts[0] ?? 0];
+  };
+
+  // DOM hit testing uses an element's rectangular border box even where a
+  // rounded corner paints nothing. Skip such a child and reveal its
+  // underlying block parent, matching the DevTools element picker.
+  const pointHitsPaintedBox = (
+    root: HTMLElement,
+    x: number,
+    y: number,
+    rect = root.getBoundingClientRect(),
+    style = ownerWindow.getComputedStyle(root),
+  ): boolean => {
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return false;
+    const corners = [
+      ["borderTopLeftRadius", rect.left, rect.top, 1, 1],
+      ["borderTopRightRadius", rect.right, rect.top, -1, 1],
+      ["borderBottomRightRadius", rect.right, rect.bottom, -1, -1],
+      ["borderBottomLeftRadius", rect.left, rect.bottom, 1, -1],
+    ] as const;
+    for (const [prop, edgeX, edgeY, dirX, dirY] of corners) {
+      const [rx0, ry0] = radiusPair(style[prop]);
+      const rx = Math.min(rx0, rect.width / 2);
+      const ry = Math.min(ry0, rect.height / 2);
+      if (!rx || !ry) continue;
+      const dx = (x - (edgeX + dirX * rx)) / rx;
+      const dy = (y - (edgeY + dirY * ry)) / ry;
+      const inCorner = dirX > 0 ? x < edgeX + rx : x > edgeX - rx;
+      const inCornerY = dirY > 0 ? y < edgeY + ry : y > edgeY - ry;
+      if (inCorner && inCornerY && dx * dx + dy * dy > 1) return false;
+    }
+    return true;
+  };
+
+  const blockDepth = (root: HTMLElement): number => {
+    let depth = 0;
+    for (
+      let parent = root.parentElement;
+      parent && parent !== canvas;
+      parent = parent.parentElement
+    )
+      if (parent.matches("[data-pb-id]")) depth++;
+    return depth;
+  };
+
+  const expandedByMargins = (rect: DOMRect, style: CSSStyleDeclaration): DOMRect => {
+    const margin = (prop: "marginTop" | "marginRight" | "marginBottom" | "marginLeft") =>
+      Number.parseFloat(style[prop]) || 0;
+    const top = rect.top - margin("marginTop");
+    const left = rect.left - margin("marginLeft");
+    return new ownerWindow.DOMRect(
+      left,
+      top,
+      rect.width + margin("marginLeft") + margin("marginRight"),
+      rect.height + margin("marginTop") + margin("marginBottom"),
+    );
+  };
+
+  const containsPoint = (rect: DOMRect, x: number, y: number) =>
+    x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+  const hoverEligible = (root: HTMLElement): boolean => {
+    const id = root.dataset.pbId;
+    if (!id || editor.editingMode(id) !== "default") return false;
+    // A placed pattern in the page editor remains its established direct
+    // content-editing surface. Isolation editors remove this class, making
+    // every nested block eligible again.
+    return !(canvas.classList.contains("pbe-patterns-opaque") && editor.patternContext(id));
+  };
+
+  // Event targets cannot describe layout space: a child's margin belongs to
+  // its parent for DOM hit testing, and flex/grid gaps and container padding
+  // often target an otherwise unhelpful descendant. Inspect every block box
+  // geometrically instead. The deepest matching box wins; margin boxes count
+  // as part of their block, while an unpainted rounded corner deliberately
+  // falls through to the enclosing container.
+  const hoverTargetAt = (clientX: number, clientY: number): HTMLElement | null => {
+    const candidates: Array<{
+      root: HTMLElement;
+      depth: number;
+      area: number;
+    }> = [];
+    for (const root of canvas.querySelectorAll<HTMLElement>("[data-pb-id]")) {
+      if (!hoverEligible(root)) continue;
+      const rect = root.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      const style = ownerWindow.getComputedStyle(root);
+      const inBorderBox = containsPoint(rect, clientX, clientY);
+      const inMarginBox =
+        inBorderBox || containsPoint(expandedByMargins(rect, style), clientX, clientY);
+      if (!inMarginBox) continue;
+      if (inBorderBox && !pointHitsPaintedBox(root, clientX, clientY, rect, style)) continue;
+      candidates.push({
+        root,
+        depth: blockDepth(root),
+        area: rect.width * rect.height,
+      });
+    }
+    return candidates.sort((a, b) => b.depth - a.depth || a.area - b.area)[0]?.root ?? null;
+  };
+
+  const hideHover = () => {
+    hoverId = null;
+    hoverLayoutParts.forEach((part) => part.remove());
+    hoverLayoutParts = [];
+    if (hoverOutline) {
+      delete hoverOutline.dataset.target;
+      delete hoverOutline.dataset.layout;
+      hoverOutline.hidden = true;
+    }
+    if (hoverLabel) {
+      delete hoverLabel.dataset.target;
+      hoverLabel.hidden = true;
+    }
+  };
+
+  const px = (value: string): number => Math.max(0, Number.parseFloat(value) || 0);
+  const signedPx = (value: string): number => Number.parseFloat(value) || 0;
+
+  const placeHoverPart = (
+    part: HTMLElement,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+  ) => {
+    const visible = width > 0 && height > 0;
+    part.hidden = !visible;
+    if (!visible) return;
+    part.style.left = `${left}px`;
+    part.style.top = `${top}px`;
+    part.style.width = `${width}px`;
+    part.style.height = `${height}px`;
+  };
+
+  const syncHoverBoxModel = (
+    rect: DOMRect,
+    style: CSSStyleDeclaration,
+  ): { left: number; top: number; width: number; height: number } => {
+    const border = {
+      top: px(style.borderTopWidth),
+      right: px(style.borderRightWidth),
+      bottom: px(style.borderBottomWidth),
+      left: px(style.borderLeftWidth),
+    };
+    const padding = {
+      top: px(style.paddingTop),
+      right: px(style.paddingRight),
+      bottom: px(style.paddingBottom),
+      left: px(style.paddingLeft),
+    };
+    const margin = {
+      top: px(style.marginTop),
+      right: px(style.marginRight),
+      bottom: px(style.marginBottom),
+      left: px(style.marginLeft),
+    };
+    const innerBorderWidth = Math.max(0, rect.width - border.left - border.right);
+    const innerBorderHeight = Math.max(0, rect.height - border.top - border.bottom);
+    const content = {
+      left: border.left + padding.left,
+      top: border.top + padding.top,
+      width: Math.max(0, innerBorderWidth - padding.left - padding.right),
+      height: Math.max(0, innerBorderHeight - padding.top - padding.bottom),
+    };
+
+    if (hoverBoxParts) {
+      placeHoverPart(
+        hoverBoxParts.marginTop,
+        -margin.left,
+        -margin.top,
+        rect.width + margin.left + margin.right,
+        margin.top,
+      );
+      placeHoverPart(hoverBoxParts.marginRight, rect.width, 0, margin.right, rect.height);
+      placeHoverPart(
+        hoverBoxParts.marginBottom,
+        -margin.left,
+        rect.height,
+        rect.width + margin.left + margin.right,
+        margin.bottom,
+      );
+      placeHoverPart(hoverBoxParts.marginLeft, -margin.left, 0, margin.left, rect.height);
+
+      placeHoverPart(hoverBoxParts.borderTop, 0, 0, rect.width, border.top);
+      placeHoverPart(
+        hoverBoxParts.borderRight,
+        rect.width - border.right,
+        border.top,
+        border.right,
+        innerBorderHeight,
+      );
+      placeHoverPart(
+        hoverBoxParts.borderBottom,
+        0,
+        rect.height - border.bottom,
+        rect.width,
+        border.bottom,
+      );
+      placeHoverPart(hoverBoxParts.borderLeft, 0, border.top, border.left, innerBorderHeight);
+
+      placeHoverPart(
+        hoverBoxParts.paddingTop,
+        border.left,
+        border.top,
+        innerBorderWidth,
+        padding.top,
+      );
+      placeHoverPart(
+        hoverBoxParts.paddingRight,
+        rect.width - border.right - padding.right,
+        border.top + padding.top,
+        padding.right,
+        content.height,
+      );
+      placeHoverPart(
+        hoverBoxParts.paddingBottom,
+        border.left,
+        rect.height - border.bottom - padding.bottom,
+        innerBorderWidth,
+        padding.bottom,
+      );
+      placeHoverPart(
+        hoverBoxParts.paddingLeft,
+        border.left,
+        border.top + padding.top,
+        padding.left,
+        content.height,
+      );
+      placeHoverPart(
+        hoverBoxParts.content,
+        content.left,
+        content.top,
+        content.width,
+        content.height,
+      );
+    }
+    return content;
+  };
+
+  const syncHoverLayout = (
+    root: HTMLElement,
+    block: NonNullable<ReturnType<Editor["getBlock"]>>,
+    rect: DOMRect,
+    style: CSSStyleDeclaration,
+    content: { left: number; top: number; width: number; height: number },
+  ) => {
+    hoverLayoutParts.forEach((part) => part.remove());
+    hoverLayoutParts = [];
+    if (!hoverOutline) return;
+    const display = style.display;
+    const layout = display.includes("grid") ? "grid" : display.includes("flex") ? "flex" : null;
+    if (!layout) {
+      delete hoverOutline.dataset.layout;
+      return;
+    }
+    hoverOutline.dataset.layout = layout;
+
+    const children = (block.children ?? [])
+      .map((child) => rootOf(child.id))
+      .filter((child): child is HTMLElement => !!child)
+      .map((child) => ({
+        child,
+        rect: child.getBoundingClientRect(),
+        style: ownerWindow.getComputedStyle(child),
+      }))
+      .filter(({ rect: childRect }) => childRect.width > 0 && childRect.height > 0);
+
+    const addLayoutPart = (
+      kind: "item" | "gap",
+      left: number,
+      top: number,
+      width: number,
+      height: number,
+    ) => {
+      if (width <= 0 || height <= 0) return;
+      const part = h("div", `pbe-hover-layout-${kind}`);
+      part.dataset.layoutPart = kind;
+      hoverOutline.appendChild(part);
+      placeHoverPart(part, left, top, width, height);
+      hoverLayoutParts.push(part);
+    };
+
+    // Mark distributed free space as well as authored `gap`: DevTools' flex
+    // and grid overlays explain where layout space comes from even when
+    // justify-content, track sizing, or spanning creates more than the literal
+    // row/column-gap value.
+    const gapKeys = new Set<string>();
+    const addGap = (left: number, top: number, width: number, height: number) => {
+      const key = [left, top, width, height].map((value) => Math.round(value * 10) / 10).join(":");
+      if (gapKeys.has(key)) return;
+      gapKeys.add(key);
+      addLayoutPart("gap", left - rect.left, top - rect.top, width, height);
+    };
+
+    const contentRect = {
+      left: rect.left + content.left,
+      top: rect.top + content.top,
+      right: rect.left + content.left + content.width,
+      bottom: rect.top + content.top + content.height,
+      width: content.width,
+      height: content.height,
+    };
+
+    // A non-wrapping flex container is one-dimensional. DevTools visualizes
+    // its SLOTS, not each child's incidental max-width: item bands and all
+    // leading/inter-item/trailing free space span the full cross axis.
+    if (layout === "flex" && style.flexWrap === "nowrap") {
+      const column = style.flexDirection.startsWith("column");
+      const ordered = children
+        .map(({ rect: childRect, style: childStyle }) => ({
+          rect: childRect,
+          marginStart: column ? signedPx(childStyle.marginTop) : signedPx(childStyle.marginLeft),
+          marginEnd: column ? signedPx(childStyle.marginBottom) : signedPx(childStyle.marginRight),
+        }))
+        .sort((a, b) => (column ? a.rect.top - b.rect.top : a.rect.left - b.rect.left));
+      for (const { rect: childRect, marginStart, marginEnd } of ordered) {
+        if (column) {
+          const top = Math.max(contentRect.top, childRect.top - marginStart);
+          const bottom = Math.min(contentRect.bottom, childRect.bottom + marginEnd);
+          addLayoutPart("item", content.left, top - rect.top, content.width, bottom - top);
+        } else {
+          const left = Math.max(contentRect.left, childRect.left - marginStart);
+          const right = Math.min(contentRect.right, childRect.right + marginEnd);
+          addLayoutPart("item", left - rect.left, content.top, right - left, content.height);
+        }
+      }
+      if (ordered.length) {
+        let edge = column ? contentRect.top : contentRect.left;
+        for (const { rect: childRect, marginStart, marginEnd } of ordered) {
+          const start = (column ? childRect.top : childRect.left) - marginStart;
+          const end = (column ? childRect.bottom : childRect.right) + marginEnd;
+          if (start - edge > 0.5) {
+            if (column) addGap(contentRect.left, edge, contentRect.width, start - edge);
+            else addGap(edge, contentRect.top, start - edge, contentRect.height);
+          }
+          edge = Math.max(edge, end);
+        }
+        const end = column ? contentRect.bottom : contentRect.right;
+        if (end - edge > 0.5) {
+          if (column) addGap(contentRect.left, edge, contentRect.width, end - edge);
+          else addGap(edge, contentRect.top, end - edge, contentRect.height);
+        }
+      }
+      return;
+    }
+
+    // Resolved grid templates are reported in pixels by getComputedStyle.
+    // Use those tracks directly so max-width content still reads as occupying
+    // its full grid cell, and gutters span the entire opposing axis.
+    const trackSizes = (value: string): number[] =>
+      [...value.matchAll(/(?:^|\s)(\d+(?:\.\d+)?)px(?=\s|$)/g)]
+        .map((match) => Number.parseFloat(match[1]))
+        .filter((size) => size > 0);
+    if (layout === "grid") {
+      const columns = trackSizes(style.gridTemplateColumns);
+      const rows = trackSizes(style.gridTemplateRows);
+      if (columns.length || rows.length) {
+        const columnGap = px(style.columnGap);
+        const rowGap = px(style.rowGap);
+        const columnTracks = columns.length ? columns : [content.width];
+        const rowTracks = rows.length ? rows : [content.height];
+        let top = content.top;
+        for (let row = 0; row < rowTracks.length; row++) {
+          let left = content.left;
+          for (let column = 0; column < columnTracks.length; column++) {
+            addLayoutPart("item", left, top, columnTracks[column], rowTracks[row]);
+            left += columnTracks[column];
+            if (column < columnTracks.length - 1) left += columnGap;
+          }
+          top += rowTracks[row];
+          if (row < rowTracks.length - 1) top += rowGap;
+        }
+        let gapLeft = content.left;
+        for (let column = 0; column < columnTracks.length - 1; column++) {
+          gapLeft += columnTracks[column];
+          addLayoutPart("gap", gapLeft, content.top, columnGap, content.height);
+          gapLeft += columnGap;
+        }
+        let gapTop = content.top;
+        for (let row = 0; row < rowTracks.length - 1; row++) {
+          gapTop += rowTracks[row];
+          addLayoutPart("gap", content.left, gapTop, content.width, rowGap);
+          gapTop += rowGap;
+        }
+        return;
+      }
+    }
+
+    // Wrapped flex and implicit-grid fallback: literal item bounds plus the
+    // nearest horizontal/vertical free-space relationships remain the most
+    // truthful geometry when the browser exposes no resolved track list.
+    for (const { rect: childRect, style: childStyle } of children) {
+      const margin =
+        layout === "flex"
+          ? {
+              top: signedPx(childStyle.marginTop),
+              right: signedPx(childStyle.marginRight),
+              bottom: signedPx(childStyle.marginBottom),
+              left: signedPx(childStyle.marginLeft),
+            }
+          : { top: 0, right: 0, bottom: 0, left: 0 };
+      addLayoutPart(
+        "item",
+        childRect.left - margin.left - rect.left,
+        childRect.top - margin.top - rect.top,
+        childRect.width + margin.left + margin.right,
+        childRect.height + margin.top + margin.bottom,
+      );
+    }
+    for (const { rect: from } of children) {
+      const rightNeighbor = children
+        .map(({ rect: candidate }) => candidate)
+        .filter(
+          (candidate) =>
+            candidate.left >= from.right - 0.5 &&
+            Math.min(from.bottom, candidate.bottom) - Math.max(from.top, candidate.top) > 1,
+        )
+        .sort((a, b) => a.left - b.left)[0];
+      if (rightNeighbor && rightNeighbor.left - from.right > 0.5) {
+        const top = Math.max(from.top, rightNeighbor.top);
+        const bottom = Math.min(from.bottom, rightNeighbor.bottom);
+        addGap(from.right, top, rightNeighbor.left - from.right, bottom - top);
+      }
+
+      const belowNeighbor = children
+        .map(({ rect: candidate }) => candidate)
+        .filter(
+          (candidate) =>
+            candidate.top >= from.bottom - 0.5 &&
+            Math.min(from.right, candidate.right) - Math.max(from.left, candidate.left) > 1,
+        )
+        .sort((a, b) => a.top - b.top)[0];
+      if (belowNeighbor && belowNeighbor.top - from.bottom > 0.5) {
+        const left = Math.max(from.left, belowNeighbor.left);
+        const right = Math.min(from.right, belowNeighbor.right);
+        addGap(left, from.bottom, right - left, belowNeighbor.top - from.bottom);
+      }
+    }
+  };
+
+  const positionHover = () => {
+    if (!hoverId || !hoverOutline || !hoverLabel) return;
+    const root = rootOf(hoverId);
+    const block = editor.getBlock(hoverId);
+    if (!root || !block) return hideHover();
+    const rect = root.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return hideHover();
+
+    hoverOutline.hidden = false;
+    hoverOutline.dataset.target = hoverId;
+    hoverOutline.style.width = `${rect.width}px`;
+    hoverOutline.style.height = `${rect.height}px`;
+    park(hoverOutline, rect.top, rect.left);
+    const style = ownerWindow.getComputedStyle(root);
+    const content = syncHoverBoxModel(rect, style);
+    syncHoverLayout(root, block, rect, style, content);
+
+    const def = getBlockType(block.type);
+    hoverIcon!.innerHTML = badgeOf(block.type);
+    hoverName!.textContent = def?.label ?? (block.type === "raw-html" ? "HTML" : block.type);
+    hoverLabel.hidden = false;
+    hoverLabel.dataset.target = hoverId;
+    let labelLeft = Math.min(
+      Math.max(rect.left + 4, canvasRect.left + 4),
+      Math.max(canvasRect.left + 4, canvasRect.right - hoverLabel.offsetWidth - 4),
+    );
+    const above = rect.top - hoverLabel.offsetHeight - 4;
+    let labelTop =
+      above >= canvasRect.top
+        ? above
+        : Math.min(rect.top + 4, canvasRect.bottom - hoverLabel.offsetHeight - 4);
+
+    // Floating editor chrome may occupy the same space above a neighboring
+    // block. Treat the open edit toolbar and visible add-block sentinel as
+    // obstacles, lifting the compact identity bar above each collision.
+    // Re-check after every move because clearing the sentinel can place the
+    // label into a toolbar immediately above it.
+    const obstacles: DOMRect[] = [];
+    if (toolbar && !toolbar.hidden) obstacles.push(toolbar.getBoundingClientRect());
+    if (appender.style.visibility === "visible") obstacles.push(appender.getBoundingClientRect());
+    for (let attempt = 0; attempt <= obstacles.length; attempt++) {
+      const labelRight = labelLeft + hoverLabel.offsetWidth;
+      const labelBottom = labelTop + hoverLabel.offsetHeight;
+      const collision = obstacles.find(
+        (obstacle) =>
+          labelLeft < obstacle.right &&
+          labelRight > obstacle.left &&
+          labelTop < obstacle.bottom &&
+          labelBottom > obstacle.top,
+      );
+      if (!collision) break;
+      const chromeGap = 4;
+      const aboveChrome = collision.top - hoverLabel.offsetHeight - chromeGap;
+      if (aboveChrome >= 0) {
+        labelTop = aboveChrome;
+      } else if (collision.right + chromeGap + hoverLabel.offsetWidth <= canvasRect.right) {
+        labelLeft = collision.right + chromeGap;
+        labelTop = Math.max(0, collision.top);
+      } else {
+        labelTop = collision.bottom + chromeGap;
+      }
+    }
+    park(hoverLabel, labelTop, labelLeft);
+  };
+
+  const syncHoverAt = (event: PointerEvent) => {
+    if (!hoverOutline || !hoverLabel || event.buttons) return hideHover();
+    const root = hoverTargetAt(event.clientX, event.clientY);
+    const id = root?.dataset.pbId ?? null;
+    if (!id) return hideHover();
+    // A block currently holding the caret/text selection is already in the
+    // edit phase, so painting the inspect veil over it only adds noise.
+    // Explicit block selections are intentionally NOT suppressed: a selected
+    // container must remain traversable into its children and layout space.
+    if (editor.selection.active === id) return hideHover();
+    hoverId = id;
+    positionHover();
+  };
+
+  // When a transparent rounded corner reveals a parent block, the overlay
+  // target differs from the DOM event target. Claim that one case in capture
+  // and feed it through the public selection API; ordinary leaf clicks stay
+  // completely native and place the caret as before.
+  const onHoverMouseDown = (event: MouseEvent) => {
+    if (event.button !== 0 || event.defaultPrevented || !hoverId) return;
+    const rawId = rawRootOf(event.target)?.dataset.pbId;
+    if (!rawId || rawId === hoverId) {
+      hideHover();
+      return;
+    }
+    const target = hoverId;
+    event.preventDefault();
+    hideHover();
+    editor.selectBlock(target, {
+      toggle: event.metaKey || event.ctrlKey,
+      range: event.shiftKey,
+      block: true,
+    });
+  };
+  canvas.addEventListener("mousedown", onHoverMouseDown, true);
+  disposers.push(() => canvas.removeEventListener("mousedown", onHoverMouseDown, true));
+
+  const deepActiveElement = (): Element | null => {
+    let active: Element | null = ownerDocument.activeElement;
+    while (active instanceof ownerWindow.HTMLElement && active.shadowRoot?.activeElement) {
+      active = active.shadowRoot.activeElement;
+    }
+    return active;
+  };
+
   const plainText = (html: FieldValue | undefined): string => {
-    const d = document.createElement("div");
+    const d = ownerDocument.createElement("div");
     d.innerHTML = typeof html === "string" ? html : "";
     return d.textContent ?? "";
   };
@@ -284,10 +985,10 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         : root.querySelector<HTMLElement>("[data-pb-rich],[data-pb-text]"));
     if (!carrier) return;
     carrier.focus({ preventScroll: true });
-    const range = document.createRange();
+    const range = ownerDocument.createRange();
     range.selectNodeContents(carrier);
     range.collapse(false);
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
   };
@@ -304,7 +1005,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   // toolbar then just floats above its block, no sticking needed).
   const scrollParent = (el: HTMLElement): HTMLElement | null => {
     for (let p = el.parentElement; p; p = p.parentElement) {
-      const oy = getComputedStyle(p).overflowY;
+      const oy = ownerWindow.getComputedStyle(p).overflowY;
       if (oy === "auto" || oy === "scroll") return p;
     }
     return null;
@@ -319,7 +1020,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       const items = [...panel.querySelectorAll<HTMLButtonElement>("button:not([hidden])")].filter(
         (b) => !b.disabled,
       );
-      const cur = items.indexOf(document.activeElement as HTMLButtonElement);
+      const cur = items.indexOf(deepActiveElement() as HTMLButtonElement);
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const next =
@@ -353,15 +1054,23 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     p.onClose?.();
   }
 
-  // The block an open picker/inserter targets — picking TRANSFORMS it
-  // (familiar block-editor semantics: replace the empty/"/" default block).
+  // Slash/legacy pickers transform targetId. The hover-edge inserter instead
+  // carries an explicit sibling placement and inserts without a placeholder.
   let targetId: string | null = null;
+  let insertionPlacement: InlineInsertionPlacement | null = null;
+  let insertionAtEmptyRoot = false;
 
   const pickBlock = (type: string) => {
     const id = targetId;
+    const placement = insertionPlacement;
+    const atEmptyRoot = insertionAtEmptyRoot;
     targetId = null;
+    insertionPlacement = null;
+    insertionAtEmptyRoot = false;
     closePanel();
-    if (id && editor.getBlock(id)) editor.replaceBlock(id, type); // focuses the fresh block
+    if (placement) editor.insertBlockAdjacent(placement.anchorId, placement.edge, type);
+    else if (atEmptyRoot) editor.insertBlock(type);
+    else if (id && editor.getBlock(id)) editor.replaceBlock(id, type); // focuses the fresh block
   };
 
   // Inserter hygiene (story #370): the pickers offer what the TARGET's slot
@@ -376,11 +1085,15 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     (id ? locateBlock(editor.getModel().blocks, id)?.parent?.id : null) ?? null;
   const pickerTypes = (id: string | null) => {
     const parentId = parentIdOf(id);
+    if (parentId && editor.editingMode(parentId) !== "default") return [];
     // Nested slot → block-def allowedChildren ∩ slot policy (D2); ROOT → the
     // editor's allowedBlocks policy (B2). Both via canInsertInto so the picker
     // never offers a type the primitive would refuse. Empty at root → inserter hidden.
     return blockTypes().filter(
-      (b) => (parentId || !b.internal) && editor.canInsertInto(parentId, b.type),
+      (b) =>
+        (parentId || !b.internal) &&
+        (options.allowBlock?.(b.type) ?? !b.templateOnly) &&
+        editor.canInsertInto(parentId, b.type),
     );
   };
 
@@ -421,12 +1134,14 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     });
   };
 
-  // The quick picker's "Pattern" pick: consume the slash command (the
-  // explorer's eventual pick must find an EMPTY default block to replace),
-  // then escalate to the host's full pattern dialog.
+  // The quick picker's "Pattern" pick: consume the slash command (the host's
+  // eventual pick must find an EMPTY default block to replace), then
+  // escalate to the host's first-class Patterns surface.
   const browsePatternsFromQuick = () => {
     const id = targetId;
     targetId = null;
+    insertionPlacement = null;
+    insertionAtEmptyRoot = false;
     closePanel();
     if (!id) return;
     const block = editor.getBlock(id);
@@ -443,7 +1158,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     quick.addEventListener("mousedown", (e) => e.preventDefault());
     quick.addEventListener("click", (e) => {
       const item =
-        e.target instanceof Element
+        e.target instanceof ownerWindow.Element
           ? e.target.closest<HTMLButtonElement>("button[data-type], button[data-browse-patterns]")
           : null;
       if (!item) return;
@@ -468,11 +1183,13 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         e.preventDefault();
         e.stopPropagation();
         targetId = null;
+        insertionPlacement = null;
+        insertionAtEmptyRoot = false;
         closePanel(); // the caret never left the block — nothing to refocus
       }
     };
-    document.addEventListener("keydown", onQuickKeys, true);
-    disposers.push(() => document.removeEventListener("keydown", onQuickKeys, true));
+    ownerDocument.addEventListener("keydown", onQuickKeys, true);
+    disposers.push(() => ownerDocument.removeEventListener("keydown", onQuickKeys, true));
   }
 
   // (Re)build the menu for the text typed after "/": empty query = the
@@ -488,7 +1205,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         : mostUsedOf(types)
     ).slice(0, QUICK_LIMIT);
     // "Pattern" rides along while it matches the query — it opens the host's
-    // full pattern dialog, it is not a block.
+    // Patterns surface; it is not itself a block.
     const withPatterns = !!options.onBrowsePatterns && (!query || "patterns".includes(query));
     quick.textContent = "";
     quickItems = [];
@@ -530,6 +1247,8 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     const root = quick && rootOf(id);
     if (!quick || !root) return;
     targetId = id;
+    insertionPlacement = null;
+    insertionAtEmptyRoot = false;
     if (!buildQuickItems("")) {
       targetId = null; // B2: nothing insertable here → no picker
       return;
@@ -570,12 +1289,14 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     : null;
   const appender = mount(
     button(
-      "pbe-ui pbe-appender absolute z-30 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-      ICON_PLUS,
+      "pbe-ui pbe-appender absolute z-30 h-6 cursor-pointer text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+      `<span class="pointer-events-none absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 bg-primary"></span>` +
+        `<span class="pointer-events-none absolute top-1/2 left-1/2 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">${ICON_PLUS}</span>`,
       "Add block",
     ),
   );
-  appender.hidden = true;
+  appender.style.visibility = "hidden";
+  appender.style.pointerEvents = "none";
   const spacerHandle = mount(
     button(
       "pbe-ui pbe-spacer-handle absolute z-30 h-3 w-12 cursor-ns-resize rounded-full border border-input bg-background shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
@@ -612,6 +1333,91 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     spacerHandle.addEventListener("pointercancel", finish);
   });
 
+  // In-canvas image resize (Gutenberg-style): a full-edge accent line with a
+  // circular grab dot at its center. The vertical line rides the img's RIGHT
+  // edge; when that edge is clipped offscreen (image wider than the visible
+  // pane) the LEFT edge takes over — the image stays left-aligned, so
+  // dragging the left handle outward still means "grow". The horizontal line
+  // rides the BOTTOM edge and scales the image by its height; both edges
+  // keep the natural ratio and commit the same width + height:auto pair.
+  const RESIZE_DOT =
+    `<span class="pointer-events-none absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 ` +
+    `-translate-y-1/2 rounded-full border-[3px] border-[var(--color-pbe-accent)] bg-background"></span>`;
+  const imageResizeHandle = (name: string, line: string, cursor: string, label: string) =>
+    mount(
+      button(
+        `pbe-ui ${name} absolute z-30 ${cursor} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`,
+        `<span class="pointer-events-none absolute ${line} rounded-full bg-[var(--color-pbe-accent)]"></span>${RESIZE_DOT}`,
+        label,
+      ),
+    );
+  const imageHandleX = imageResizeHandle(
+    "pbe-image-width-handle",
+    "inset-y-0 left-1/2 w-[3px] -translate-x-1/2",
+    "w-3 cursor-ew-resize",
+    "Resize image width",
+  );
+  const imageHandleY = imageResizeHandle(
+    "pbe-image-height-handle",
+    "inset-x-0 top-1/2 h-[3px] -translate-y-1/2",
+    "h-3 cursor-ns-resize",
+    "Resize image height",
+  );
+  imageHandleX.hidden = true;
+  imageHandleY.hidden = true;
+
+  const imageOf = (id: string): HTMLImageElement | null =>
+    rootOf(id)?.querySelector<HTMLImageElement>("img[data-pb-image]") ?? null;
+
+  const wireImageHandle = (handle: HTMLButtonElement, axis: "x" | "y") => {
+    handle.addEventListener("pointerdown", (event) => {
+      const id = handle.dataset.target;
+      const root = id ? rootOf(id) : null;
+      const img = id ? imageOf(id) : null;
+      if (!id || !root || !img || !editor.canStyle(id)) return;
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      const fromLeft = handle.dataset.edge === "left";
+      const start = axis === "x" ? event.clientX : event.clientY;
+      const startRect = img.getBoundingClientRect();
+      const ratio = startRect.width / startRect.height;
+      // The figure is the layout ceiling (max-w-full caps the img there anyway).
+      const maxWidth = Math.max(root.getBoundingClientRect().width, startRect.width);
+      const originalWidth = img.style.width;
+      const originalHeight = img.style.height;
+      let nextWidth = Math.round(startRect.width);
+      const move = (moveEvent: PointerEvent) => {
+        const delta = (axis === "x" ? moveEvent.clientX : moveEvent.clientY) - start;
+        // Bottom-edge drags express a height; the ratio converts it so ONE
+        // dimension (width) stays the committed source of truth.
+        const target =
+          axis === "x"
+            ? startRect.width + (fromLeft ? -delta : delta)
+            : (startRect.height + delta) * ratio;
+        nextWidth = Math.round(Math.min(maxWidth, Math.max(32, target)));
+        img.style.width = `${nextWidth}px`;
+        img.style.height = "auto";
+        syncImageResizer();
+      };
+      const finish = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        img.style.width = originalWidth;
+        img.style.height = originalHeight;
+        // height:auto neutralizes the render's height attribute so the ratio
+        // holds at every viewport (a fixed px height would distort under
+        // max-w-full). One transaction — one undo step.
+        editor.setStyles(id, { width: `${nextWidth}px`, height: "auto" });
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+    });
+  };
+  wireImageHandle(imageHandleX, "x");
+  wireImageHandle(imageHandleY, "y");
+
   if (inserter) {
     inserter.hidden = true;
     search.type = "text";
@@ -624,9 +1430,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       inserter.append(browseAll);
       browseAll.addEventListener("click", () => {
         const id = targetId;
+        const placement = insertionPlacement ?? undefined;
         targetId = null;
+        insertionPlacement = null;
+        insertionAtEmptyRoot = false;
         closePanel();
-        options.onBrowseAll!(id);
+        options.onBrowseAll!(id, placement);
       });
     }
 
@@ -647,9 +1456,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     const chooseGridItem = (item: HTMLButtonElement) => {
       if (item.dataset.browsePatterns) {
         const id = targetId;
+        const placement = insertionPlacement ?? undefined;
         targetId = null;
+        insertionPlacement = null;
+        insertionAtEmptyRoot = false;
         closePanel();
-        options.onBrowsePatterns!(id);
+        options.onBrowsePatterns!(id, placement);
       } else {
         pickBlock(item.dataset.type!);
       }
@@ -668,20 +1480,22 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         e.preventDefault();
         const id = targetId;
         targetId = null;
+        insertionPlacement = null;
+        insertionAtEmptyRoot = false;
         closePanel();
         if (id) refocusCarrier(id);
       }
     });
     grid.addEventListener("click", (e) => {
       const item =
-        e.target instanceof Element
+        e.target instanceof ownerWindow.Element
           ? e.target.closest<HTMLButtonElement>("button[data-type]")
           : null;
       if (item) chooseGridItem(item);
     });
     grid.addEventListener("keydown", (e) => {
       const items = visibleItems();
-      const cur = items.indexOf(document.activeElement as HTMLButtonElement);
+      const cur = items.indexOf(deepActiveElement() as HTMLButtonElement);
       const keys = ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"];
       if (keys.includes(e.key)) {
         e.preventDefault();
@@ -693,6 +1507,8 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         e.preventDefault();
         const id = targetId;
         targetId = null;
+        insertionPlacement = null;
+        insertionAtEmptyRoot = false;
         closePanel();
         if (id) refocusCarrier(id);
       }
@@ -700,9 +1516,18 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
 
     appender.addEventListener("mousedown", (e) => e.preventDefault());
     appender.addEventListener("click", () => {
-      const id = appender.dataset.target;
-      if (!id || !editor.getBlock(id)) return;
-      targetId = id;
+      const id = appender.dataset.target ?? null;
+      const edge = appender.dataset.edge;
+      if (edge === "empty") {
+        targetId = null;
+        insertionPlacement = null;
+        insertionAtEmptyRoot = true;
+      } else {
+        if (!id || !editor.getBlock(id) || (edge !== "before" && edge !== "after")) return;
+        targetId = id;
+        insertionPlacement = { anchorId: id, edge };
+        insertionAtEmptyRoot = false;
+      }
       search.value = "";
       grid.textContent = "";
       const GRID_ITEM =
@@ -737,6 +1562,8 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       filterGrid();
       const ar = appender.getBoundingClientRect();
       const fr = host.getBoundingClientRect();
+      appender.style.visibility = "hidden";
+      appender.style.pointerEvents = "none";
       inserter.hidden = false; // measurable before parking
       inserter.style.top = `${ar.bottom - fr.top + 6}px`;
       inserter.style.left = `${Math.max(0, ar.right - fr.left - inserter.offsetWidth)}px`;
@@ -839,16 +1666,16 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     // input replaces the document selection, so the caption range is SAVED at
     // click time and restored (carrier refocused) before applyLink reads it.
     btnFmtLink.addEventListener("click", () => {
-      const sel = window.getSelection();
+      const sel = ownerWindow.getSelection();
       const saved = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
       const restore = () => {
         if (!saved) return;
         const c = saved.commonAncestorContainer;
-        const carrier = (c instanceof Element ? c : c.parentElement)?.closest<HTMLElement>(
-          "[data-pb-rich]",
-        );
+        const carrier = (
+          c instanceof ownerWindow.Element ? c : c.parentElement
+        )?.closest<HTMLElement>("[data-pb-rich]");
         carrier?.focus({ preventScroll: true });
-        const s = window.getSelection();
+        const s = ownerWindow.getSelection();
         s?.removeAllRanges();
         s?.addRange(saved);
       };
@@ -952,7 +1779,10 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         }
         const tr = trigger.getBoundingClientRect();
         park(panel, tr.bottom + 6, tr.left);
-        showPanel({ el: panel, onClose: () => trigger.setAttribute("aria-expanded", "false") });
+        showPanel({
+          el: panel,
+          onClose: () => trigger.setAttribute("aria-expanded", "false"),
+        });
         trigger.setAttribute("aria-expanded", "true");
         panel.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
       });
@@ -1033,7 +1863,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         const src = urlInput.value.trim();
         closePanel();
         // external source: intrinsic dims unknown — cleared, not stale
-        editor.setField(id, field, { src, alt: value.alt, width: "", height: "" });
+        editor.setField(id, field, {
+          src,
+          alt: value.alt,
+          width: "",
+          height: "",
+        });
       });
       panel.append(urlBtn, urlForm);
 
@@ -1045,7 +1880,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       reset.disabled = !value.src;
       reset.addEventListener("click", () => {
         closePanel();
-        editor.setField(id, field, { src: "", alt: value.alt, width: "", height: "" });
+        editor.setField(id, field, {
+          src: "",
+          alt: value.alt,
+          width: "",
+          height: "",
+        });
       });
       panel.appendChild(reset);
 
@@ -1091,7 +1931,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       );
       const newTab = h("input", "size-4 accent-[var(--color-pbe-accent)]") as HTMLInputElement;
       newTab.type = "checkbox";
-      newTabRow.append(newTab, document.createTextNode("Open in new tab"));
+      newTabRow.append(newTab, ownerDocument.createTextNode("Open in new tab"));
       const remove = button(`${ITEM} mt-1`, "");
       remove.append(
         h("span", "flex h-5 w-5 items-center justify-center", ICON_LINK),
@@ -1187,6 +2027,11 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     };
 
     for (const spec of specs) {
+      if (
+        (spec.setting === "containerWidth" || spec.setting === "containerBleed") &&
+        settingValue("isContainer") !== true
+      )
+        continue;
       if (spec.control === "add-child" && spec.type) {
         const trigger = button(`${BTN} px-2 whitespace-nowrap`, spec.label, spec.label);
         trigger.addEventListener("click", () => editor.appendChild(id, spec.type!));
@@ -1206,6 +2051,23 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
               ? currentBlock.settings[spec.setting!]
               : def?.settings?.find((setting) => setting.setting === spec.setting)?.default;
           editor.setSetting(id, spec.setting!, !current);
+        });
+        add(spec, toggle);
+        continue;
+      }
+      if (spec.control === "toggle-style" && spec.style && spec.value) {
+        const active = editor.getStyle(id, spec.style) === spec.value;
+        const icon = iconSvg(
+          active ? (spec.activeIcon ?? spec.icon ?? "") : (spec.icon ?? ""),
+          "h-5 w-5",
+        );
+        const toggle = icon
+          ? button(BTN, icon, spec.label)
+          : button(`${BTN} px-2 whitespace-nowrap`, spec.label, spec.label);
+        setOn(toggle, active);
+        toggle.setAttribute("aria-pressed", String(active));
+        toggle.addEventListener("click", () => {
+          editor.setStyle(id, spec.style!, active ? "" : spec.value!);
         });
         add(spec, toggle);
         continue;
@@ -1419,11 +2281,21 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
               ? block.fields[spec.field]
               : settingValue(spec.setting!);
       const active = spec.options.find((option) => option.value === value);
-      const trigger = button(
-        `${BTN} px-2 whitespace-nowrap`,
-        `${active?.label ?? spec.label}${ICON_CHEVRON}`,
-        spec.label,
-      );
+      const containerOptionLabel = (option: { value: string; label: string }): string => {
+        if (spec.setting !== "containerWidth") return option.label;
+        const widths = containerWidths();
+        if (option.value === "content") return `${option.label} · Max ${widths.content}`;
+        if (option.value === "wide") return `${option.label} · Max ${widths.wide}`;
+        return option.label;
+      };
+      const activeIcon = iconSvg(active?.icon ?? spec.icon ?? "", "h-5 w-5");
+      const trigger = activeIcon
+        ? button(BTN, `${activeIcon}${ICON_CHEVRON}`, spec.label)
+        : button(
+            `${BTN} px-2 whitespace-nowrap`,
+            `${active?.label ?? spec.label}${ICON_CHEVRON}`,
+            spec.label,
+          );
       trigger.setAttribute("aria-haspopup", "menu");
       trigger.setAttribute("aria-expanded", "false");
       trigger.addEventListener("click", () => {
@@ -1431,9 +2303,13 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         panel.setAttribute("role", "menu");
         panel.addEventListener("mousedown", (event) => event.preventDefault());
         for (const option of spec.options!) {
+          const optionIcon = iconSvg(option.icon ?? "", "h-5 w-5");
+          const optionLabel = containerOptionLabel(option);
           const item = button(
             `${ITEM}${option.value === value ? ` ${ITEM_ACTIVE}` : ""}`,
-            option.label,
+            optionIcon
+              ? `<span class="flex h-5 w-5 shrink-0 items-center justify-center">${optionIcon}</span>${optionLabel}`
+              : optionLabel,
           );
           item.setAttribute("role", "menuitem");
           item.addEventListener("click", () => {
@@ -1472,7 +2348,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     if (!toolbar) return;
     // While chrome holds focus (open dropdown, tabbed-to button) the caret is
     // gone but the toolbar must not vanish under the user.
-    if (openPanel || toolbar.contains(document.activeElement)) return;
+    if (openPanel || toolbar.contains(deepActiveElement())) return;
 
     const ids = editor.selection.blocks;
     const multi = ids.length > 1;
@@ -1511,7 +2387,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         ...(root.matches("[data-pb-rich]") ? [root] : []),
         ...root.querySelectorAll<HTMLElement>("[data-pb-rich]"),
       ].filter((carrier) => carrier.closest("[data-pb-id]") === root);
-      const activeRich = document.activeElement?.closest?.("[data-pb-rich]");
+      const activeRich = deepActiveElement()?.closest?.("[data-pb-rich]");
       const hasActiveRich = !!activeRich && richCarriers.includes(activeRich as HTMLElement);
 
       const declared = patternDef ? [] : (getBlockType(block.type)?.toolbar ?? []);
@@ -1523,7 +2399,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       // (selecting the leaf image drops a collapsed caret in the caption, which
       // must NOT count as "formatting"), and the block controls step aside for
       // it — one strip, no duplicate Link buttons.
-      const winSel = window.getSelection();
+      const winSel = ownerWindow.getSelection();
       const hasTextSel =
         editor.selection.active === id &&
         hasActiveRich &&
@@ -1646,34 +2522,140 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     if (id && slashTextOf(id) === "/") openQuick(id);
   }
 
-  // The + follows the empty default block's ghost row.
-  function syncAppender() {
-    if (!withInserter || openPanel) return;
-    const id = editor.selection.active;
-    const block = id ? editor.getBlock(id) : null;
-    const root = id ? rootOf(id) : null;
-    const ghosted =
-      root &&
-      (root.matches("[data-pbe-ph].pbe-empty")
-        ? root
-        : root.querySelector("[data-pbe-ph].pbe-empty"));
-    if (
-      !id ||
-      !block ||
-      !root ||
-      block.type !== editor.defaultBlock ||
-      !ghosted ||
-      !pickerTypes(id).length // B2: nothing insertable → no + affordance
-    ) {
-      appender.hidden = true;
+  // One global edge affordance replaces the old trailing empty-block row.
+  // It is projected over the nearest visible block edge without entering the
+  // authored DOM, so serialization and document layout remain untouched.
+  const hideAppender = () => {
+    appender.style.visibility = "hidden";
+    appender.style.pointerEvents = "none";
+    delete appender.dataset.target;
+    delete appender.dataset.edge;
+  };
+  const edgeDepth = (root: HTMLElement): number => {
+    let depth = 0;
+    for (
+      let parent = root.parentElement;
+      parent && parent !== canvas;
+      parent = parent.parentElement
+    )
+      if (parent.matches("[data-pb-id]")) depth++;
+    return depth;
+  };
+  function syncAppenderAt(event: PointerEvent) {
+    if (!withInserter || openPanel) return hideAppender();
+    const target = event.target;
+    if (!(target instanceof ownerWindow.Element) || !canvas.contains(target)) return hideAppender();
+
+    const canvasRect = canvas.getBoundingClientRect();
+    if (!editor.getModel().blocks.length) {
+      appender.dataset.edge = "empty";
+      delete appender.dataset.target;
+      appender.setAttribute("aria-label", "Add first block");
+      appender.title = "Add first block";
+      appender.style.width = `${canvasRect.width}px`;
+      park(appender, canvasRect.top, canvasRect.left);
+      appender.style.visibility = "visible";
+      appender.style.pointerEvents = "auto";
       return;
     }
-    const cr = canvas.getBoundingClientRect();
-    const rr = root.getBoundingClientRect();
-    appender.dataset.target = id;
-    park(appender, rr.top + (rr.height - 32) / 2, cr.right - 40);
-    appender.hidden = false;
+    const candidates: {
+      id: string;
+      root: HTMLElement;
+      edge: "before" | "after";
+      distance: number;
+      depth: number;
+      lineY: number;
+    }[] = [];
+    const seen = new Set<string>();
+    for (const rawRoot of canvas.querySelectorAll<HTMLElement>("[data-pb-id]")) {
+      const rawId = rawRoot.dataset.pbId;
+      if (!rawId) continue;
+      const pattern = editor.patternContext(rawId);
+      const id = pattern?.id ?? rawId;
+      if (seen.has(id) || !pickerTypes(id).length) continue;
+      seen.add(id);
+      const root = rootOf(id);
+      if (!root) continue;
+      const rect = root.getBoundingClientRect();
+      if (
+        !rect.width ||
+        !rect.height ||
+        event.clientX < rect.left - 8 ||
+        event.clientX > rect.right + 8
+      )
+        continue;
+      const at = locateBlock(editor.getModel().blocks, id);
+      if (!at) continue;
+
+      // Every sibling junction is owned by the block AFTER it. The active
+      // hit area spans the whole visual gap (collapsed margins included), and
+      // the line sits at its midpoint. This gives internal boundaries the
+      // same reliable target as the document's outer edges.
+      const previous = at.list[at.index - 1];
+      const previousRoot = previous ? rootOf(previous.id) : null;
+      const previousRect = previousRoot?.getBoundingClientRect();
+      const gapStart = previousRect ? Math.min(previousRect.bottom, rect.top) : rect.top;
+      const gapEnd = previousRect ? Math.max(previousRect.bottom, rect.top) : rect.top;
+      const beforeDistance =
+        event.clientY < gapStart
+          ? gapStart - event.clientY
+          : event.clientY > gapEnd
+            ? event.clientY - gapEnd
+            : 0;
+      if (beforeDistance <= 12) {
+        candidates.push({
+          id,
+          root,
+          edge: "before",
+          distance: beforeDistance,
+          depth: edgeDepth(root),
+          lineY: (gapStart + gapEnd) / 2,
+        });
+      }
+
+      // The final sibling owns the trailing document/container boundary.
+      if (at.index === at.list.length - 1) {
+        const afterDistance = Math.abs(event.clientY - rect.bottom);
+        if (afterDistance <= 12) {
+          candidates.push({
+            id,
+            root,
+            edge: "after",
+            distance: afterDistance,
+            depth: edgeDepth(root),
+            lineY: rect.bottom,
+          });
+        }
+      }
+    }
+    const candidate = candidates.sort((a, b) => a.distance - b.distance || b.depth - a.depth)[0];
+    if (!candidate) return hideAppender();
+
+    const rect = candidate.root.getBoundingClientRect();
+    const left = Math.max(canvasRect.left, rect.left);
+    const right = Math.min(canvasRect.right, rect.right);
+    if (right - left < 24) return hideAppender();
+    appender.dataset.target = candidate.id;
+    appender.dataset.edge = candidate.edge;
+    appender.style.visibility = "visible";
+    appender.style.pointerEvents = "auto";
+    appender.setAttribute(
+      "aria-label",
+      `Add block ${candidate.edge === "before" ? "before" : "after"}`,
+    );
+    appender.title = appender.getAttribute("aria-label")!;
+    appender.style.width = `${right - left}px`;
+    park(appender, candidate.lineY - 12, left);
   }
+
+  listen("pointermove", (event) => {
+    const path = event.composedPath();
+    // Position the sentinel first so hover-label collision placement sees its
+    // box in this same pointer frame. Events over the sentinel itself retain
+    // its last valid placement but still update geometric block inspection.
+    if (!path.includes(appender) && !(inserter && path.includes(inserter))) syncAppenderAt(event);
+    syncHoverAt(event);
+  });
 
   function syncSpacerResizer() {
     const ids = editor.selection.blocks;
@@ -1696,6 +2678,54 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     spacerHandle.dataset.target = id;
     park(spacerHandle, rect.bottom - 6, rect.left + rect.width / 2 - 24);
     spacerHandle.hidden = false;
+  }
+
+  function syncImageResizer() {
+    const hide = () => {
+      for (const handle of [imageHandleX, imageHandleY]) {
+        handle.hidden = true;
+        delete handle.dataset.target;
+      }
+    };
+    const ids = editor.selection.blocks;
+    const id = editor.selection.active ?? (ids.length === 1 ? ids[0] : null);
+    const block = id ? editor.getBlock(id) : null;
+    const img = id ? imageOf(id) : null;
+    if (
+      !id ||
+      !block ||
+      block.type !== "image" ||
+      editor.editingMode(id) !== "default" ||
+      !editor.canStyle(id) ||
+      !img ||
+      !img.getAttribute("src") // placeholder card, nothing to size yet
+    )
+      return hide();
+    // A ratio preset pins [&_img]:w-full (its selector outranks a width
+    // class), and a gallery grid owns its children's sizing — no handle.
+    const ratio = block.settings?.aspectRatio;
+    if (typeof ratio === "string" && ratio !== "auto") return hide();
+    const parent = parentIdOf(id);
+    if (parent && editor.getBlock(parent)?.type === "gallery") return hide();
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return hide();
+    // The 12px-wide grab strip must stay reachable: when the img's right edge
+    // (plus the strip's outer half) is clipped offscreen, the LEFT edge takes
+    // over for width drags.
+    const limit = Math.min(
+      ownerDocument.documentElement.clientWidth,
+      scroller ? scroller.getBoundingClientRect().right : Infinity,
+    );
+    const fromLeft = rect.right + 6 > limit;
+    imageHandleX.dataset.target = id;
+    imageHandleX.dataset.edge = fromLeft ? "left" : "right";
+    imageHandleX.style.height = `${rect.height}px`;
+    park(imageHandleX, rect.top, (fromLeft ? rect.left : rect.right) - 6);
+    imageHandleX.hidden = false;
+    imageHandleY.dataset.target = id;
+    imageHandleY.style.width = `${rect.width}px`;
+    park(imageHandleY, rect.bottom - 6, rect.left);
+    imageHandleY.hidden = false;
   }
 
   // --- media placeholder --------------------------------------------------
@@ -1728,6 +2758,92 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   // no card, so a floating spinner pill parks over the block instead.
   const SPINNER_SVG = `<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.25" stroke-width="2.5"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`;
 
+  // This chrome island lives INSIDE the website canvas, where host selectors
+  // and utility classes are intentionally unrestricted. A shadow root is the
+  // only hard cascade boundary: namespacing/specificity can reduce collisions,
+  // but cannot prevent a later host rule from winning. Private --pbe-chrome-*
+  // values cross the boundary intentionally; no public site token does.
+  const MEDIA_PLACEHOLDER_CSS = `
+    :host {
+      display: block;
+      margin: 0.25rem 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      color-scheme: light dark;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    .card {
+      border: 1px solid var(--pbe-chrome-border, #e4e4e7);
+      border-radius: 0.5rem;
+      background: var(--pbe-chrome-muted, #f4f4f5);
+      padding: 1rem;
+      color: var(--pbe-chrome-foreground, #18181b);
+      transition: border-color 120ms ease, opacity 120ms ease;
+    }
+    :host([aria-busy="true"]) .card { opacity: 0.6; pointer-events: none; }
+    .card.drag-active { border-color: var(--pbe-chrome-ring, #287cc1); }
+    .title { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; font-weight: 600; }
+    .title svg { width: 1.25rem; height: 1.25rem; }
+    .description { margin: 0 0 0.75rem; color: var(--pbe-chrome-muted-foreground, #71717a); font-size: 0.875rem; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    button, .upload {
+      display: inline-flex;
+      height: 2.5rem;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.5rem;
+      padding: 0 0.875rem;
+      font: 600 0.875rem/1 ui-sans-serif, system-ui, sans-serif;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+    }
+    button { appearance: none; }
+    .upload {
+      border: 1px solid transparent;
+      background: var(--pbe-chrome-primary, #287cc1);
+      color: var(--pbe-chrome-primary-foreground, #fff);
+    }
+    .upload:hover { filter: brightness(0.94); }
+    .upload input { display: none; }
+    .secondary {
+      border: 1px solid var(--pbe-chrome-input, #d4d4d8);
+      background: var(--pbe-chrome-background, #fff);
+      color: var(--pbe-chrome-foreground, #18181b);
+    }
+    .secondary:hover, .apply:hover { background: var(--pbe-chrome-accent, #f4f4f5); }
+    button:focus-visible, .upload:focus-within, input:focus-visible {
+      outline: 2px solid var(--pbe-chrome-ring, #287cc1);
+      outline-offset: 2px;
+    }
+    .url-row { display: flex; align-items: center; gap: 0.375rem; margin-top: 0.5rem; }
+    .url-input {
+      width: 100%;
+      max-width: 24rem;
+      height: 2.5rem;
+      border: 1px solid var(--pbe-chrome-input, #d4d4d8);
+      border-radius: 0.375rem;
+      background: var(--pbe-chrome-background, #fff);
+      padding: 0 0.625rem;
+      color: var(--pbe-chrome-foreground, #18181b);
+      font: 400 0.875rem/1 ui-sans-serif, system-ui, sans-serif;
+    }
+    .url-input::placeholder { color: var(--pbe-chrome-muted-foreground, #71717a); }
+    .apply {
+      min-width: 2.5rem;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--pbe-chrome-foreground, #18181b);
+      padding: 0 0.5rem;
+    }
+    .busy { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; color: var(--pbe-chrome-muted-foreground, #71717a); font-size: 0.875rem; font-weight: 500; }
+    .busy svg { width: 1rem; height: 1rem; }
+    .error { margin: 0.5rem 0 0; color: #dc2626; font-size: 0.875rem; }
+    @keyframes pbe-mph-spin { to { transform: rotate(360deg); } }
+    .animate-spin { animation: pbe-mph-spin 1s linear infinite; }
+  `;
+
   const busyPills = new Map<string, HTMLElement>();
 
   /** Show busy feedback for block `id`; returns the cleanup. `label` null =
@@ -1736,9 +2852,9 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     const card = cardOf(id);
     if (card) {
       card.setAttribute("aria-busy", "true");
-      const err = card.querySelector<HTMLElement>(".pbe-mph-error");
+      const err = card.shadowRoot?.querySelector<HTMLElement>(".pbe-mph-error");
       if (err) err.hidden = true; // a new attempt clears the previous failure
-      const busy = card.querySelector<HTMLElement>(".pbe-mph-busy");
+      const busy = card.shadowRoot?.querySelector<HTMLElement>(".pbe-mph-busy");
       if (busy && label) {
         busy.querySelector("span")!.textContent = label;
         busy.hidden = false;
@@ -1772,7 +2888,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   }
 
   function setCardError(id: string, message: string) {
-    const err = cardOf(id)?.querySelector<HTMLElement>(".pbe-mph-error");
+    const err = cardOf(id)?.shadowRoot?.querySelector<HTMLElement>(".pbe-mph-error");
     if (!err) return;
     err.textContent = message;
     err.hidden = false;
@@ -1820,26 +2936,29 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   function buildMediaPlaceholder(id: string, field: string, type: string): HTMLElement {
     const def = getBlockType(type)!;
     const noun = def.label.toLowerCase();
-    const card = document.createElement("div");
-    card.className =
-      "pbe-ui pbe-media-ph my-1 rounded-lg border border-border bg-muted p-4 text-foreground";
+    const card = ownerDocument.createElement("pbe-media-placeholder");
+    card.className = "pbe-media-ph";
     card.contentEditable = "false";
-    card.innerHTML =
-      `<div class="mb-1 flex items-center gap-2 font-semibold">${iconSvg(def.icon ?? "", "h-5 w-5")}<span>${def.label}</span></div>` +
-      `<p class="m-0 mb-3 text-sm text-muted-foreground">Drag and drop ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun} file, upload, or insert from URL.</p>` +
-      `<div class="flex flex-wrap items-center gap-2">` +
-      `<label class="pbe-mph-upload inline-flex h-10 cursor-pointer items-center rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-xs hover:bg-primary/90"${uploadsReady() ? "" : " hidden"}>Upload<input type="file" class="hidden"></label>` +
+    const shadow = card.attachShadow({ mode: "open" });
+    shadow.innerHTML =
+      `<style>${MEDIA_PLACEHOLDER_CSS}</style>` +
+      `<div class="card">` +
+      `<div class="title">${iconSvg(def.icon ?? "")}<span>${def.label}</span></div>` +
+      `<p class="description">Drag and drop ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun} file, upload, or insert from URL.</p>` +
+      `<div class="actions">` +
+      `<label class="pbe-mph-upload upload"${uploadsReady() ? "" : " hidden"}>Upload<input type="file"></label>` +
       (mediaAdapter.browse
-        ? `<button type="button" class="pbe-mph-browse h-10 cursor-pointer rounded-lg border border-input bg-background px-3.5 text-sm font-semibold text-foreground shadow-xs hover:bg-ui-accent">Media Library</button>`
+        ? `<button type="button" class="pbe-mph-browse secondary">Media Library</button>`
         : "") +
-      `<button type="button" class="pbe-mph-url-btn h-10 cursor-pointer rounded-lg border border-input bg-background px-3.5 text-sm font-semibold text-foreground shadow-xs hover:bg-ui-accent">Insert from URL</button>` +
+      `<button type="button" class="pbe-mph-url-btn secondary">Insert from URL</button>` +
       `</div>` +
-      `<form class="pbe-mph-url-row mt-2 flex items-center gap-1.5" hidden>` +
-      `<input type="text" placeholder="Paste or type URL" class="h-10 w-full max-w-96 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25">` +
-      `<button type="submit" class="h-10 min-w-10 cursor-pointer rounded-md px-2 text-sm font-semibold hover:bg-ui-accent" aria-label="Apply">↵</button>` +
+      `<form class="pbe-mph-url-row url-row" hidden>` +
+      `<input type="text" placeholder="Paste or type URL" class="url-input">` +
+      `<button type="submit" class="apply" aria-label="Apply">↵</button>` +
       `</form>` +
-      `<div class="pbe-mph-busy mt-3 flex items-center gap-2 text-sm font-medium text-muted-foreground" role="status" hidden>${SPINNER_SVG}<span>Uploading…</span></div>` +
-      `<p class="pbe-mph-error mt-2 mb-0 text-sm text-red-600" role="alert" hidden></p>`;
+      `<div class="pbe-mph-busy busy" role="status" hidden>${SPINNER_SVG}<span>Uploading…</span></div>` +
+      `<p class="pbe-mph-error error" role="alert" hidden></p>` +
+      `</div>`;
 
     // The card is interactive chrome inside the contenteditable canvas:
     // keep its events out of the editor's selection/keyboard machinery
@@ -1851,20 +2970,20 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     });
     card.addEventListener("keydown", (e) => e.stopPropagation());
 
-    const fileInput = card.querySelector<HTMLInputElement>("input[type=file]")!;
+    const fileInput = shadow.querySelector<HTMLInputElement>("input[type=file]")!;
     fileInput.addEventListener("change", () => {
       const file = fileInput.files?.[0];
       fileInput.value = "";
       if (file) void uploadTo(id, field, file);
     });
 
-    card
+    shadow
       .querySelector<HTMLButtonElement>(".pbe-mph-browse")
       ?.addEventListener("click", () => void browseTo(id, field));
 
-    const urlRow = card.querySelector<HTMLFormElement>(".pbe-mph-url-row")!;
+    const urlRow = shadow.querySelector<HTMLFormElement>(".pbe-mph-url-row")!;
     const urlInput = urlRow.querySelector<HTMLInputElement>("input")!;
-    card.querySelector<HTMLButtonElement>(".pbe-mph-url-btn")!.addEventListener("click", () => {
+    shadow.querySelector<HTMLButtonElement>(".pbe-mph-url-btn")!.addEventListener("click", () => {
       urlRow.hidden = !urlRow.hidden;
       if (!urlRow.hidden) urlInput.focus();
     });
@@ -1879,15 +2998,15 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
 
     card.addEventListener("dragover", (e) => {
       e.preventDefault();
-      card.classList.add("border-[var(--color-pbe-accent)]");
+      shadow.querySelector(".card")?.classList.add("drag-active");
     });
     card.addEventListener("dragleave", () =>
-      card.classList.remove("border-[var(--color-pbe-accent)]"),
+      shadow.querySelector(".card")?.classList.remove("drag-active"),
     );
     card.addEventListener("drop", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      card.classList.remove("border-[var(--color-pbe-accent)]");
+      shadow.querySelector(".card")?.classList.remove("drag-active");
       const file = e.dataTransfer?.files?.[0];
       if (file && uploadsReady()) void uploadTo(id, field, file);
     });
@@ -1910,7 +3029,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       }
       if (existing) {
         // SW readiness can flip after mount — keep the Upload button honest
-        const upload = existing.querySelector<HTMLElement>(".pbe-mph-upload");
+        const upload = existing.shadowRoot?.querySelector<HTMLElement>(".pbe-mph-upload");
         if (upload) upload.hidden = !uploadsReady();
         continue;
       }
@@ -1936,27 +3055,124 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     busyPills.clear();
   });
 
-  // Click anywhere outside an open panel dismisses it.
-  listen("mousedown", (e) => {
-    if (!openPanel || !(e.target instanceof Node)) return;
-    if (!openPanel.el.contains(e.target)) closePanel();
+  // --- drag-to-replace on image blocks ------------------------------------
+  // Dragging an image file over the canvas lights every image block up as a
+  // drop target (canvas-level pbe-file-drag class — chrome.css draws the
+  // outlines); dropping uploads through the media adapter and replaces the
+  // block's image field, exactly like the toolbar's Replace. Empty blocks
+  // keep the placeholder card's own drop handling (it consumes the event
+  // before this bubbles). All state is chrome-only — a class on the canvas
+  // plus a data attribute on the hovered root, never classes on content
+  // elements, which upcast would harvest as authored.
+
+  const DROP_ACTIVE = "data-pbe-drop-active";
+
+  const dropRootOf = (t: EventTarget | null): HTMLElement | null =>
+    t instanceof ownerWindow.Element ? t.closest<HTMLElement>('[data-pb-block="image"]') : null;
+
+  let dropActiveRoot: HTMLElement | null = null;
+  const setDropActive = (root: HTMLElement | null) => {
+    if (root === dropActiveRoot) return;
+    dropActiveRoot?.removeAttribute(DROP_ACTIVE);
+    dropActiveRoot = root;
+    root?.setAttribute(DROP_ACTIVE, "");
+  };
+
+  let fileDragDepth = 0;
+  const endFileDrag = () => {
+    fileDragDepth = 0;
+    canvas.classList.remove("pbe-file-drag");
+    setDropActive(null);
+  };
+
+  // A drag qualifies while it plausibly carries an image FILE. Some platforms
+  // hide item types mid-drag (empty string) — light up anyway and let the
+  // drop handler check the real File.
+  const isImageFileDrag = (e: DragEvent): boolean => {
+    if (!uploadsReady()) return false;
+    const items = e.dataTransfer?.items;
+    if (items?.length) {
+      return [...items].some(
+        (it) => it.kind === "file" && (it.type === "" || it.type.startsWith("image/")),
+      );
+    }
+    return !!e.dataTransfer?.types.includes("Files");
+  };
+
+  const canvasOn = <K extends keyof HTMLElementEventMap>(
+    type: K,
+    fn: (e: HTMLElementEventMap[K]) => void,
+    capture?: boolean,
+  ) => {
+    canvas.addEventListener(type, fn, capture);
+    disposers.push(() => canvas.removeEventListener(type, fn, capture));
+  };
+
+  // dragenter/dragleave fire per descendant — depth counting nets them out.
+  canvasOn("dragenter", (e) => {
+    if (!isImageFileDrag(e)) return;
+    fileDragDepth++;
+    canvas.classList.add("pbe-file-drag");
   });
+  canvasOn("dragleave", () => {
+    if (fileDragDepth > 0 && --fileDragDepth === 0) endFileDrag();
+  });
+  canvasOn("dragover", (e) => {
+    if (!canvas.classList.contains("pbe-file-drag")) return;
+    const root = dropRootOf(e.target);
+    setDropActive(root);
+    if (!root) return;
+    e.preventDefault(); // over an image block the drop is ours
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  });
+  // Capture phase: the highlight must clear even when the placeholder card
+  // consumes the drop (it stopPropagation()s into its own upload path).
+  canvasOn("drop", endFileDrag, true);
+  canvasOn("drop", (e) => {
+    const root = dropRootOf(e.target);
+    const id = root?.getAttribute("data-pb-id");
+    const field = mediaFieldOf(root?.getAttribute("data-pb-block") ?? null);
+    const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"));
+    if (!root || !id || !field || !file) return;
+    e.preventDefault();
+    if (uploadsReady()) void uploadTo(id, field, file);
+  });
+  // External OS drags never fire dragend on our elements when they leave the
+  // window — the document-level dragend/drop are the safety net.
+  listen("dragend", endFileDrag);
+  listen("drop", endFileDrag);
+  disposers.push(endFileDrag);
+
+  // Click anywhere outside an open panel dismisses it. DOM constructors are
+  // realm-specific, so never gate an iframe event through the host window's
+  // `Node`. Also listen in the parent document: events do not bubble across
+  // an iframe boundary, but sidebar/topbar clicks are still outside clicks.
+  const dismissOpenPanel = (e: MouseEvent) => {
+    if (!openPanel) return;
+    if (!e.composedPath().includes(openPanel.el)) closePanel();
+  };
+  listen("mousedown", dismissOpenPanel);
+  if (ownerDocument !== document) {
+    document.addEventListener("mousedown", dismissOpenPanel);
+    disposers.push(() => document.removeEventListener("mousedown", dismissOpenPanel));
+  }
 
   // Caret movement WITHIN a block changes mark states and the +'s row without
   // any store change. Cheap when another instance owns the caret: active=null.
   listen("selectionchange", () => {
     if (detached) return;
-    syncAppender();
     syncToolbar();
     syncSpacerResizer();
+    syncImageResizer();
   });
 
   const unsubscribe = editor.subscribe(() => {
     if (detached) return;
     syncSlash();
-    syncAppender();
+    hideAppender();
     syncToolbar();
     syncSpacerResizer();
+    syncImageResizer();
     syncMediaPlaceholders();
   });
   syncMediaPlaceholders(); // content may already be loaded when chrome attaches
@@ -1968,6 +3184,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     if (detached) return;
     syncToolbar();
     syncSpacerResizer();
+    syncImageResizer();
   });
 
   // Scrolling and resizing don't touch the model or selection, but the sticky
@@ -1978,20 +3195,26 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     // An open dropdown is parked against the toolbar's current spot — moving
     // the toolbar out from under it would separate the two. Leave both put.
     if (!detached && !openPanel) {
+      hideAppender();
       positionToolbar();
+      positionHover();
       syncSpacerResizer();
+      syncImageResizer();
     }
   };
-  (scroller ?? window).addEventListener("scroll", reposition, { passive: true });
-  window.addEventListener("resize", reposition);
-  disposers.push(() => (scroller ?? window).removeEventListener("scroll", reposition));
-  disposers.push(() => window.removeEventListener("resize", reposition));
+  (scroller ?? ownerWindow).addEventListener("scroll", reposition, {
+    passive: true,
+  });
+  ownerWindow.addEventListener("resize", reposition);
+  disposers.push(() => (scroller ?? ownerWindow).removeEventListener("scroll", reposition));
+  disposers.push(() => ownerWindow.removeEventListener("resize", reposition));
 
   return function detach() {
     detached = true;
     closePanel();
     disposers.forEach((d) => d());
     mounted.forEach((el) => el.remove());
-    canvas.classList.remove("pbe-canvas");
+    chromeHost.remove();
+    canvas.classList.remove("pbe-canvas", "pbe-block-hover-model");
   };
 }

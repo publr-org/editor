@@ -49,7 +49,7 @@ export interface BlockSelectionOptions {
    * structural child selects the instance; content blocks pass through).
    * Identity when absent.
    */
-  resolveTarget?: (id: string) => string;
+  resolveTarget?: (id: string, point?: { clientX: number; clientY: number }) => string;
 }
 
 export function createBlockSelection({
@@ -58,9 +58,12 @@ export function createBlockSelection({
   onChange,
   resolveTarget,
 }: BlockSelectionOptions) {
+  const ownerDocument = canvas.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView ?? window;
   const state = reactive<SelectionState>({ blocks: [], active: null });
   let ids: string[] = [];
-  const resolve = (id: string | null) => (id && resolveTarget ? resolveTarget(id) : id);
+  const resolve = (id: string | null, point?: { clientX: number; clientY: number }) =>
+    id && resolveTarget ? resolveTarget(id, point) : id;
 
   // Two selection sources feed one state: the MIRROR (native selection
   // spanning blocks — always a contiguous run) and EXPLICIT selection
@@ -72,13 +75,13 @@ export function createBlockSelection({
   let explicitIds: string[] = []; // kept in document (model) order regardless of click order
 
   function endpointId(node: Node | null): string | null {
-    const el = node instanceof Element ? node : node?.parentElement;
+    const el = node instanceof ownerWindow.Element ? node : node?.parentElement;
     const root = el?.closest("[data-pb-id]"); // NEAREST root — may be a nested block
     return resolve(root && canvas.contains(root) ? root.getAttribute("data-pb-id") : null);
   }
 
   function compute(): string[] {
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
     const a = endpointId(sel.anchorNode);
     const f = endpointId(sel.focusNode);
@@ -109,11 +112,11 @@ export function createBlockSelection({
     // FOCUS is required: a selection object survives focus loss (clicking
     // outside often blurs without moving the caret), and chrome must follow
     // attention, not a lingering range.
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     let active: string | null = null;
-    if (canvas.contains(document.activeElement) && sel?.rangeCount) {
+    if (canvas.contains(ownerDocument.activeElement) && sel?.rangeCount) {
       const rootAt = (node: Node | null) => {
-        const el = node instanceof Element ? node : node?.parentElement;
+        const el = node instanceof ownerWindow.Element ? node : node?.parentElement;
         const root = el?.closest("[data-pb-id]");
         return root && canvas.contains(root) ? root : null;
       };
@@ -127,21 +130,29 @@ export function createBlockSelection({
   // that mode; a lingering caret would let typing edit a block while others
   // read as selected.
   function dropCaret() {
-    window.getSelection()?.removeAllRanges();
+    ownerWindow.getSelection()?.removeAllRanges();
     // Removing ranges does NOT move DOM focus — a carrier would keep its
     // :focus ring under the new block selection. Canvas clicks get the blur
     // natively (unprevented mousedown moves focus); programmatic selects and
     // prevented-mousedown gestures (tree view, Cmd/Ctrl+click) must release
     // it here: the block is the focus of attention now.
-    const focused = document.activeElement;
-    if (focused instanceof HTMLElement && canvas.contains(focused)) focused.blur();
+    const focused = ownerDocument.activeElement;
+    if (focused instanceof ownerWindow.HTMLElement && canvas.contains(focused)) focused.blur();
   }
+
+  // An explicit block selection is keyboard-active. Before the canvas moved
+  // into an iframe, leaving focus on parent chrome still happened to deliver
+  // Backspace to the editor's document listener. Across a browsing-context
+  // boundary it cannot: focus must live inside the iframe for Delete,
+  // Backspace, Enter-after-block, and grouping shortcuts to reach the editor.
+  const focusCanvas = () => canvas.focus({ preventScroll: true });
 
   function select(id: string) {
     id = resolve(id)!;
     explicitIds = [id];
     dropCaret();
     apply([id]);
+    focusCanvas();
   }
 
   function toggle(id: string) {
@@ -162,6 +173,7 @@ export function createBlockSelection({
     }
     dropCaret();
     apply([...explicitIds]);
+    focusCanvas();
   }
 
   // Explicitly select a set of blocks (ungroup selects the released run).
@@ -172,6 +184,7 @@ export function createBlockSelection({
       .filter((id) => wanted.has(id));
     dropCaret();
     apply([...explicitIds]);
+    focusCanvas();
   }
 
   function clear() {
@@ -186,20 +199,20 @@ export function createBlockSelection({
   const isContainer = (id: string) =>
     !!flattenBlocks(getBlocks()).find((b) => b.id === id)?.children;
 
-  document.addEventListener("selectionchange", refresh);
+  ownerDocument.addEventListener("selectionchange", refresh);
   // Focus transitions don't fire selectionchange, but they change `active`
   // (blur to the page background leaves the caret behind).
-  document.addEventListener("focusin", refresh);
-  document.addEventListener("focusout", refresh);
+  ownerDocument.addEventListener("focusin", refresh);
+  ownerDocument.addEventListener("focusout", refresh);
 
   // Escape drops any block selection.
   function onKeyDown(event: KeyboardEvent) {
     if (event.key === "Escape" && ids.length) {
       clear();
-      window.getSelection()?.removeAllRanges();
+      ownerWindow.getSelection()?.removeAllRanges();
     }
   }
-  document.addEventListener("keydown", onKeyDown);
+  ownerDocument.addEventListener("keydown", onKeyDown);
 
   // --- Cmd/Ctrl+A: the select-all ladder ---------------------------------------
   // Each press widens the selection one ring: all text in the carrier (native,
@@ -213,7 +226,7 @@ export function createBlockSelection({
   function carrierFullySelected(carrier: HTMLElement): boolean {
     const text = carrier.textContent ?? "";
     if (!text) return true;
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     if (!sel?.rangeCount || sel.isCollapsed) return false;
     const range = sel.getRangeAt(0);
     if (!carrier.contains(range.startContainer) || !carrier.contains(range.endContainer))
@@ -229,9 +242,9 @@ export function createBlockSelection({
 
     // Never steal Cmd+A from editable chrome outside the canvas (inserter
     // search etc.), even while a block selection is up.
-    const focused = document.activeElement;
+    const focused = ownerDocument.activeElement;
     if (
-      focused instanceof HTMLElement &&
+      focused instanceof ownerWindow.HTMLElement &&
       !canvas.contains(focused) &&
       (focused.matches("input, textarea, select") || focused.isContentEditable)
     )
@@ -260,7 +273,7 @@ export function createBlockSelection({
     if (rootEl) select(rootEl.getAttribute("data-pb-id")!);
     else selectMany(blocks.map((b) => b.id)); // canvas itself holds focus — everything
   }
-  document.addEventListener("keydown", onSelectAll);
+  ownerDocument.addEventListener("keydown", onSelectAll);
 
   // --- the promotion gesture -------------------------------------------------
 
@@ -268,9 +281,12 @@ export function createBlockSelection({
   let merged = false; // canvas is temporarily one editing host
   let ownedGesture = false; // surface-click origin: WE prevented the native caret
 
-  function rootIdOf(target: EventTarget | Element | null): string | null {
-    const root = target instanceof Element ? target.closest("[data-pb-id]") : null;
-    return resolve(root && canvas.contains(root) ? root.getAttribute("data-pb-id") : null);
+  function rootIdOf(
+    target: EventTarget | Element | null,
+    point?: { clientX: number; clientY: number },
+  ): string | null {
+    const root = target instanceof ownerWindow.Element ? target.closest("[data-pb-id]") : null;
+    return resolve(root && canvas.contains(root) ? root.getAttribute("data-pb-id") : null, point);
   }
 
   // Root-level range across the run — element endpoints sit outside the
@@ -282,7 +298,8 @@ export function createBlockSelection({
     const first = canvas.querySelector(`[data-pb-id="${CSS.escape(run.list[run.lo].id)}"]`);
     const last = canvas.querySelector(`[data-pb-id="${CSS.escape(run.list[run.hi].id)}"]`);
     if (!first || !last) return;
-    window.getSelection()?.setBaseAndExtent(first, 0, last, last.childNodes.length);
+    focusCanvas();
+    ownerWindow.getSelection()?.setBaseAndExtent(first, 0, last, last.childNodes.length);
     refresh(); // selectionchange is async — reflect immediately
   }
 
@@ -295,13 +312,13 @@ export function createBlockSelection({
     // selection exists to promote — extend the block run OURSELVES from the
     // anchor to whatever block the pointer is over.
     if (ownedGesture) {
-      const overId = rootIdOf(document.elementFromPoint(event.clientX, event.clientY));
+      const overId = rootIdOf(ownerDocument.elementFromPoint(event.clientX, event.clientY), event);
       if (overId && overId !== anchorId && anchorId) selectBlockRange(anchorId, overId);
       else if (overId && overId === anchorId && ids.length > 1) select(anchorId);
       return;
     }
     if (merged) return; // host is merged — the native drag handles the rest
-    const overId = rootIdOf(document.elementFromPoint(event.clientX, event.clientY));
+    const overId = rootIdOf(ownerDocument.elementFromPoint(event.clientX, event.clientY), event);
     if (overId && overId !== anchorId) {
       merged = true;
       canvas.contentEditable = "true"; // one editing host for the rest of the drag
@@ -312,7 +329,7 @@ export function createBlockSelection({
     // A prevented mousedown is an owned gesture (the appender claiming a
     // click on a container's surface) — never also a selection click.
     if (event.button !== 0 || event.defaultPrevented) return;
-    const targetId = rootIdOf(event.target);
+    const targetId = rootIdOf(event.target, event);
     if (!targetId) return;
 
     // Cmd/Ctrl+click toggles individual blocks in and out of the selection —
@@ -344,9 +361,9 @@ export function createBlockSelection({
         }
       }
 
-      const sel = window.getSelection();
+      const sel = ownerWindow.getSelection();
       const node = sel?.anchorNode;
-      const el = node instanceof Element ? node : node?.parentElement;
+      const el = node instanceof ownerWindow.Element ? node : node?.parentElement;
       const caretId =
         el && canvas.contains(el) ? el.closest("[data-pb-id]")?.getAttribute("data-pb-id") : null;
       const fromId = caretId ?? explicitIds[explicitIds.length - 1];
@@ -364,7 +381,8 @@ export function createBlockSelection({
     // preventDefaults — caught above). Clicking an editable carrier releases
     // any explicit selection (the caret takes over).
     const inCarrier =
-      event.target instanceof Element && !!event.target.closest("[data-pb-text],[data-pb-rich]");
+      event.target instanceof ownerWindow.Element &&
+      !!event.target.closest("[data-pb-text],[data-pb-rich]");
     if (isRaw(targetId) || isContainer(targetId) || !inCarrier) {
       // WE own this gesture — without preventDefault, Chromium's default
       // places a caret at the nearest TEXT position, which for a click on a
@@ -378,11 +396,11 @@ export function createBlockSelection({
     } else if (explicitIds.length) clear();
 
     anchorId = targetId;
-    document.addEventListener("mousemove", onDragTrack, true);
+    ownerDocument.addEventListener("mousemove", onDragTrack, true);
   }
 
   function endGesture() {
-    document.removeEventListener("mousemove", onDragTrack, true);
+    ownerDocument.removeEventListener("mousemove", onDragTrack, true);
     anchorId = null;
     ownedGesture = false;
     if (!merged) return;
@@ -402,15 +420,18 @@ export function createBlockSelection({
   // interacting with a block's options must never deselect the block.
   function onDocMouseDown(event: MouseEvent) {
     if (event.button !== 0 || event.defaultPrevented || !explicitIds.length) return;
-    if (rootIdOf(event.target)) return; // clicks on blocks are handled in onMouseDown
-    if (event.target instanceof Element && event.target.closest("[data-pbe-keep-selection]"))
+    if (rootIdOf(event.target, event)) return; // clicks on blocks are handled in onMouseDown
+    if (
+      event.target instanceof ownerWindow.Element &&
+      event.target.closest("[data-pbe-keep-selection]")
+    )
       return;
     clear();
   }
 
   canvas.addEventListener("mousedown", onMouseDown);
-  document.addEventListener("mousedown", onDocMouseDown); // bubble: runs after onMouseDown
-  document.addEventListener("mouseup", endGesture);
+  ownerDocument.addEventListener("mousedown", onDocMouseDown); // bubble: runs after onMouseDown
+  ownerDocument.addEventListener("mouseup", endGesture);
 
   return {
     state, // reactive { blocks: [id, …], active } — chrome binds to this
@@ -427,14 +448,14 @@ export function createBlockSelection({
     clear,
 
     destroy() {
-      document.removeEventListener("selectionchange", refresh);
-      document.removeEventListener("focusin", refresh);
-      document.removeEventListener("focusout", refresh);
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("keydown", onSelectAll);
-      document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("mouseup", endGesture);
-      document.removeEventListener("mousemove", onDragTrack, true);
+      ownerDocument.removeEventListener("selectionchange", refresh);
+      ownerDocument.removeEventListener("focusin", refresh);
+      ownerDocument.removeEventListener("focusout", refresh);
+      ownerDocument.removeEventListener("keydown", onKeyDown);
+      ownerDocument.removeEventListener("keydown", onSelectAll);
+      ownerDocument.removeEventListener("mousedown", onDocMouseDown);
+      ownerDocument.removeEventListener("mouseup", endGesture);
+      ownerDocument.removeEventListener("mousemove", onDragTrack, true);
       canvas.removeEventListener("mousedown", onMouseDown);
     },
   };

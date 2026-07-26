@@ -221,6 +221,24 @@ describe("stamping: independent copies through one commit", () => {
     expect(editor.history.undoDepth).toBe(depth + 1);
   });
 
+  test("insertPatternAdjacent stamps at an internal sibling boundary in one commit", () => {
+    setup(P("first") + P("last"));
+    const anchor = editor.getModel().blocks[1];
+    const depth = editor.history.undoDepth;
+
+    const stamped = editor.insertPatternAdjacent(anchor.id, "before", "call-to-action")!;
+    expect(editor.getModel().blocks.map((block) => block.id)).toEqual([
+      expect.any(String),
+      stamped[0].id,
+      anchor.id,
+    ]);
+    expect(editor.getModel().blocks[0].fields.body).toBe("first");
+    expect(editor.history.undoDepth).toBe(depth + 1);
+
+    editor.undo();
+    expect(editor.getModel().blocks.map((block) => block.fields.body)).toEqual(["first", "last"]);
+  });
+
   test("every stamp is an independent copy — fresh ids, edits never cross", () => {
     setup("");
     const a = editor.insertPattern("call-to-action")![0];
@@ -345,7 +363,7 @@ describe("stamping: independent copies through one commit", () => {
     expect(editor.setBlockChildren(editor.getModel().blocks[0].id, "<p></p>")).toBeNull();
   });
 
-  test("surface clicks OWN the gesture — no phantom caret lands in a neighboring block", async () => {
+  test("only a content block's exact border box passes through an opaque pattern", async () => {
     // the reported repro: raw-html block directly before a pattern instance
     setup(`<blockquote><p>foreign markup, no annotations</p></blockquote>`);
     const root = editor.insertPattern("testimonials")![0];
@@ -361,12 +379,37 @@ describe("stamping: independent copies through one commit", () => {
     await vi.waitFor(() => expect(editor.selection.blocks).toEqual([root.id]));
     expect(editor.selection.active).toBeNull();
 
-    // …while clicks on editable carriers stay native (the caret's business)
+    // …while an exact click inside an editable carrier stays native (the
+    // caret's business).
     const carrier = rootEl.querySelector<HTMLElement>("[data-pb-text], [data-pb-rich]")!;
-    const downCarrier = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    vi.spyOn(carrier, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 240, 60));
+    const downCarrier = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 160,
+      clientY: 120,
+    });
     carrier.dispatchEvent(downCarrier);
     expect(downCarrier.defaultPrevented).toBe(false);
     document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    expect(editor.selection.blocks).toEqual([]);
+
+    // Chromium may still report that carrier as the event target for a click
+    // in its margin / nearby layout space. Coordinates outside the rendered
+    // border box must resolve to the WHOLE pattern, never the closest block.
+    const downMargin = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 160,
+      clientY: 80,
+    });
+    carrier.dispatchEvent(downMargin);
+    expect(downMargin.defaultPrevented).toBe(true);
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await vi.waitFor(() => expect(editor.selection.blocks).toEqual([root.id]));
+    expect(editor.selection.active).toBeNull();
   });
 });
 
@@ -471,6 +514,7 @@ describe("inserter chrome stays blocks-only", () => {
   });
 
   const EMPTY_P = `<p data-pb-block="paragraph" data-pb-rich="body"></p>`;
+  const chrome = () => host.querySelector<HTMLElement>("[data-pbe-inline-chrome]")!.shadowRoot!;
 
   // Patterns are compositions, not blocks — they belong to the host's
   // Patterns surface (the demo rail's Patterns tab + explorer), never to the
@@ -482,7 +526,7 @@ describe("inserter chrome stays blocks-only", () => {
     carrier.focus();
     carrier.textContent = "/";
     carrier.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    const quick = host.querySelector<HTMLElement>(".pbe-quick")!;
+    const quick = chrome().querySelector<HTMLElement>(".pbe-quick")!;
     await vi.waitFor(() => expect(quick.hidden).toBe(false));
     expect(patternTypes().length).toBeGreaterThan(0); // the registry is populated…
     expect(quick.textContent).not.toContain("Patterns"); // …and the picker ignores it
@@ -492,10 +536,11 @@ describe("inserter chrome stays blocks-only", () => {
   test("the + inserter grid offers no patterns", () => {
     setup(EMPTY_P);
     const id = editor.getModel().blocks[0].id;
-    const appender = host.querySelector<HTMLButtonElement>(".pbe-appender")!;
-    appender.dataset.target = id; // the ghost-row hover sync sets this in real use
+    const appender = chrome().querySelector<HTMLButtonElement>(".pbe-appender")!;
+    appender.dataset.target = id;
+    appender.dataset.edge = "after";
     appender.click();
-    const grid = host.querySelector<HTMLElement>(".pbe-inserter .pbe-grid")!;
+    const grid = chrome().querySelector<HTMLElement>(".pbe-inserter .pbe-grid")!;
     expect(grid.querySelectorAll("button[data-type]").length).toBeGreaterThan(0);
     expect(grid.querySelector("button[data-pattern]")).toBeNull();
   });
@@ -595,15 +640,16 @@ describe("toolbar pattern strip: Edit-this-copy only (decoupled instances)", () 
   });
 
   const EMPTY_P = `<p data-pb-block="paragraph" data-pb-rich="body"></p>`;
+  const chrome = () => host.querySelector<HTMLElement>("[data-pbe-inline-chrome]")!.shadowRoot!;
   const toolbarBtn = (label: string) =>
-    [...host.querySelectorAll<HTMLButtonElement>(".pbe-toolbar button")].find(
+    [...chrome().querySelectorAll<HTMLButtonElement>(".pbe-toolbar button")].find(
       (b) => b.textContent === label,
     );
 
   test("without the host hook there is NO strip — a decoupled copy needs no actions", async () => {
     setup(EMPTY_P);
     editor.insertPattern("call-to-action");
-    const toolbar = host.querySelector<HTMLElement>(".pbe-toolbar")!;
+    const toolbar = chrome().querySelector<HTMLElement>(".pbe-toolbar")!;
     await vi.waitFor(() => expect(toolbar.hidden).toBe(false));
     expect(toolbarBtn("Reset")).toBeUndefined(); // gone with the linkage
     expect(toolbarBtn("Update")).toBeUndefined();
@@ -614,7 +660,7 @@ describe("toolbar pattern strip: Edit-this-copy only (decoupled instances)", () 
     const seen: [string, string][] = [];
     setup(EMPTY_P, { onEditPattern: (name, id) => seen.push([name, id]) });
     const stamped = editor.insertPattern("hero")!;
-    const toolbar = host.querySelector<HTMLElement>(".pbe-toolbar")!;
+    const toolbar = chrome().querySelector<HTMLElement>(".pbe-toolbar")!;
     await vi.waitFor(() => expect(toolbar.hidden).toBe(false));
     const btn = toolbarBtn("Edit pattern")!;
     expect(btn.closest("div")!.hidden).toBe(false);
@@ -625,7 +671,7 @@ describe("toolbar pattern strip: Edit-this-copy only (decoupled instances)", () 
   test("plain blocks keep the strip hidden", async () => {
     setup(EMPTY_P, { onEditPattern: () => {} });
     editor.insertBlock("group");
-    const toolbar = host.querySelector<HTMLElement>(".pbe-toolbar")!;
+    const toolbar = chrome().querySelector<HTMLElement>(".pbe-toolbar")!;
     await vi.waitFor(() => expect(toolbar.hidden).toBe(false));
     expect(toolbarBtn("Edit pattern")!.closest("div")!.hidden).toBe(true);
   });

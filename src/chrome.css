@@ -84,6 +84,35 @@
   display: none !important;
 }
 
+/* Some editor chrome intentionally lives inside authored block roots (the
+   empty-media placeholder is the main case). The canvas carries the SITE
+   theme, so re-pin these UI islands to chrome tokens before their Tailwind
+   utilities resolve. Floating chrome is a canvas sibling and does not need
+   this reset. */
+.pbe-canvas .pbe-ui {
+  --color-background: var(--background, #fff);
+  --color-foreground: var(--foreground, #18181b);
+  --color-popover: var(--popover, #fff);
+  --color-popover-foreground: var(--popover-foreground, #18181b);
+  --color-primary: var(--primary, #287cc1);
+  --color-primary-foreground: var(--primary-foreground, #fff);
+  --color-secondary: var(--secondary, #f4f4f5);
+  --color-secondary-foreground: var(--secondary-foreground, #27272a);
+  --color-muted: var(--muted, #f4f4f5);
+  --color-muted-foreground: var(--muted-foreground, #71717a);
+  --color-ui-accent: var(--ui-accent, var(--accent, #f4f4f5));
+  --color-accent: var(--primary, #287cc1);
+  --color-accent-foreground: var(--accent-foreground, #27272a);
+  --color-border: var(--border, #e4e4e7);
+  --color-input: var(--input, #d4d4d8);
+  --color-ring: var(--ring, #287cc1);
+  --spacing: 0.25rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --radius-md: calc(var(--radius, 0.5rem) - 2px);
+  --radius-lg: var(--radius, 0.5rem);
+}
+
 /* Media placeholder while an adapter upload/browse is in flight — inert until
    the promise settles (double-submission guard doubles as the busy look). */
 .pbe-media-ph[aria-busy="true"] {
@@ -122,6 +151,38 @@
   }
 }
 
+[data-element="links"] [data-typography-element-sample] {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-element="headings"] [data-typography-element-sample] {
+  font-family: inherit;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+
+[data-element="captions"] [data-typography-element-sample] {
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 500;
+}
+
+[data-element="buttons"] [data-typography-element-sample] {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 5px;
+  font-family: inherit;
+  font-size: 9px;
+}
+
+/* Typography is judged on a neutral sheet. Semantic surface contexts have
+   their own preview; carrying one into the type specimen makes foreground
+   recipes appear broken when the two contexts do not match. */
+#design-workspace .pbe-preview {
+  background: #fff;
+}
+
 /* --- canvas-owned rules ------------------------------------------------------
    Markup the EDITOR generates or stamps at runtime (carriers, ghost prompts,
    selection classes, group bounds) — never authored by the host, so
@@ -137,6 +198,17 @@
 .pbe-canvas [contenteditable]:hover {
   box-shadow: 0 0 0 1px var(--color-zinc-300);
   border-radius: 2px;
+}
+
+/* Default-mode blocks use the detached DevTools-like hover veil supplied by
+   inline chrome. Content-only pattern descendants keep their established
+   direct-edit hover ring. */
+.pbe-canvas.pbe-block-hover-model [contenteditable]:hover {
+  box-shadow: none;
+}
+.pbe-canvas.pbe-block-hover-model [data-pbe-editing="content-only"] [contenteditable]:hover,
+.pbe-canvas.pbe-block-hover-model [data-pbe-editing="content-only"][contenteditable]:hover {
+  box-shadow: 0 0 0 1px var(--color-zinc-300);
 }
 
 .pbe-canvas [contenteditable]:focus {
@@ -199,23 +271,63 @@
    keeps its own look, a fresh one gets the default. Colors reference the
    theme's accent token. */
 @layer base {
+  /* Mirrors src/styles.css for the distributable editor canvas. */
+  .pbe-container--content {
+    --pbe-container-width: var(--container-content, 645px);
+    box-sizing: border-box;
+    width: min(
+      max(0px, calc(100% - 2 * var(--container-gutter, 24px))),
+      var(--container-content, 645px)
+    ) !important;
+    max-width: var(--container-content, 645px) !important;
+    margin-inline: auto !important;
+  }
+  .pbe-container--wide {
+    --pbe-container-width: var(--container-wide, 1340px);
+    box-sizing: border-box;
+    width: min(
+      max(0px, calc(100% - 2 * var(--container-gutter, 24px))),
+      var(--container-wide, 1340px)
+    ) !important;
+    max-width: var(--container-wide, 1340px) !important;
+    margin-inline: auto !important;
+  }
+  .pbe-container--bleed-left,
+  .pbe-container--bleed-right,
+  .pbe-container--bleed-both {
+    --pbe-container-edge: max(
+      var(--container-gutter, 24px),
+      calc((100vw - var(--pbe-container-width)) / 2)
+    );
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    padding-inline: var(--pbe-container-edge) !important;
+  }
+  :is(.pbe-container--bleed-left, .pbe-container--bleed-both)
+    > :is(:first-child:not(script), script[data-pb-settings] + *) {
+    margin-inline-start: calc(-1 * var(--pbe-container-edge)) !important;
+  }
+  :is(.pbe-container--bleed-right, .pbe-container--bleed-both) > :last-child {
+    margin-inline-end: calc(-1 * var(--pbe-container-edge)) !important;
+  }
   .pbe-btn {
     display: inline-block;
     text-decoration: none;
   }
   .pbe-btn--solid {
     border-radius: var(--radius-sm, 0.25rem);
-    background: var(--color-pbe-accent, #3858e9);
+    background: var(--color-accent);
     padding: 0.5rem 1rem;
     font-weight: 500;
-    color: #fff;
+    color: var(--color-accent-foreground);
   }
   .pbe-btn--outline {
     border-radius: var(--radius-sm, 0.25rem);
     border: 1px solid currentColor;
     padding: 0.5rem 1rem;
     font-weight: 500;
-    color: var(--color-pbe-accent, #3858e9);
+    color: var(--color-accent);
   }
   .pbe-columns--gap-none,
   .pbe-buttons--gap-none {
@@ -292,6 +404,9 @@
   box-shadow: 0 0 0 1px var(--color-zinc-300);
   border-radius: 2px;
 }
+.pbe-canvas.pbe-block-hover-model .pbe-raw:hover {
+  box-shadow: none;
+}
 
 /* Container blocks (pbe-container stamped by the editor on every block with
    children, any type): invisible zero-padding wrappers — layout variants must
@@ -303,8 +418,67 @@
   outline-offset: 4px;
   border-radius: 2px;
 }
+.pbe-canvas.pbe-block-hover-model .pbe-container:hover:not(.pbe-selected) {
+  outline: none;
+}
 .pbe-canvas .pbe-container:empty {
   min-height: 48px;
+}
+
+/* Detached hover preselection: a tinted box plus a compact identity toolbar.
+   Both are pointer-transparent even though they are direct chrome-layer
+   children (normal floating controls intentionally opt back into hit testing). */
+.pbe-hover-outline {
+  box-sizing: border-box;
+  outline: 1px dashed var(--color-pbe-accent);
+  pointer-events: none !important;
+}
+.pbe-hover-box-part,
+.pbe-hover-layout-item,
+.pbe-hover-layout-gap {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none !important;
+}
+.pbe-hover-content {
+  background: rgb(111 168 220 / 38%);
+}
+.pbe-hover-padding-top,
+.pbe-hover-padding-right,
+.pbe-hover-padding-bottom,
+.pbe-hover-padding-left {
+  background: rgb(147 196 125 / 42%);
+}
+.pbe-hover-border-top,
+.pbe-hover-border-right,
+.pbe-hover-border-bottom,
+.pbe-hover-border-left {
+  background: rgb(255 229 153 / 58%);
+}
+.pbe-hover-margin-top,
+.pbe-hover-margin-right,
+.pbe-hover-margin-bottom,
+.pbe-hover-margin-left {
+  background:
+    repeating-linear-gradient(135deg, rgb(230 142 68 / 34%) 0 2px, transparent 2px 7px),
+    rgb(246 178 107 / 25%);
+}
+.pbe-hover-outline[data-layout] {
+  outline-color: #8b5cf6;
+}
+.pbe-hover-layout-item {
+  border: 1px dotted #8b5cf6;
+}
+.pbe-hover-layout-gap {
+  border-inline: 1px dashed rgb(124 58 237 / 70%);
+  background:
+    repeating-linear-gradient(135deg, rgb(124 58 237 / 48%) 0 2px, transparent 2px 7px),
+    rgb(139 92 246 / 18%);
+}
+.pbe-hover-label {
+  background: var(--color-pbe-accent);
+  color: #fff;
+  pointer-events: none !important;
 }
 
 /* A selected pattern instance is a SECTION, not a paragraph: no tint over
@@ -327,7 +501,6 @@
 /* Block-level multiselection: whole blocks read as selected — native text
    highlighting is hidden inside them so the block highlight is the story. */
 .pbe-canvas .pbe-selected {
-  background: color-mix(in srgb, var(--color-pbe-accent) 9%, transparent);
   outline: 2px solid var(--color-pbe-accent);
   outline-offset: 2px;
   border-radius: 2px;
@@ -335,6 +508,21 @@
 .pbe-canvas .pbe-selected::selection,
 .pbe-canvas .pbe-selected *::selection {
   background: transparent;
+}
+
+/* Image-file drag over the canvas (pbe-file-drag stamped by inline chrome):
+   every image block reads as a drop target — dropping uploads through the
+   media adapter and replaces the block's image. The hovered target
+   (data-pbe-drop-active) reads primed. */
+.pbe-canvas.pbe-file-drag [data-pb-block="image"] {
+  outline: 2px dashed color-mix(in srgb, var(--color-pbe-accent) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.pbe-canvas.pbe-file-drag [data-pb-block="image"][data-pbe-drop-active] {
+  outline-style: solid;
+  outline-color: var(--color-pbe-accent);
+  background: color-mix(in srgb, var(--color-pbe-accent) 9%, transparent);
 }
 
 /* Clicking anywhere in a pattern instance flashes its editable units — a
@@ -423,6 +611,22 @@
   --color-destructive: var(--destructive);
   --color-accent: var(--primary);
   --color-accent-hover: color-mix(in oklch, var(--primary) 90%, black);
+  /* Private values inherited by chrome Shadow DOM islands. Host/site themes
+     should never define these names; public --color-* tokens stop at the
+     light-DOM boundary. */
+  --pbe-chrome-background: var(--background);
+  --pbe-chrome-foreground: var(--foreground);
+  --pbe-chrome-popover: var(--popover);
+  --pbe-chrome-popover-foreground: var(--popover-foreground);
+  --pbe-chrome-primary: var(--primary);
+  --pbe-chrome-primary-foreground: var(--primary-foreground);
+  --pbe-chrome-muted: var(--muted);
+  --pbe-chrome-muted-foreground: var(--muted-foreground);
+  --pbe-chrome-accent: var(--ui-accent);
+  --pbe-chrome-accent-foreground: var(--accent-foreground);
+  --pbe-chrome-border: var(--border);
+  --pbe-chrome-input: var(--input);
+  --pbe-chrome-ring: var(--ring);
 }
 
 #editor-shell.dark {
@@ -452,6 +656,112 @@
   --destructive: oklch(0.704 0.191 22.216);
   /* The --color-* aliases live on the #editor-shell rule above; they resolve
      against the raw tokens cascaded here (same element, higher specificity). */
+}
+
+/* Site Design is chrome, not authored content. Earlier versions mixed raw
+   white/black utilities and `dark:` media variants in this workspace. That
+   let the OS color scheme disagree with the host-controlled shell appearance
+   and produced white cards with white text. Pin the remaining inventory
+   surfaces to the shell's semantic appearance tokens. */
+#design-workspace {
+  color: var(--foreground);
+}
+
+#design-workspace [data-design-preview-surface] {
+  background: var(--background) !important;
+  color: var(--foreground) !important;
+}
+
+/* The CMS uses flat, divider-led inventory pages. These classes distinguish
+   structural grouping from actual previews and controls, which still keep
+   their own bounded surfaces. */
+#design-workspace .pbe-design-list,
+#design-workspace .pbe-design-section {
+  border-block: 1px solid var(--border);
+  border-inline: 0;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+#design-workspace .pbe-design-section + .pbe-design-section {
+  border-top: 0;
+}
+
+#design-workspace .pbe-design-row {
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+#design-workspace .pbe-design-row + .pbe-design-row {
+  border-top: 1px solid var(--border);
+}
+
+#design-workspace .pbe-design-sublist,
+#design-workspace .pbe-design-icon-grid,
+#design-workspace .pbe-design-token-grid {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+#design-workspace .pbe-design-record + .pbe-design-record {
+  border-top: 1px solid var(--border);
+}
+
+#design-workspace .pbe-design-icon-grid > *,
+#design-workspace .pbe-design-token-grid > * {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+#design-workspace .pbe-design-icon-grid > :nth-child(8n),
+#design-workspace .pbe-design-token-grid > :nth-child(4n) {
+  border-right: 0;
+}
+
+@media (max-width: 1024px) {
+  #design-workspace .pbe-design-icon-grid > :nth-child(8n),
+  #design-workspace .pbe-design-token-grid > :nth-child(4n) {
+    border-right: 1px solid var(--border);
+  }
+
+  #design-workspace .pbe-design-icon-grid > :nth-child(6n),
+  #design-workspace .pbe-design-token-grid > :nth-child(3n) {
+    border-right: 0;
+  }
+}
+
+#design-workspace [class~="bg-white"] {
+  background-color: var(--card) !important;
+  color: var(--card-foreground);
+}
+
+#design-workspace [class*="bg-black/"] {
+  background-color: color-mix(in oklch, var(--muted) 62%, transparent) !important;
+}
+
+#design-workspace [class~="bg-neutral-900"] {
+  background-color: var(--foreground) !important;
+  color: var(--background) !important;
+}
+
+#design-workspace [data-design-preview="foundations"] [data-context][aria-pressed="true"] {
+  background-color: var(--foreground) !important;
+  color: var(--background) !important;
+}
+
+#design-workspace [class~="text-neutral-400"],
+#design-workspace [class~="text-neutral-500"],
+#design-workspace [class~="text-neutral-600"] {
+  color: var(--muted-foreground) !important;
+}
+
+#design-workspace [class~="border-black/10"],
+#design-workspace [class~="border-black/15"] {
+  border-color: var(--border) !important;
 }
 
 /* Chrome visibility must always win. data-p-show toggles the `hidden` CLASS
@@ -591,13 +901,12 @@
   width: 320px;
 }
 
+/* ALWAYS full-bleed: no shell-owned padding around the canvas — spacing is
+   the content's responsibility. (The 48px article-column breathing room and
+   its `.max-w-none` wide-mode override died with the wide toggle.) */
 #editor-content .wrap {
   width: 100%;
   max-width: none;
-  padding-top: 48px;
-}
-
-#editor-content .wrap.max-w-none {
   padding: 0;
 }
 
@@ -658,20 +967,186 @@
   color: var(--primary-foreground);
 }
 
+/* ---------------------------------------------------------------------------
+   Isolation mode skin (pattern definition/instance — state.templateChromeShown,
+   worn by #editor-shell as .pbe-isolation). The shell itself carries the
+   scope: the topbar turns the isolation purple and the whole editor gets a
+   matching frame — an unmissable "you are editing a pattern, not the page"
+   signal. Literal colors throughout: every control here sits on the fixed
+   isolation purple, so the admin-token remaps (--color-white → background,
+   neutral-* → foreground) must not resolve these.
+--------------------------------------------------------------------------- */
+#editor-shell.pbe-isolation {
+  --isolation: #581c87;
+  box-sizing: border-box; /* no preflight in this sheet — the frame must not grow h-full */
+  border: 6px solid var(--isolation);
+  border-top: none;
+}
+
+#editor-shell.pbe-isolation #topbar {
+  border-bottom-color: transparent;
+  background: var(--isolation);
+  color: #fff;
+  /* the bar meets the 6px frame — the commit pair fills to the corner */
+  padding-inline: 0;
+}
+
+/* The remap below repaints chrome text with admin tokens; on the isolation
+   violet every generic topbar control is white. The class/element arms sit
+   in :where() (zero specificity) so the id-targeted treatments further down
+   (#inserter-toggle, #template-save, the viewport switcher) always win. */
+#editor-shell.pbe-isolation #topbar :where(button, .text-neutral-900, .text-neutral-500) {
+  color: #fff;
+}
+#editor-shell.pbe-isolation #topbar :where(button):hover {
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+}
+#editor-shell.pbe-isolation #topbar :where(button)[aria-expanded="true"] {
+  background: rgb(255 255 255 / 0.28);
+  color: #fff;
+}
+#editor-shell.pbe-isolation #topbar :where(button):focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+#editor-shell.pbe-isolation #inserter-toggle {
+  background: rgb(255 255 255 / 0.2);
+  color: #fff;
+}
+#editor-shell.pbe-isolation #inserter-toggle:hover,
+#editor-shell.pbe-isolation #inserter-toggle[aria-expanded="true"] {
+  background: rgb(255 255 255 / 0.3);
+  color: #fff;
+}
+
+#editor-shell.pbe-isolation #viewport-switcher {
+  background: rgb(255 255 255 / 0.14);
+}
+#editor-shell.pbe-isolation #viewport-switcher .pbe-viewport-device-control {
+  color: rgb(255 255 255 / 0.85);
+}
+#editor-shell.pbe-isolation #viewport-switcher .pbe-viewport-device-control:hover,
+#editor-shell.pbe-isolation #viewport-switcher .pbe-viewport-device-control[data-selected] {
+  border-color: rgb(255 255 255 / 0.5);
+  background: rgb(255 255 255 / 0.25);
+  color: #fff;
+  box-shadow: none;
+}
+#editor-shell.pbe-isolation #viewport-switcher .pbe-viewport-device-control[data-selected] svg,
+#editor-shell.pbe-isolation #viewport-switcher .pbe-viewport-device-control[data-selected] span {
+  color: #fff;
+}
+
+/* Scope group (topbar left): lead/label inherit the bar's white. */
+#editor-shell.pbe-isolation #template-scope {
+  border-color: rgb(255 255 255 / 0.35);
+}
+#editor-shell.pbe-isolation #template-scope .pbe-scope-error {
+  color: #ffd9d9;
+}
+
+/* The mode's one commit pair, full bar height: Cancel a lighter violet
+   fill, the commit a near-black purple — both read on the isolation bar. */
+#editor-shell.pbe-isolation #template-cancel {
+  color: #fff;
+}
+#editor-shell.pbe-isolation #template-cancel:hover {
+  text-decoration: underline;
+  background: none;
+}
+#editor-shell.pbe-isolation #template-save {
+  background: #3c1d53;
+  border: 1px solid rgba(78, 19, 123, 0.5);
+  color: #fff;
+}
+#editor-shell.pbe-isolation #template-save:hover {
+  background: #4a2564;
+  color: #fff;
+}
+
+/* Shared template structure is violet in the list view, matching the
+   isolation frame and keeping reusable parts visually distinct from ordinary
+   document blocks. Selected rows retain the normal high-contrast selection. */
+#tree-rows [data-template-part]:not([data-template-part="false"]) {
+  color: #7c3aed;
+  background: color-mix(in srgb, #8b5cf6 9%, transparent);
+}
+
+#tree-rows
+  [data-template-part]:not([data-template-part="false"]):has(button[data-id].bg-ui-accent) {
+  color: inherit;
+}
+
+/* Tree View block sorting: the real row stays in place while an absolutely
+   positioned, depth-indented line marks the final parent/index. The line
+   never enters flow, so moving it cannot shift the canonical rows. */
+#tree-rows {
+  position: relative;
+}
+#tree-rows[data-tree-dragging] {
+  cursor: grabbing;
+}
+#tree-rows [data-tree-drag-source] {
+  opacity: 0.45;
+}
+.pbe-tree-drop-indicator {
+  position: absolute;
+  right: 6px;
+  z-index: 2;
+  height: 3px;
+  transform: translateY(-50%);
+  border: 0;
+  outline: 0;
+  background: #581c87;
+  box-shadow: none;
+  pointer-events: none;
+}
+.pbe-tree-drag-preview {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  z-index: 2147483647;
+  display: flex;
+  min-width: 88px;
+  height: 44px;
+  align-items: center;
+  justify-content: space-around;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  pointer-events: none;
+}
+.pbe-tree-drag-preview > :first-child,
+.pbe-tree-drag-preview > span:last-child,
+.pbe-tree-drag-preview > span:last-child svg {
+  width: 24px;
+  height: 24px;
+}
+
+#canvas .pbe-template-slot {
+  display: grid;
+  min-height: 5rem;
+  place-items: center;
+  border: 2px dashed color-mix(in srgb, #8b5cf6 60%, transparent);
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, #8b5cf6 7%, transparent);
+  color: #7c3aed;
+  font:
+    600 0.8125rem/1.25 system-ui,
+    sans-serif;
+}
+
 /* Hard boundary between SITE tokens and ADMIN tokens. The older demo markup
    still contains Tailwind neutral/white utilities; remap their variables on
    each chrome root so hover:/focus:/aria-* variants use the admin palette.
    The authored canvas deliberately isn't in this list. */
-:is(
-  #topbar,
-  #template-banner,
-  #tree,
-  #inserter,
-  #pattern-flyout,
-  #sidebar,
-  #footer,
-  #pattern-explorer
-) {
+:is(#topbar, #tree, #inserter, #pattern-flyout, #sidebar, #footer, #pattern-explorer) {
   --color-white: var(--background);
   --color-neutral-50: var(--card);
   --color-neutral-100: var(--ui-accent);
@@ -736,8 +1211,7 @@
 }
 
 #pattern-explore,
-#sidebar-edit-pattern,
-#template-banner button:first-of-type {
+#sidebar-edit-pattern {
   border: 1px solid var(--input);
   border-radius: var(--radius);
   background: var(--background);
@@ -792,6 +1266,17 @@
   background: var(--background);
 }
 
+[data-pattern-preview-shape="square"] {
+  box-sizing: border-box;
+  aspect-ratio: 1;
+  height: auto !important;
+  background: #f6f6f4 !important;
+}
+
+.dark [data-pattern-preview-shape="square"] {
+  background: #242626 !important;
+}
+
 #pattern-explorer {
   background: rgb(0 0 0 / 0.72);
 }
@@ -806,23 +1291,22 @@
 /* Legacy demo markup still contains neutral Tailwind utilities. Resolve those
    chrome-only roles through the admin tokens; never touch authored canvas
    content, where neutral-* belongs to the site being edited. */
-:is(#topbar, #tree, #inserter, #pattern-explorer, #sidebar, #footer, #template-banner)
+:is(#topbar, #tree, #inserter, #pattern-explorer, #sidebar, #footer)
   :is(.text-neutral-900, .text-neutral-800, .text-neutral-700) {
   color: var(--foreground);
 }
 
-:is(#topbar, #tree, #inserter, #pattern-explorer, #sidebar, #footer, #template-banner)
+:is(#topbar, #tree, #inserter, #pattern-explorer, #sidebar, #footer)
   :is(.text-neutral-600, .text-neutral-500, .text-neutral-400) {
   color: var(--muted-foreground);
 }
 
-:is(#tree, #inserter, #pattern-explorer, #sidebar, #template-banner)
+:is(#tree, #inserter, #pattern-explorer, #sidebar)
   :is(.border-neutral-200, .border-neutral-300, .border-neutral-400) {
   border-color: var(--border);
 }
 
-:is(#tree, #inserter, #pattern-explorer, #sidebar, #template-banner)
-  :is(.bg-white, .bg-neutral-50) {
+:is(#tree, #inserter, #pattern-explorer, #sidebar) :is(.bg-white, .bg-neutral-50) {
   background: var(--background);
 }
 
@@ -842,6 +1326,13 @@
 #canvas [contenteditable]:hover {
   box-shadow: 0 0 0 1px var(--color-zinc-300);
   border-radius: 2px;
+}
+#canvas.pbe-block-hover-model [contenteditable]:hover {
+  box-shadow: none;
+}
+#canvas.pbe-block-hover-model [data-pbe-editing="content-only"] [contenteditable]:hover,
+#canvas.pbe-block-hover-model [data-pbe-editing="content-only"][contenteditable]:hover {
+  box-shadow: 0 0 0 1px var(--color-zinc-300);
 }
 #canvas [contenteditable]:focus {
   box-shadow: 0 0 0 1px var(--color-canvas-accent);
@@ -868,6 +1359,9 @@
   outline: 1px dotted var(--color-zinc-400);
   outline-offset: 4px;
   border-radius: 2px;
+}
+#canvas.pbe-block-hover-model .pbe-container:hover:not(.pbe-selected) {
+  outline: none;
 }
 #canvas .pbe-container:empty {
   min-height: 48px;
@@ -898,9 +1392,456 @@
   box-shadow: 0 0 0 1px var(--color-zinc-300);
   border-radius: 2px;
 }
+#canvas.pbe-block-hover-model .pbe-raw:hover {
+  box-shadow: none;
+}
 
 /* Inspector controls: a compact box-model map for spatial values and a
    discrete token rail for ordered Tailwind scales. */
+.pbe-canvas-viewport {
+  background: var(--color-surface, #fff);
+  transition: width 180ms ease;
+}
+.pbe-canvas-viewport[data-resizing="true"] {
+  transition: none;
+  user-select: none;
+}
+
+.pbe-viewport-resizer {
+  position: absolute;
+  z-index: 40;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  transform: translateX(50%);
+  cursor: ew-resize;
+  touch-action: none;
+  color: var(--ring);
+  outline: none;
+}
+.pbe-viewport-resizer__line {
+  position: absolute;
+  top: 0;
+  right: 7px;
+  bottom: 0;
+  width: 1px;
+  background: var(--ring);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.pbe-viewport-resizer__grip {
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  display: flex;
+  width: 13px;
+  height: 34px;
+  transform: translateY(-50%);
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid color-mix(in oklch, var(--ring) 62%, var(--border));
+  border-radius: 999px;
+  background: var(--background);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.16);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.pbe-viewport-resizer__grip i {
+  display: block;
+  width: 1px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.pbe-viewport-resizer__value {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  min-width: 50px;
+  transform: translateY(-50%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--popover);
+  padding: 4px 6px;
+  color: var(--popover-foreground);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.pbe-viewport-resizer:hover .pbe-viewport-resizer__line,
+.pbe-viewport-resizer:hover .pbe-viewport-resizer__grip,
+.pbe-viewport-resizer:hover .pbe-viewport-resizer__value,
+.pbe-viewport-resizer:focus-visible .pbe-viewport-resizer__line,
+.pbe-viewport-resizer:focus-visible .pbe-viewport-resizer__grip,
+.pbe-viewport-resizer:focus-visible .pbe-viewport-resizer__value,
+.pbe-canvas-viewport[data-resizing="true"] .pbe-viewport-resizer__line,
+.pbe-canvas-viewport[data-resizing="true"] .pbe-viewport-resizer__grip,
+.pbe-canvas-viewport[data-resizing="true"] .pbe-viewport-resizer__value {
+  opacity: 1;
+}
+
+#viewport-switcher .pbe-viewport-device-control {
+  border: 1px solid transparent;
+  background: transparent;
+}
+#viewport-switcher .pbe-viewport-device-control:hover {
+  background: var(--background);
+  color: var(--foreground);
+}
+#viewport-switcher .pbe-viewport-device-control[data-selected] {
+  border-color: color-mix(in oklch, var(--ring) 55%, transparent);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.12),
+    inset 0 0 0 1px color-mix(in oklch, var(--ring) 55%, transparent);
+}
+#viewport-switcher .pbe-viewport-device {
+  border: 0;
+  background: transparent;
+}
+.pbe-viewport-menu-item[aria-checked="true"] {
+  background: color-mix(in oklch, var(--ring) 10%, var(--popover));
+  color: var(--foreground);
+}
+.pbe-viewport-option__dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ring);
+}
+
+.pbe-breakpoint-device-drop {
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.pbe-breakpoint-device-drop[data-drag-over="true"] {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 7%, var(--background));
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+[data-breakpoint-row][data-dragging="true"] {
+  opacity: 0.45;
+}
+
+.pbe-breakpoint-status {
+  border: 1px solid color-mix(in oklch, var(--ring) 28%, var(--border));
+  background: color-mix(in oklch, var(--ring) 8%, var(--background));
+  color: var(--foreground);
+}
+
+.pbe-settings-layout {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+#sidebar .pbe-structure-option {
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+#sidebar .pbe-structure-option:hover {
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+#sidebar .pbe-structure-option[aria-pressed="true"] {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 9%, var(--background));
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.pbe-control-row {
+  margin-top: 16px;
+}
+.pbe-control-row:first-of-type {
+  margin-top: 0;
+}
+.pbe-control-row__header {
+  display: flex;
+  min-height: 24px;
+  margin-bottom: 7px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pbe-current-value {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 68%;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--input);
+  border-radius: 5px;
+  background: var(--muted);
+  padding: 3px 6px;
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 500;
+}
+.pbe-current-value strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pbe-current-value small {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: 8px;
+  font-weight: 500;
+}
+.pbe-current-value[data-inherited="true"] {
+  border-style: dashed;
+  color: var(--muted-foreground);
+}
+
+.pbe-option-group {
+  overflow: hidden;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+}
+#sidebar .pbe-option-group > button {
+  border-radius: 0;
+  background: var(--background);
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+#sidebar .pbe-option-group > button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+#sidebar .pbe-option-group > button[aria-pressed="true"] {
+  position: relative;
+  z-index: 1;
+  background: var(--ring);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ring) 74%, black);
+}
+
+.pbe-value-select {
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.pbe-value-select[data-inherited="true"] {
+  border-style: dashed;
+  color: var(--muted-foreground);
+}
+
+.pbe-color-value {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  padding: 7px 10px;
+  color: var(--foreground);
+}
+.pbe-color-value:hover,
+.pbe-color-value[aria-expanded="true"] {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 18%, transparent);
+}
+.pbe-color-value__swatch {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 1px solid rgb(0 0 0 / 0.16);
+  border-radius: 50%;
+}
+.pbe-color-value__swatch[data-empty="true"] {
+  background:
+    linear-gradient(45deg, transparent 46%, #d0d0d0 47% 53%, transparent 54%),
+    repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 / 8px 8px !important;
+}
+.pbe-inherited-chip {
+  flex: none;
+  border-radius: 999px;
+  background: var(--muted);
+  padding: 3px 6px;
+  color: var(--muted-foreground);
+  font-size: 8px;
+  font-weight: 650;
+}
+.pbe-color-popover {
+  border: 1px solid var(--input);
+  border-radius: calc(var(--radius) * 1.25);
+  background: var(--popover);
+  padding: 12px;
+  color: var(--popover-foreground);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.24);
+}
+.pbe-color-swatch {
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.16);
+}
+.pbe-color-swatch:hover {
+  transform: scale(1.08);
+}
+.pbe-color-swatch[aria-pressed="true"] {
+  border-color: var(--popover);
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
+}
+
+.pbe-variant-option {
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+}
+.pbe-variant-option:hover {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 7%, var(--background));
+}
+#sidebar .pbe-variant-option[aria-pressed="true"] {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 12%, var(--background));
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.pbe-variant-option__check {
+  visibility: hidden;
+  color: var(--ring);
+}
+#sidebar .pbe-variant-option[aria-pressed="true"] .pbe-variant-option__check {
+  visibility: visible;
+}
+
+.pbe-variant-preview-popover {
+  position: fixed;
+  z-index: 70;
+  width: 300px;
+  overflow: hidden;
+  border: 1px solid var(--pbe-chrome-border, #3f3f46);
+  border-radius: calc(var(--radius) * 1.25);
+  background: var(--pbe-chrome-popover, #18181b);
+  color: var(--pbe-chrome-popover-foreground, #fafafa);
+  box-shadow: 0 18px 42px rgb(0 0 0 / 0.32);
+  pointer-events: none;
+}
+.pbe-variant-preview-popover__title {
+  display: block;
+  border-bottom: 1px solid var(--pbe-chrome-border, #3f3f46);
+  padding: 9px 12px;
+  font-size: 11px;
+  font-weight: 650;
+}
+.pbe-variant-preview-popover__stage {
+  min-height: 108px;
+  display: grid;
+  align-items: center;
+  overflow: hidden;
+  background: var(--color-surface, #fff);
+  padding: 20px;
+  color: var(--color-foreground, #18181b);
+}
+.pbe-variant-preview-popover__stage > * {
+  max-width: 100%;
+  margin: 0;
+}
+
+.pbe-pattern-context {
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+.pbe-pattern-context:hover {
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+#sidebar .pbe-pattern-context[aria-pressed="true"] {
+  border-color: var(--ring);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.pbe-pattern-context__preview {
+  position: relative;
+  display: block;
+  height: 58px;
+  padding: 14px 10px;
+}
+.pbe-pattern-context__preview i {
+  display: block;
+  width: 60%;
+  height: 3px;
+  margin-bottom: 5px;
+  border-radius: 99px;
+  background: currentColor;
+  opacity: 0.78;
+}
+.pbe-pattern-context__preview i:nth-child(2) {
+  width: 38%;
+  opacity: 0.42;
+}
+.pbe-pattern-context__preview b {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 24px;
+  height: 10px;
+  border-radius: 99px;
+}
+.pbe-pattern-context > strong {
+  display: block;
+  overflow: hidden;
+  border-top: 1px solid var(--input);
+  padding: 6px 7px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbe-advanced-section summary {
+  color: var(--foreground);
+}
+.pbe-advanced-section[open] .pbe-section-chevron {
+  transform: rotate(180deg);
+}
+.pbe-advanced-option {
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+}
+.pbe-advanced-option__check {
+  visibility: hidden;
+  color: var(--ring);
+}
+#sidebar .pbe-advanced-option[aria-pressed="true"] {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 8%, var(--background));
+}
+#sidebar .pbe-advanced-option[aria-pressed="true"] .pbe-advanced-option__check {
+  visibility: visible;
+}
+
 .pbe-box-model {
   width: 100%;
   color: var(--muted-foreground);
@@ -1028,30 +1969,35 @@
   letter-spacing: normal;
 }
 .pbe-scale--editable {
-  padding-right: 68px;
+  padding-right: 84px;
 }
 .pbe-scale--editable .pbe-scale__track {
-  right: 68px;
+  right: 84px;
 }
 .pbe-scale__editor {
   position: absolute;
   z-index: 2;
   top: 7px;
   right: 0;
-  width: 60px;
-  height: 28px;
-  padding: 0 4px;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: transparent;
+  width: 76px;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--input);
+  border-radius: 5px;
+  background: var(--background);
   color: var(--foreground);
   font-size: 11px;
+  font-weight: 650;
   text-align: right;
+}
+.pbe-scale__editor[data-inherited="true"] {
+  border-style: dashed;
+  color: var(--muted-foreground);
 }
 .pbe-scale__editor:hover,
 .pbe-scale__editor:focus {
-  background: var(--background);
   border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 18%, transparent);
   outline: none;
 }
 .pbe-scale {
@@ -1124,7 +2070,6 @@
 /* Block-level multiselection: whole blocks read as selected — native text
    highlighting is hidden inside them so the block highlight is the story. */
 #canvas .pbe-selected {
-  background: color-mix(in srgb, var(--color-canvas-accent) 9%, transparent);
   outline: 2px solid var(--color-canvas-accent);
   outline-offset: 2px;
   border-radius: 2px;
@@ -1158,44 +2103,18 @@
   pointer-events: none;
 }
 
-/* Editor-rendered block typography. NO block MARGINS: every block is margin-0
-   by default, matching Tailwind preflight (and so the published page) — an
-   implicit 1em margin is a preview≠production lie AND hidden state (layout in
-   no class), which the class-is-the-carrier model forbids. It also fought real
-   templates (the fixture's `<p class="mt-8">` kept a phantom 1em bottom).
-   Spacing is EXPLICIT: authored utilities, or a container's `[&_p]:my-4`
-   prose class for article content.
-
-   What stays is non-margin AUTHORING affordance for UNSTYLED content — heading
-   size/weight so headings read as headings while writing, quote/code framing.
-   These are @layer base FALLBACKS, so any authored utility (build or engine
-   stylesheet) beats them (a template's `text-7xl` wins over the h1 fallback).
-   Shared with .pbe-preview so pattern cards match the canvas.
-   NOTE: the heading SIZE fallback is itself a smaller preview lie (preflight
-   makes an unstyled heading body-sized) — the honest fix is default size
-   CLASSES on the heading block, a separate follow-up. */
+/* Non-typographic authoring affordances for unstyled quote/code content.
+   Site-wide typography and element rhythm come from themeBaseCss(), whose
+   portable tokens are editable in the Theme editor. Both live in the base
+   layer, so authored utility classes and inline block styles remain the
+   override layer. */
 @layer base {
-  :is(#canvas, .pbe-preview) h1,
-  :is(#canvas, .pbe-preview) h2,
-  :is(#canvas, .pbe-preview) h3 {
-    line-height: 1.25;
-    font-weight: 700;
-  }
-  :is(#canvas, .pbe-preview) h1 {
-    font-size: 2em;
-  }
-  :is(#canvas, .pbe-preview) h2 {
-    font-size: 1.5em;
-  }
-  :is(#canvas, .pbe-preview) h3 {
-    font-size: 1.17em;
-  }
-  :is(#canvas, .pbe-preview) blockquote {
+  :where(#canvas, .pbe-preview) blockquote {
     color: var(--color-zinc-500);
     border-left: 3px solid var(--color-zinc-200);
     padding-left: 16px;
   }
-  :is(#canvas, .pbe-preview) pre {
+  :where(#canvas, .pbe-preview) pre {
     background: var(--color-zinc-100);
     border-radius: 6px;
     padding: 12px 16px;

@@ -50,11 +50,11 @@ import {
 import { getBlockType } from "./registry";
 import type { BlockType, ControlRole, SettingSpec } from "./registry";
 import { createBlockSelection } from "./selection";
-import { STYLE_PROPS, blockSupportsStyle, variationClasses } from "./style";
-import type { StyleSupports } from "./style";
+import { STYLE_PROPS, blockSupportsStyle, styleBreakpoints, variantClasses } from "./style";
+import type { StyleBreakpoint, StyleSupports } from "./style";
 import { classesBackend } from "./style-backend";
 import type { StyleBackend } from "./style-backend";
-import { setActiveTheme } from "./theme";
+import { activeTheme, hasToken, semanticColorRoles, setActiveTheme } from "./theme";
 import type { Theme } from "./theme";
 import { flattenBlocks, locateBlock, pathToBlock } from "./tree";
 
@@ -99,7 +99,7 @@ export interface EditorOptions {
   theme?: Theme;
   /**
    * The STYLE BACKEND (E2a, css-engine): how lens facts materialize in the
-   * document. Default = the classes backend (utility classes in the class
+   * ownerDocument. Default = the classes backend (utility classes in the class
    * attr — Tailwind-native, engine-compiled). `inlineBackend` writes CSS
    * declarations with var(--token) refs instead (zero tooling; the host
    * injects backend.css()). Third parties may bring their own.
@@ -138,16 +138,22 @@ export function createEditor({
   styleBackend = classesBackend,
 }: EditorOptions) {
   let model: Model = { blocks: [] };
+  // The editable surface may live in a same-origin iframe. Every selection,
+  // focus, range, and document listener must follow the canvas's realm rather
+  // than the shell's global document; otherwise responsive preview works but
+  // editing silently stays wired to the parent page.
+  const ownerDocument = canvas.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView ?? window;
 
   // Site theme (E1): install when given; absent leaves the page's theme alone
   // (a second themeless instance must not clobber the first's site theme).
   if (theme) setActiveTheme(theme);
 
-  // Variation carrier (E2): an `is-style-<name>` marker class + the
-  // variation's class-set, both in block.classes — recognition survives the
+  // Variant carrier (E2): an `is-style-<name>` marker class + the resolved
+  // recipe classes, both in block.classes — recognition survives the
   // user tweaking individual classes (the marker stays), and switching
-  // removes exactly the OLD variation's declared set. Backend-independent:
-  // variations are block-DEF class-sets, not theme values.
+  // removes exactly the OLD variant's resolved recipe classes. Definitions
+  // contain semantic style values; utility classes never enter the public API.
   const VARIATION_MARKER = /^is-style-(.+)$/;
   function readVariation(block: Block): string {
     for (const cls of classList(block.classes)) {
@@ -158,11 +164,11 @@ export function createEditor({
   }
   function writeVariation(block: Block, name: string): void {
     const def = getBlockType(block.type);
-    const oldSet = new Set(variationClasses(def?.variations, readVariation(block)));
+    const oldSet = new Set(variantClasses(def?.variants, readVariation(block)));
     const classes = classList(block.classes).filter(
       (c) => !VARIATION_MARKER.test(c) && !oldSet.has(c),
     );
-    if (name) classes.push(`is-style-${name}`, ...variationClasses(def?.variations, name));
+    if (name) classes.push(`is-style-${name}`, ...variantClasses(def?.variants, name));
     block.classes = classes.join(" ");
   }
 
@@ -182,7 +188,7 @@ export function createEditor({
   // Editor-driven mutations must never drop focus out of the editor —
   // keyboard undo dies the moment focus lands on <body>.
   function ensureCanvasFocus() {
-    if (!canvas.contains(document.activeElement)) canvas.focus({ preventScroll: true });
+    if (!canvas.contains(ownerDocument.activeElement)) canvas.focus({ preventScroll: true });
   }
 
   // onChange fires on a microtask, AFTER the editor settles: mid-commit the
@@ -222,15 +228,15 @@ export function createEditor({
   // input event fires after the DOM changed, so the captured offset can sit
   // one keystroke past the run's start — clamped on restore, close enough.
   function captureSelection(): CaretSnapshot | null {
-    const el = document.activeElement;
+    const el = ownerDocument.activeElement;
     const root = el && canvas.contains(el) ? el.closest("[data-pb-id]") : null;
     if (!el || !root) return null;
     const out: CaretSnapshot = { blockId: root.getAttribute("data-pb-id")! };
     const carrier = el.closest(EDITABLE_SELECTOR);
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     if (carrier && sel?.rangeCount && carrier.contains(sel.getRangeAt(0).startContainer)) {
       const at = sel.getRangeAt(0);
-      const r = document.createRange();
+      const r = ownerDocument.createRange();
       r.selectNodeContents(carrier);
       r.setEnd(at.startContainer, at.startOffset);
       out.field = carrier.getAttribute("data-pb-text") ?? carrier.getAttribute("data-pb-rich");
@@ -257,10 +263,10 @@ export function createEditor({
     if (!carrier) return focusEdge(s.blockId, "end");
 
     carrier.focus({ preventScroll: true });
-    const range = document.createRange();
+    const range = ownerDocument.createRange();
     let remaining = s.offset!;
     let placed = false;
-    const walker = document.createTreeWalker(carrier, NodeFilter.SHOW_TEXT);
+    const walker = ownerDocument.createTreeWalker(carrier, ownerWindow.NodeFilter.SHOW_TEXT);
     for (let node: Text | null; (node = walker.nextNode() as Text | null); ) {
       if (remaining <= node.data.length) {
         range.setStart(node, remaining);
@@ -274,7 +280,7 @@ export function createEditor({
       range.selectNodeContents(carrier);
       range.collapse(false); // offset beyond the restored text — clamp to end
     }
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
   }
@@ -333,14 +339,37 @@ export function createEditor({
   canvas.classList.add("pbe-patterns-opaque"); // CSS hook: chrome hides intra-instance affordances
   const isInstanceRoot = (b: Block) =>
     b.type === PATTERN_ROOT_TYPE || !!(b.pattern && getPattern(b.pattern));
-  const resolvePatternTarget = (id: string): string => {
+  const pointInsideBlock = (id: string, point: { clientX: number; clientY: number }): boolean => {
+    const el = canvas.querySelector<HTMLElement>(`[data-pb-id="${CSS.escape(id)}"]`);
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    // Geometry is unavailable in non-layout DOMs (and for a transiently
+    // detached node). Preserve the id-based fallback there; a real visible
+    // click always has a measurable border box.
+    if (!rect.width && !rect.height) return true;
+    return (
+      point.clientX >= rect.left &&
+      point.clientX <= rect.right &&
+      point.clientY >= rect.top &&
+      point.clientY <= rect.bottom
+    );
+  };
+  const resolvePatternTarget = (
+    id: string,
+    point?: { clientX: number; clientY: number },
+  ): string => {
     if (!patternsOpaque) return id;
     const path = pathToBlock(model.blocks, id);
     if (!path) return id;
     const rootIdx = path.findIndex(isInstanceRoot);
     if (rootIdx === -1) return id;
     const unit = path.slice(rootIdx + 1).find(isPatternContentBlock);
-    return (unit ?? path[rootIdx]).id;
+    if (!unit) return path[rootIdx].id;
+    // Browser hit-testing can report a contenteditable child for clicks in
+    // its margin or in nearby layout space. In an opaque pattern, content
+    // blocks are reachable ONLY through their actual rendered border box;
+    // all surrounding structure belongs to the pattern instance.
+    return !point || pointInsideBlock(unit.id, point) ? unit.id : path[rootIdx].id;
   };
 
   const blockSel = createBlockSelection({
@@ -359,24 +388,41 @@ export function createEditor({
   // the affordance for "these parts are yours; Edit pattern owns the rest".
   function onPatternFlash(event: MouseEvent) {
     if (event.button !== 0 || !patternsOpaque) return;
-    const el = event.target instanceof Element ? event.target.closest("[data-pb-id]") : null;
+    const el =
+      event.target instanceof ownerWindow.Element ? event.target.closest("[data-pb-id]") : null;
     const path = el ? pathToBlock(model.blocks, el.getAttribute("data-pb-id")!) : null;
     if (!path) return;
     const rootIdx = path.findIndex(isInstanceRoot);
     if (rootIdx === -1) return;
     // Clicking INSIDE an editable unit needs no affordance — the click already
     // lands where editing happens. Flash only for clicks on the opaque rest.
-    if (path.slice(rootIdx + 1).some(isPatternContentBlock)) return;
     const root = path[rootIdx];
+    if (resolvePatternTarget(path[path.length - 1].id, event) !== root.id) return;
     // DETACHED veils, not classes on the units: any style set on the unit
     // itself (position, ::after) can fight its own layout classes — a
     // fixed-position sibling in the body can't perturb anything. They live in
     // a clip box sized to the canvas so partially off-screen units never
     // bleed over the sidebars.
-    for (const el of document.querySelectorAll(".pbe-flash-clip")) el.remove(); // rapid re-clicks
+    for (const el of ownerDocument.querySelectorAll("[data-pbe-pattern-flash]")) el.remove(); // rapid re-clicks
     const cr = canvas.getBoundingClientRect();
-    const clip = document.createElement("div");
-    clip.className = "pbe-flash-clip";
+    const overlay = ownerDocument.createElement("pbe-pattern-flash");
+    overlay.setAttribute("data-pbe-pattern-flash", "");
+    const shadow = overlay.attachShadow({ mode: "open" });
+    const style = ownerDocument.createElement("style");
+    style.textContent = `
+      :host { all: initial; display: contents; }
+      .clip { position: fixed; z-index: 40; overflow: hidden; pointer-events: none; }
+      .veil {
+        position: absolute;
+        border-radius: 3px;
+        background: rgb(86 93 217 / 24%);
+        animation: pbe-flash 650ms ease-out forwards;
+        pointer-events: none;
+      }
+      @keyframes pbe-flash { from { opacity: 1; } to { opacity: 0; } }
+    `;
+    const clip = ownerDocument.createElement("div");
+    clip.className = "clip";
     clip.style.left = `${cr.left}px`;
     clip.style.top = `${cr.top}px`;
     clip.style.width = `${cr.width}px`;
@@ -386,8 +432,8 @@ export function createEditor({
       if (!unit) continue;
       const r = unit.getBoundingClientRect();
       if (!r.width || !r.height) continue;
-      const veil = document.createElement("div");
-      veil.className = "pbe-flash-veil";
+      const veil = ownerDocument.createElement("div");
+      veil.className = "veil";
       veil.style.left = `${r.left - cr.left - 3}px`;
       veil.style.top = `${r.top - cr.top - 3}px`;
       veil.style.width = `${r.width + 6}px`;
@@ -397,12 +443,15 @@ export function createEditor({
         "animationend",
         () => {
           veil.remove();
-          if (!clip.childElementCount) clip.remove();
+          if (!clip.childElementCount) overlay.remove();
         },
         { once: true },
       );
     }
-    if (clip.childElementCount) document.body.appendChild(clip);
+    if (clip.childElementCount) {
+      shadow.append(style, clip);
+      ownerDocument.body.appendChild(overlay);
+    }
   }
   canvas.addEventListener("mousedown", onPatternFlash);
 
@@ -429,12 +478,12 @@ export function createEditor({
       { label: `remove ${ids.length} block${ids.length === 1 ? "" : "s"}` },
     );
     renderCanvas();
-    window.getSelection()?.removeAllRanges();
+    ownerWindow.getSelection()?.removeAllRanges();
     if (prev) focusEdge(prev.id, "end");
     else if (model.blocks.length) focusEdge(model.blocks[0].id, "start");
     ensureCanvasFocus(); // empty doc / raw-html-first: the canvas itself holds focus
   }
-  document.addEventListener("keydown", onMultiDelete, true);
+  ownerDocument.addEventListener("keydown", onMultiDelete, true);
 
   // --- model/DOM lookups -------------------------------------------------------
   // The model is a tree: every lookup that used to index model.blocks now
@@ -512,6 +561,27 @@ export function createEditor({
     return !!at && effectiveBlockPolicy(at.block).movable && containerOrderable(at.parent);
   };
 
+  // Cross-container reorder gate. Moving OUT still belongs to the source
+  // container's orderability contract (canMoveBlock); moving IN additionally
+  // belongs to the destination container's orderability + admission contract.
+  // A container can never move into its own subtree.
+  const canMoveBlockTo = (id: string, parentId: string | null): boolean => {
+    const at = locate(id);
+    if (!at || !canMoveBlock(id)) return false;
+    if (parentId === id) return false;
+    // Reordering in the slot that already owns the block is not insertion.
+    // The document may contain permissively-upcast legacy content that a
+    // current admission policy would no longer allow as a fresh child; that
+    // must not make the existing child impossible to reorder.
+    if ((at.parent?.id ?? null) === parentId) return true;
+    const parent: Block | null = parentId ? (findBlock(parentId) ?? null) : null;
+    if (parentId && (!parent?.children || !containerOrderable(parent))) return false;
+    if (parent && patternsOpaque && isInstanceRoot(parent)) return false;
+    if (!parentId && !containerOrderable(null)) return false;
+    if (!slotAccepts(parent, at.block.type)) return false;
+    return !parentId || !pathToBlock(at.block.children ?? [], parentId);
+  };
+
   // Removal policy (A4), in one place.
   const canRemoveBlock = (id: string): boolean => {
     const block = findBlock(id);
@@ -547,7 +617,7 @@ export function createEditor({
     return root ? findBlock(root.getAttribute("data-pb-id") ?? "") : undefined;
   };
   const carrierAt = (target: EventTarget | null): HTMLElement | null =>
-    target instanceof Element ? target.closest<HTMLElement>(EDITABLE_SELECTOR) : null;
+    target instanceof ownerWindow.Element ? target.closest<HTMLElement>(EDITABLE_SELECTOR) : null;
 
   function makeBlock(type: string, seedChildren = true): Block {
     const def = getBlockType(type);
@@ -620,7 +690,7 @@ export function createEditor({
   function stampPattern(name: string): Block[] | null {
     const pattern = getPattern(name);
     if (!pattern) return null;
-    const tmp = document.createElement("div");
+    const tmp = ownerDocument.createElement("div");
     tmp.innerHTML = pattern.content;
     const blocks = upcast(tmp).blocks;
     for (const b of flattenBlocks(blocks)) b.id = mintId();
@@ -650,10 +720,10 @@ export function createEditor({
   function scrollBlockIntoView(el: Element, block: ScrollLogicalPosition = "nearest") {
     const saved: Array<[Element, number]> = [];
     for (let n = el.parentElement; n; n = n.parentElement) saved.push([n, n.scrollLeft]);
-    const x = window.scrollX;
+    const x = ownerWindow.scrollX;
     el.scrollIntoView({ block, inline: "nearest" });
     for (const [n, left] of saved) if (n.scrollLeft !== left) n.scrollLeft = left;
-    if (window.scrollX !== x) window.scrollTo(x, window.scrollY);
+    if (ownerWindow.scrollX !== x) ownerWindow.scrollTo(x, ownerWindow.scrollY);
   }
 
   // Where a fresh insert lands (call after renderCanvas): a CONTAINER selects
@@ -690,6 +760,11 @@ export function createEditor({
       .trim();
 
   function decorate(root: HTMLElement, block: Block) {
+    // Chrome uses the contextual mode as an interaction boundary: default
+    // blocks get hover preselection, while content-only pattern descendants
+    // keep their established direct-edit behavior. Editor-only DOM metadata;
+    // it never enters the block model or serialized output.
+    root.dataset.pbeEditing = editingModeFor(block.id);
     if (block.type === RAW_TYPE) {
       root.classList.add("pbe-raw"); // opaque, not untouchable: click selects the block
       return;
@@ -746,7 +821,7 @@ export function createEditor({
   function renderCanvas() {
     canvas.textContent = "";
     for (const block of model.blocks) {
-      const root = blockToElement(block);
+      const root = blockToElement(block, ownerDocument);
       if (!root) continue;
       decorateTree(root, block);
       canvas.appendChild(root);
@@ -761,7 +836,7 @@ export function createEditor({
     const old = rootOf(id);
     if (!block || !old) return renderCanvas();
     const sel = captureSelection();
-    const fresh = blockToElement(block);
+    const fresh = blockToElement(block, ownerDocument);
     if (!fresh) return;
     decorateTree(fresh, block);
     if (old.classList.contains("pbe-selected")) fresh.classList.add("pbe-selected");
@@ -783,10 +858,10 @@ export function createEditor({
     const target = edge === "start" ? carriers[0] : carriers[carriers.length - 1];
     if (!target) return;
     target.focus({ preventScroll: true });
-    const range = document.createRange();
+    const range = ownerDocument.createRange();
     range.selectNodeContents(target);
     range.collapse(edge === "start");
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
   }
@@ -864,15 +939,15 @@ export function createEditor({
 
     let before = readCarrier(carrier, kind);
     let after = "";
-    const sel = window.getSelection();
+    const sel = ownerWindow.getSelection();
     if (sel?.rangeCount && carrier.contains(sel.getRangeAt(0).startContainer)) {
       const at = sel.getRangeAt(0);
       const half = (toStart: boolean) => {
-        const r = document.createRange();
+        const r = ownerDocument.createRange();
         r.selectNodeContents(carrier);
         if (toStart) r.setEnd(at.startContainer, at.startOffset);
         else r.setStart(at.endContainer, at.endOffset);
-        const tmp = document.createElement("div");
+        const tmp = ownerDocument.createElement("div");
         tmp.appendChild(r.cloneContents());
         return kind === "text" ? (tmp.textContent ?? "") : tmp.innerHTML;
       };
@@ -904,7 +979,7 @@ export function createEditor({
   // is just removed; an unmergeable previous block (raw-html) gets SELECTED —
   // the second Backspace deletes it via the group-delete path.
   const richText = (html: string): string => {
-    const d = document.createElement("div");
+    const d = ownerDocument.createElement("div");
     d.innerHTML = html;
     return d.textContent ?? "";
   };
@@ -917,14 +992,14 @@ export function createEditor({
 
     // caret must be collapsed at character offset 0 of the block's FIRST
     // editable carrier — everywhere else Backspace stays native
-    const winSel = window.getSelection();
+    const winSel = ownerWindow.getSelection();
     if (
       !winSel?.rangeCount ||
       !winSel.isCollapsed ||
       !carrier.contains(winSel.getRangeAt(0).startContainer)
     )
       return;
-    const probe = document.createRange();
+    const probe = ownerDocument.createRange();
     probe.selectNodeContents(carrier);
     probe.setEnd(winSel.getRangeAt(0).startContainer, winSel.getRangeAt(0).startOffset);
     if (probe.toString().length !== 0) return;
@@ -1019,7 +1094,7 @@ export function createEditor({
         // Nearest block root must be the container ITSELF — a click inside a
         // child never reaches this (its own root is nearer).
         const rootEl =
-          event.target instanceof Element ? event.target.closest("[data-pb-id]") : null;
+          event.target instanceof ownerWindow.Element ? event.target.closest("[data-pb-id]") : null;
         const block = rootEl ? findBlock(rootEl.getAttribute("data-pb-id") ?? "") : undefined;
         if (!block?.children) return;
         list = block.children;
@@ -1115,9 +1190,9 @@ export function createEditor({
     ghost = null;
     abandonGhost(g);
   }
-  document.addEventListener("selectionchange", checkGhost);
-  document.addEventListener("focusin", checkGhost);
-  document.addEventListener("focusout", checkGhost);
+  ownerDocument.addEventListener("selectionchange", checkGhost);
+  ownerDocument.addEventListener("focusin", checkGhost);
+  ownerDocument.addEventListener("focusout", checkGhost);
 
   // --- grouping: Cmd+G wraps, Shift+Cmd+G unwraps ------------------------------
   // Document-level capture for the same reason as multi-delete: after a drag
@@ -1235,9 +1310,9 @@ export function createEditor({
     if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
     // Enter in chrome outside the canvas (inserter search, toolbar buttons)
     // belongs to that chrome, block selection or not.
-    const focused = document.activeElement;
+    const focused = ownerDocument.activeElement;
     if (
-      focused instanceof HTMLElement &&
+      focused instanceof ownerWindow.HTMLElement &&
       !canvas.contains(focused) &&
       (focused.matches("input, textarea, select, button") || focused.isContentEditable)
     )
@@ -1257,11 +1332,11 @@ export function createEditor({
       { label: `enter after ${at.block.id} → ${next.id}` },
     );
     renderCanvas();
-    window.getSelection()?.removeAllRanges();
+    ownerWindow.getSelection()?.removeAllRanges();
     focusEdge(next.id, "start");
     ensureCanvasFocus();
   }
-  document.addEventListener("keydown", onBlockEnter, true);
+  ownerDocument.addEventListener("keydown", onBlockEnter, true);
 
   function onGroupKeys(event: KeyboardEvent) {
     if (!(event.metaKey || event.ctrlKey) || event.altKey || event.defaultPrevented) return;
@@ -1277,7 +1352,7 @@ export function createEditor({
       groupBlocks();
     }
   }
-  document.addEventListener("keydown", onGroupKeys, true);
+  ownerDocument.addEventListener("keydown", onGroupKeys, true);
 
   // --- public API ------------------------------------------------------------
 
@@ -1301,12 +1376,12 @@ export function createEditor({
 
     /** Detach document-level listeners (selectionchange, multiselect + grouping keys, ghost tracking). */
     destroy() {
-      document.removeEventListener("keydown", onMultiDelete, true);
-      document.removeEventListener("keydown", onBlockEnter, true);
-      document.removeEventListener("keydown", onGroupKeys, true);
-      document.removeEventListener("selectionchange", checkGhost);
-      document.removeEventListener("focusin", checkGhost);
-      document.removeEventListener("focusout", checkGhost);
+      ownerDocument.removeEventListener("keydown", onMultiDelete, true);
+      ownerDocument.removeEventListener("keydown", onBlockEnter, true);
+      ownerDocument.removeEventListener("keydown", onGroupKeys, true);
+      ownerDocument.removeEventListener("selectionchange", checkGhost);
+      ownerDocument.removeEventListener("focusin", checkGhost);
+      ownerDocument.removeEventListener("focusout", checkGhost);
       blockSel.destroy();
     },
 
@@ -1349,6 +1424,9 @@ export function createEditor({
     /** Whether a block may be reordered (its `movable` policy AND the container's `orderable`) — chrome hides its move affordances when false. */
     canMove: (id: string): boolean => canMoveBlock(id),
 
+    /** Whether a block may move into a destination container (`null` = document root). */
+    canMoveTo: (id: string, parentId: string | null): boolean => canMoveBlockTo(id, parentId),
+
     /** Whether `type` may be inserted at the ROOT (the `allowedBlocks` policy, B2) — chrome filters its pickers and hides the inserter when nothing is insertable. */
     canInsert: (type: string): boolean => canInsert(type),
 
@@ -1384,7 +1462,8 @@ export function createEditor({
      * (add/remove one block, non-contiguous ok), `range` = Shift+click
      * (sibling run from the current anchor — caret's block, else the
      * selection's first block — via the same native root-level range the
-     * canvas asserts).
+     * canvas asserts). `block` forces an editable leaf into explicit block
+     * selection; List View uses it so keyboard block commands stay active.
      */
     /**
      * Toggle pattern-instance opacity (default on): whether selection remaps
@@ -1395,9 +1474,24 @@ export function createEditor({
     setPatternsOpaque(on: boolean) {
       patternsOpaque = on;
       canvas.classList.toggle("pbe-patterns-opaque", on);
+      // The mode is contextual rather than serialized; keep the editor-only
+      // DOM annotation in sync without re-rendering (and disturbing a caret)
+      // when a host enters or leaves pattern isolation.
+      for (const root of canvas.querySelectorAll<HTMLElement>("[data-pb-id]")) {
+        const id = root.dataset.pbId;
+        if (id) root.dataset.pbeEditing = editingModeFor(id);
+      }
     },
 
-    selectBlock(id: string, opts: { toggle?: boolean; range?: boolean; center?: boolean } = {}) {
+    clearSelection() {
+      blockSel.clear();
+      ownerWindow.getSelection()?.removeAllRanges();
+    },
+
+    selectBlock(
+      id: string,
+      opts: { toggle?: boolean; range?: boolean; center?: boolean; block?: boolean } = {},
+    ) {
       const block = findBlock(id);
       const root = rootOf(id);
       if (!block || !root) return;
@@ -1416,7 +1510,7 @@ export function createEditor({
         ...(root.matches(EDITABLE_SELECTOR) ? [root] : []),
         ...root.querySelectorAll<HTMLElement>(EDITABLE_SELECTOR),
       ].filter((el) => el.isContentEditable);
-      if (block.children || !carriers.length) {
+      if (opts.block || block.children || !carriers.length) {
         blockSel.select(id);
       } else {
         // Same release rule as a canvas click on editable content: the caret
@@ -1448,16 +1542,47 @@ export function createEditor({
     },
 
     /**
+     * Move a block to a final index in another (or the same) sibling list.
+     * `index` is measured after removing the dragged block, which makes DOM
+     * projections and model placement agree without same-list off-by-one
+     * adjustments. One drop is one undo entry.
+     */
+    moveBlockTo(id: string, parentId: string | null, index: number): boolean {
+      if (!canMoveBlockTo(id, parentId)) return false;
+      const at = locate(id);
+      const parent = parentId ? findBlock(parentId) : null;
+      if (!at || (parentId && !parent?.children)) return false;
+      const destination = parent ? parent.children! : model.blocks;
+      const finalLength = destination.length - (destination === at.list ? 1 : 0);
+      const target = Math.max(0, Math.min(index, finalLength));
+      if (destination === at.list && target === at.index) return false;
+
+      const sel = captureSelection();
+      const selected = blockSel.ids;
+      commit(
+        () => {
+          const [block] = at.list.splice(at.index, 1);
+          destination.splice(target, 0, block);
+        },
+        { label: `move ${id} to ${parentId ?? "root"}:${target}` },
+      );
+      renderCanvas();
+      if (sel) restoreSelection(sel);
+      else if (selected.length === 1 && selected[0] === id) blockSel.select(id);
+      return true;
+    },
+
+    /**
      * Toggle an inline mark ("bold" | "italic") over the current selection in
      * a rich carrier. Pure model transform (src/format.ts) — one history
      * entry, block re-rendered in place, selection restored over the span.
      */
     format(mark: string) {
-      const winSel = window.getSelection();
+      const winSel = ownerWindow.getSelection();
       if (!winSel?.rangeCount || winSel.isCollapsed) return;
       const range = winSel.getRangeAt(0);
       const node = range.commonAncestorContainer;
-      const el = node instanceof Element ? node : node.parentElement;
+      const el = node instanceof ownerWindow.Element ? node : node.parentElement;
       const carrier = el?.closest<HTMLElement>("[data-pb-rich]");
       const block =
         carrier && canvas.contains(carrier) && carrier.isContentEditable ? blockAt(carrier) : null;
@@ -1486,11 +1611,11 @@ export function createEditor({
 
     /** {bold, italic} — true when the whole current selection carries the mark. Chrome binds button states to this. */
     formatState(): Record<string, boolean> {
-      const winSel = window.getSelection();
+      const winSel = ownerWindow.getSelection();
       if (!winSel?.rangeCount) return formatState(null, null);
       const range = winSel.getRangeAt(0);
       const node = range.commonAncestorContainer;
-      const el = node instanceof Element ? node : node.parentElement;
+      const el = node instanceof ownerWindow.Element ? node : node.parentElement;
       const carrier = el?.closest("[data-pb-rich]");
       if (!carrier || !canvas.contains(carrier)) return formatState(null, null);
       return formatState(carrier, range);
@@ -1503,11 +1628,11 @@ export function createEditor({
      * format(); no-ops on a collapsed selection or a non-rich target.
      */
     applyLink(href: string, target: string = "") {
-      const winSel = window.getSelection();
+      const winSel = ownerWindow.getSelection();
       if (!winSel?.rangeCount || winSel.isCollapsed) return;
       const range = winSel.getRangeAt(0);
       const node = range.commonAncestorContainer;
-      const el = node instanceof Element ? node : node.parentElement;
+      const el = node instanceof ownerWindow.Element ? node : node.parentElement;
       const carrier = el?.closest<HTMLElement>("[data-pb-rich]");
       const block =
         carrier && canvas.contains(carrier) && carrier.isContentEditable ? blockAt(carrier) : null;
@@ -1536,11 +1661,11 @@ export function createEditor({
 
     /** The link {href, target} over the current selection, or null — chrome prefills its popover from this. */
     linkState(): { href: string; target: string } | null {
-      const winSel = window.getSelection();
+      const winSel = ownerWindow.getSelection();
       if (!winSel?.rangeCount) return null;
       const range = winSel.getRangeAt(0);
       const node = range.commonAncestorContainer;
-      const el = node instanceof Element ? node : node.parentElement;
+      const el = node instanceof ownerWindow.Element ? node : node.parentElement;
       const carrier = el?.closest("[data-pb-rich]");
       if (!carrier || !canvas.contains(carrier)) return null;
       return readLinkState(carrier, range);
@@ -1638,6 +1763,26 @@ export function createEditor({
       return next;
     },
 
+    /** Insert a fresh block immediately before/after an existing sibling at any depth. */
+    insertBlockAdjacent(anchorId: string, edge: "before" | "after", type: string): Block | null {
+      const at = locate(anchorId);
+      if (
+        !at ||
+        !getBlockType(type) ||
+        (at.parent && editingModeFor(at.parent.id) !== "default") ||
+        !slotAccepts(at.parent, type)
+      )
+        return null;
+      const next = makeBlock(type);
+      const index = at.index + (edge === "after" ? 1 : 0);
+      commit(() => at.list.splice(index, 0, next), {
+        label: `insert ${type} ${edge} ${anchorId}`,
+      });
+      renderCanvas();
+      landOnInserted(next);
+      return next;
+    },
+
     /**
      * Stamp a registered pattern into the root list at `index` (default:
      * end) — insertBlock's composition sibling. The stamp is an INDEPENDENT
@@ -1657,6 +1802,30 @@ export function createEditor({
         },
         { label: `insert pattern ${name}` },
       );
+      renderCanvas();
+      landOnStamp(stamped);
+      return stamped;
+    },
+
+    /** Stamp a pattern immediately before/after an existing sibling at any depth. */
+    insertPatternAdjacent(
+      anchorId: string,
+      edge: "before" | "after",
+      name: string,
+    ): Block[] | null {
+      const at = locate(anchorId);
+      const stamped = at && stampPattern(name);
+      if (
+        !at ||
+        !stamped?.length ||
+        (at.parent && editingModeFor(at.parent.id) !== "default") ||
+        stamped.some((block) => !slotAccepts(at.parent, block.type))
+      )
+        return null;
+      const index = at.index + (edge === "after" ? 1 : 0);
+      commit(() => at.list.splice(index, 0, ...stamped), {
+        label: `insert pattern ${name} ${edge} ${anchorId}`,
+      });
       renderCanvas();
       landOnStamp(stamped);
       return stamped;
@@ -1696,7 +1865,7 @@ export function createEditor({
     setBlockChildren(id: string, html: string): Block | null {
       const block = findBlock(id);
       if (!block || !block.children) return null;
-      const tmp = document.createElement("div");
+      const tmp = ownerDocument.createElement("div");
       tmp.innerHTML = html;
       const children = upcast(tmp).blocks;
       commit(
@@ -1806,18 +1975,84 @@ export function createEditor({
       return true;
     },
 
+    /** Apply one governed semantic color context to an entire pattern copy.
+     * Pattern recipes only reference semantic roles, so remapping those role
+     * keys preserves every block's intent (surface, accent, muted, border)
+     * while changing the palette as one undoable operation. */
+    setPatternColorContext(id: string, context: string): boolean {
+      const root = findBlock(id);
+      if (!root?.pattern || root.type !== PATTERN_ROOT_TYPE) return false;
+      const theme = activeTheme();
+      const prefix = context === "default" ? "" : `${context}-`;
+      if (
+        context !== "default" &&
+        (!hasToken(theme, `color-${prefix}surface`) ||
+          !hasToken(theme, `color-${prefix}foreground`))
+      )
+        return false;
+      const roles = semanticColorRoles(theme).sort((a, b) => b.key.length - a.key.length);
+      const roleOf = (value: string) =>
+        roles.find((role) => value === role.key || value.endsWith(`-${role.key}`))?.key;
+      const changes: Array<{
+        block: Block;
+        prop: "textColor" | "backgroundColor" | "borderColor";
+        breakpoint: StyleBreakpoint;
+        value: string;
+      }> = [];
+      for (const block of flattenBlocks(root.children ?? [])) {
+        for (const breakpoint of styleBreakpoints(theme).map((option) => option.key)) {
+          for (const prop of ["textColor", "backgroundColor", "borderColor"] as const) {
+            const current = styleBackend.read(block, prop, theme, breakpoint) ?? "";
+            const role = roleOf(current);
+            if (!role) continue;
+            const value = `${prefix}${role}`;
+            if (current !== value && hasToken(theme, `color-${value}`))
+              changes.push({ block, prop, breakpoint, value });
+          }
+        }
+      }
+      const stored = root.settings?.colorContext;
+      const nextStored = context === "default" ? "" : context;
+      if (!changes.length && stored === nextStored) return false;
+      commit(
+        () => {
+          root.settings ??= {};
+          if (nextStored) root.settings.colorContext = nextStored;
+          else delete root.settings.colorContext;
+          for (const change of changes)
+            styleBackend.write(
+              change.block,
+              change.prop,
+              change.value,
+              "element",
+              theme,
+              change.breakpoint,
+            );
+        },
+        { label: `pattern ${id} color context = ${context}` },
+      );
+      // Rebuild only this copy so the root remains selected and its pattern
+      // controls stay visible after changing context.
+      rerenderBlock(id);
+      return true;
+    },
+
     /** Set several supported style values in one history transaction. */
-    setStyles(id: string, values: Readonly<Record<string, string>>): boolean {
+    setStyles(
+      id: string,
+      values: Readonly<Record<string, string>>,
+      breakpoint: StyleBreakpoint = "base",
+    ): boolean {
       const block = findBlock(id);
       if (!block || !effectiveBlockPolicy(block).stylable) return false;
       const def = getBlockType(block.type);
       const changes = Object.entries(values).filter(([prop, value]) => {
         const supported =
-          prop === "variation"
-            ? !!def?.variations?.length
-            : blockSupportsStyle(def?.supports, prop);
+          prop === "variation" ? !!def?.variants?.length : blockSupportsStyle(def?.supports, prop);
         const current =
-          prop === "variation" ? readVariation(block) : (styleBackend.read(block, prop) ?? "");
+          prop === "variation"
+            ? readVariation(block)
+            : (styleBackend.read(block, prop, undefined, breakpoint) ?? "");
         return supported && current !== value;
       });
       if (!changes.length) return false;
@@ -1825,7 +2060,7 @@ export function createEditor({
         () => {
           for (const [prop, value] of changes) {
             if (prop === "variation") writeVariation(block, value);
-            else styleBackend.write(block, prop, value, "element");
+            else styleBackend.write(block, prop, value, "element", undefined, breakpoint);
           }
         },
         { label: `style ${id}: ${changes.map(([prop]) => prop).join(", ")}` },
@@ -1842,22 +2077,24 @@ export function createEditor({
      * REPLACES its own classes/declarations in place (a pasted `text-xl` is
      * replaced, never shadowed). One history entry; re-rendered in place.
      */
-    setStyle(id: string, prop: string, value: string) {
+    setStyle(id: string, prop: string, value: string, breakpoint: StyleBreakpoint = "base") {
       const block = findBlock(id);
       if (!block || !effectiveBlockPolicy(block).stylable) return; // policy gate
       const def = getBlockType(block.type);
-      // Capability gate: a universal prop needs `supports`; the C6 `variation`
-      // prop needs declared variations.
+      // Capability gate: a universal prop needs `supports`; the internal
+      // variation marker needs declared variants.
       const supported =
-        prop === "variation" ? !!def?.variations?.length : blockSupportsStyle(def?.supports, prop);
+        prop === "variation" ? !!def?.variants?.length : blockSupportsStyle(def?.supports, prop);
       if (!supported) return;
       const current =
-        prop === "variation" ? readVariation(block) : (styleBackend.read(block, prop) ?? "");
+        prop === "variation"
+          ? readVariation(block)
+          : (styleBackend.read(block, prop, undefined, breakpoint) ?? "");
       if (current === value) return; // no-op
       commit(
         () => {
           if (prop === "variation") writeVariation(block, value);
-          else styleBackend.write(block, prop, value, "element");
+          else styleBackend.write(block, prop, value, "element", undefined, breakpoint);
         },
         { label: `style ${id}.${prop} = ${value || "(cleared)"}` },
       );
@@ -1869,14 +2106,21 @@ export function createEditor({
       const block = findBlock(id);
       if (!block || !effectiveBlockPolicy(block).stylable) return false;
       const def = getBlockType(block.type);
-      const props = Object.keys(STYLE_PROPS).filter(
-        (prop) => blockSupportsStyle(def?.supports, prop) && !!styleBackend.read(block, prop),
+      const responsiveProps = styleBreakpoints().flatMap(({ key: breakpoint }) =>
+        Object.keys(STYLE_PROPS)
+          .filter(
+            (prop) =>
+              blockSupportsStyle(def?.supports, prop) &&
+              !!styleBackend.read(block, prop, undefined, breakpoint),
+          )
+          .map((prop) => ({ prop, breakpoint })),
       );
-      const variation = def?.variations?.length ? readVariation(block) : "";
-      if (!props.length && !variation) return false;
+      const variation = def?.variants?.length ? readVariation(block) : "";
+      if (!responsiveProps.length && !variation) return false;
       commit(
         () => {
-          for (const prop of props) styleBackend.write(block, prop, "", "element");
+          for (const { prop, breakpoint } of responsiveProps)
+            styleBackend.write(block, prop, "", "element", undefined, breakpoint);
           if (variation) writeVariation(block, "");
         },
         { label: `reset styles ${id}` },
@@ -1886,7 +2130,7 @@ export function createEditor({
     },
 
     /** Clear one universal style panel in one history entry. */
-    resetStylePanel(id: string, panel: string): boolean {
+    resetStylePanel(id: string, panel: string, breakpoint: StyleBreakpoint = "base"): boolean {
       const block = findBlock(id);
       if (!block || !effectiveBlockPolicy(block).stylable) return false;
       const def = getBlockType(block.type);
@@ -1896,15 +2140,16 @@ export function createEditor({
           ([prop, descriptor]) =>
             panels.includes(descriptor.panel) &&
             blockSupportsStyle(def?.supports, prop) &&
-            !!styleBackend.read(block, prop),
+            !!styleBackend.read(block, prop, undefined, breakpoint),
         )
         .map(([prop]) => prop);
       const variation =
-        panels.includes("styles") && def?.variations?.length ? readVariation(block) : "";
+        panels.includes("styles") && def?.variants?.length ? readVariation(block) : "";
       if (!props.length && !variation) return false;
       commit(
         () => {
-          for (const prop of props) styleBackend.write(block, prop, "", "element");
+          for (const prop of props)
+            styleBackend.write(block, prop, "", "element", undefined, breakpoint);
           if (variation) writeVariation(block, "");
         },
         { label: `reset ${panel} styles ${id}` },
@@ -1917,8 +2162,8 @@ export function createEditor({
     styleSupports: (id: string): StyleSupports | undefined =>
       getBlockType(findBlock(id)?.type ?? "")?.supports,
 
-    /** The named style variations a block's TYPE declares (C6) — chrome renders the "Styles" control. */
-    blockVariations: (id: string) => getBlockType(findBlock(id)?.type ?? "")?.variations,
+    /** The named semantic variants a block's type declares. */
+    blockVariants: (id: string) => getBlockType(findBlock(id)?.type ?? "")?.variants,
 
     /** Whether the block's policy permits style edits (`stylable`) — chrome disables style controls when false. */
     canStyle: (id: string): boolean => {
@@ -1928,10 +2173,12 @@ export function createEditor({
 
     /** The block's current value for a style prop, read off its CARRIER by the
      * backend (lens read — pasted utilities register too); "" when unset. */
-    getStyle: (id: string, prop: string): string => {
+    getStyle: (id: string, prop: string, breakpoint: StyleBreakpoint = "base"): string => {
       const block = findBlock(id);
       if (!block) return "";
-      return prop === "variation" ? readVariation(block) : (styleBackend.read(block, prop) ?? "");
+      return prop === "variation"
+        ? readVariation(block)
+        : (styleBackend.read(block, prop, undefined, breakpoint) ?? "");
     },
 
     /** The active style backend (chrome may surface the carrier + inject css()). */
@@ -2021,7 +2268,7 @@ export function createEditor({
     },
 
     loadHtml(html: string) {
-      const tmp = document.createElement("div");
+      const tmp = ownerDocument.createElement("div");
       tmp.innerHTML = html;
       // Content only — policy is config-sourced (thoughts/010), never read off
       // loaded HTML, so a pasted/AI-written/stale block can't smuggle its own
