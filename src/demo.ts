@@ -21,7 +21,7 @@ import * as PublrEditor from "./index";
 import { probeWasmCssEngine } from "./wasm-engine";
 import preflightCss from "../vendor/jit/preflight.css?raw";
 import { registerCoreBlocks } from "./blocks";
-import { registerHomepagePatterns } from "./blocks/homepage-patterns";
+import { HOMEPAGE_PATTERNS, registerHomepagePatterns } from "./blocks/homepage-patterns";
 import siteCss from "./styles.css?inline";
 import "./styles.css";
 
@@ -103,11 +103,20 @@ const DEFAULT_DEMO_TEMPLATE =
   '<div data-pb-block="template-part" data-pb-children data-publr-template-part="site-header"><script type="application/json" data-pb-settings>{"name":"site-header"}</script></div>' +
   '<div data-pb-block="template-slot" data-publr-slot="content"><script type="application/json" data-pb-settings>{"name":"content"}</script><span>Content</span></div>' +
   '<div data-pb-block="template-part" data-pb-children data-publr-template-part="site-footer"><script type="application/json" data-pb-settings>{"name":"site-footer"}</script></div>';
-const DEFAULT_DEMO_TEMPLATE_PARTS: Record<string, string> = {
+const LEGACY_DEMO_TEMPLATE_PARTS: Record<string, string> = {
   "site-header":
     '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="flex items-center justify-between border-b border-border px-8 py-5"><h2 data-pb-block="heading" data-pb-tag="level" data-pb-rich="text">Publr</h2><p data-pb-block="paragraph" data-pb-rich="body">Shared template header</p></div>',
   "site-footer":
     '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="border-t border-border px-8 py-5"><p data-pb-block="paragraph" data-pb-rich="body">Built with PublrEditor</p></div>',
+};
+const templatePartPattern = (name: "home-header" | "home-footer"): string => {
+  const pattern = HOMEPAGE_PATTERNS.find(([candidate]) => candidate === name)?.[1];
+  if (!pattern) throw new Error(`PublrEditor demo: default pattern "${name}" is not registered`);
+  return `<div data-pb-block="${PATTERN_ROOT_TYPE}" data-pb-pattern="${name}" data-pb-children>${pattern.content}</div>`;
+};
+const DEFAULT_DEMO_TEMPLATE_PARTS: Record<string, string> = {
+  "site-header": templatePartPattern("home-header"),
+  "site-footer": templatePartPattern("home-footer"),
 };
 type DemoTemplateState = {
   template: string;
@@ -118,11 +127,22 @@ function loadDemoTemplateState(): DemoTemplateState {
     const saved = JSON.parse(
       localStorage.getItem(DEMO_TEMPLATE_STORAGE_KEY) ?? "null",
     ) as Partial<DemoTemplateState> | null;
+    const savedParts = saved?.parts && typeof saved.parts === "object" ? { ...saved.parts } : {};
+    if (
+      savedParts["site-header"] === LEGACY_DEMO_TEMPLATE_PARTS["site-header"] ||
+      savedParts["site-header"]?.includes("Shared template header")
+    )
+      savedParts["site-header"] = DEFAULT_DEMO_TEMPLATE_PARTS["site-header"];
+    if (
+      savedParts["site-footer"] === LEGACY_DEMO_TEMPLATE_PARTS["site-footer"] ||
+      savedParts["site-footer"]?.includes("Built with PublrEditor")
+    )
+      savedParts["site-footer"] = DEFAULT_DEMO_TEMPLATE_PARTS["site-footer"];
     return {
       template: typeof saved?.template === "string" ? saved.template : DEFAULT_DEMO_TEMPLATE,
       parts: {
         ...DEFAULT_DEMO_TEMPLATE_PARTS,
-        ...(saved?.parts && typeof saved.parts === "object" ? saved.parts : {}),
+        ...savedParts,
       },
     };
   } catch {

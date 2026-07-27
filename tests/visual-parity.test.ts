@@ -97,7 +97,23 @@ describe("toolbar visual parity", () => {
       await vi.waitFor(() => expect(canvasDoc.querySelector("#canvas [data-pb-id]")).toBeTruthy(), {
         timeout: 10_000,
       });
-      const heading = canvasDoc.querySelector<HTMLElement>('[data-pb-block="heading"]')!;
+      expect(
+        canvasDoc.querySelector('[data-publr-template-part="site-header"] header'),
+      ).not.toBeNull();
+      expect(
+        canvasDoc.querySelector('[data-publr-template-part="site-footer"] footer'),
+      ).not.toBeNull();
+      expect(
+        canvasDoc.querySelector('[data-publr-template-part="site-header"]')?.textContent,
+      ).toContain("Hearth & Home");
+      expect(
+        canvasDoc.querySelector('[data-publr-template-part="site-footer"]')?.textContent,
+      ).toContain("Unlock thoughtful living.");
+      const documentHeading = () =>
+        [...canvasDoc.querySelectorAll<HTMLElement>('[data-pb-block="heading"]')].find(
+          (candidate) => !candidate.closest("[data-publr-template-part]"),
+        )!;
+      const heading = documentHeading();
       const demoEditor = (next.contentWindow as unknown as { Publr: { editor: Editor } }).Publr
         .editor;
       expect(demoEditor.serialize()).toContain("Hello, PublrEditor");
@@ -129,8 +145,7 @@ describe("toolbar visual parity", () => {
       const marginTop = doc.querySelector<HTMLButtonElement>(
         '.pbe-box-model__value[data-kind="margin"][data-side="Top"]',
       )!;
-      const currentHeading = () =>
-        canvasDoc.querySelector<HTMLElement>('[data-pb-block="heading"]')!;
+      const currentHeading = documentHeading;
       marginTop.click();
       await vi.waitFor(() =>
         expect(
