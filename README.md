@@ -171,6 +171,23 @@ What the editor already proves:
   mounts a `<symbol>` sprite once (`mountIconSprite`) and binds
   `<use href>` via `iconRef()` — PublrJS has no HTML-injection binding, so the
   bindable-attribute sprite is the declarative path. No icon → letter badge.
+- **Page templates + shared template parts** — `registerTemplate` defines the
+  shared structure selected by a document; `registerTemplatePart` defines
+  synced header/footer/general fragments referenced by template-part blocks.
+  The Document tab enters the template in the shell's isolated editor, and a
+  violet template-part row enters nested isolation. Template-only slots
+  (`content`, `title`, and `featured-image`) mark optional values supplied by
+  the document. The Document tab's **Show template** control projects the
+  locked shared parts and slots around the editable document: the List View
+  nests document blocks below the Content slot, and the Document sidebar links
+  to every projected slot. Turning it off restores the content-only canvas and
+  outline. Shared parts stay selectable for inspection and offer only
+  **Edit original**; they cannot be moved, deleted, or edited in place. Themes
+  may bundle `templates`/`templateParts`, and
+  `resolveTemplate(name, "default")` provides the content-type fallback.
+  Saving rebuilds the active document frame immediately. The standalone demo
+  ships a default header/content/footer template and keeps template and part
+  edits in browser `localStorage`.
 - **Embed layer (`attachInlineChrome` + `fields-demo.ts`)** — the
   batteries-included path: register blocks, `createEditor` per field, attach the
   shipped chrome, adapt the value. `fields-demo.ts` mounts N independent editors
@@ -187,6 +204,7 @@ src/index.ts      public entry — re-exports only
 src/carriers.ts   wire-contract primitives: carrier vocabulary, escaping, scoping
 src/registry.ts   global block registry + the probe (render({}) → derived fields)
 src/patterns.ts   global pattern registry — named block compositions, validated by expansion
+src/templates.ts  shared page templates, synced template parts, and document slots
 src/cast.ts       upcast / downcast — annotated HTML ⇄ block model
 src/format.ts     inline formatting engine — per-char mark sets + atoms, no execCommand
 src/history.ts    snapshot stacks + coalescing + reactive flags (model-agnostic)

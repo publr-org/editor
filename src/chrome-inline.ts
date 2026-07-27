@@ -48,6 +48,8 @@ import { blockTypes, getBlockType } from "./registry";
 import type { ToolbarSpec } from "./registry";
 import { containerWidths } from "./theme";
 import { locateBlock } from "./tree";
+import { styleBreakpoints } from "./style";
+import type { StyleBreakpoint } from "./style";
 // The stylesheet behind the class literals below. The lib build extracts it
 // into dist/publr-editor.css (the emitted JS carries no CSS import).
 import "./chrome.css";
@@ -106,6 +108,9 @@ export interface InlineChromeOptions {
   media?: boolean | MediaAdapter;
   /** Host mode gate for registry blocks (for example template-only slots). */
   allowBlock?: (type: string) => boolean;
+  /** Responsive authoring scope supplied by a host with viewport controls.
+   * Standalone chrome edits the mobile/base scope. */
+  breakpoint?: () => StyleBreakpoint;
 }
 
 export interface InlineInsertionPlacement {
@@ -214,6 +219,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   const withToolbar = options.toolbar ?? true;
   const withMediaPlaceholder = options.mediaPlaceholder ?? true;
   const mediaAdapter = resolveMediaAdapter(options.media);
+  const activeBreakpoint = (): StyleBreakpoint => options.breakpoint?.() ?? "base";
 
   const canvas = editor.canvas;
   const ownerDocument = canvas.ownerDocument;
@@ -328,6 +334,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       --radius-lg: 0.5rem;
     }
     .pbe-inline-chrome-layer > * { pointer-events: auto; }
+    .pbe-hover-outline,
+    .pbe-hover-outline *,
+    .pbe-hover-label,
+    .pbe-hover-label * {
+      pointer-events: none;
+    }
   `;
   const chromeLayer = ownerDocument.createElement("div");
   chromeLayer.className = "pbe-inline-chrome-layer";
@@ -408,12 +420,6 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
 
   let hoverId: string | null = null;
   let hoverLayoutParts: HTMLElement[] = [];
-
-  const rawRootOf = (target: EventTarget | null): HTMLElement | null => {
-    const root =
-      target instanceof ownerWindow.Element ? target.closest<HTMLElement>("[data-pb-id]") : null;
-    return root && canvas.contains(root) ? root : null;
-  };
 
   const radiusPair = (value: string): [number, number] => {
     const parts = value.split(/\s+/).map((part) => Number.parseFloat(part) || 0);
@@ -924,42 +930,60 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     park(hoverLabel, labelTop, labelLeft);
   };
 
+  const isCanvasRootContainer = (root: HTMLElement): boolean => {
+    const parentBlock = root.parentElement?.closest<HTMLElement>("[data-pb-id]");
+    if (
+      !root.classList.contains("pbe-container") ||
+      (parentBlock && canvas.contains(parentBlock)) ||
+      !canvas.contains(root)
+    )
+      return false;
+    const topLevel = [...canvas.querySelectorAll<HTMLElement>("[data-pb-id]")].filter(
+      (candidate) => {
+        const parent = candidate.parentElement?.closest<HTMLElement>("[data-pb-id]");
+        return !parent || !canvas.contains(parent);
+      },
+    );
+    return topLevel.length === 1 && topLevel[0] === root;
+  };
+
+  const toolbarProtectsHoverRoot = (root: HTMLElement): boolean => {
+    if (!toolbar || toolbar.hidden || !toolbarAnchorId) return false;
+    // The composition's outer boundary must always stay discoverable. It is
+    // the one ancestor whose markers remain available even while its own
+    // toolbar—or a descendant's toolbar—is active.
+    if (isCanvasRootContainer(root)) return false;
+    const targetIds = new Set([
+      toolbarAnchorId,
+      ...(editor.selection.active ? [editor.selection.active] : []),
+      ...editor.selection.blocks,
+    ]);
+    for (const id of targetIds) {
+      const target = rootOf(id);
+      if (target && (root === target || root.contains(target))) return true;
+    }
+    return false;
+  };
+
   const syncHoverAt = (event: PointerEvent) => {
     if (!hoverOutline || !hoverLabel || event.buttons) return hideHover();
     const root = hoverTargetAt(event.clientX, event.clientY);
     const id = root?.dataset.pbId ?? null;
-    if (!id) return hideHover();
-    // A block currently holding the caret/text selection is already in the
-    // edit phase, so painting the inspect veil over it only adds noise.
-    // Explicit block selections are intentionally NOT suppressed: a selected
-    // container must remain traversable into its children and layout space.
-    if (editor.selection.active === id) return hideHover();
+    if (!root || !id) return hideHover();
+    // Once a toolbar is active, its target is already in the edit phase.
+    // Suppress the inspect veil for that target and every enclosing block:
+    // otherwise hovering selected media tints it, while hovering around an
+    // active text carrier paints its parent Group/Grid over the live toolbar.
+    // Descendants and unrelated siblings remain inspectable.
+    if (toolbarProtectsHoverRoot(root)) return hideHover();
     hoverId = id;
     positionHover();
   };
 
-  // When a transparent rounded corner reveals a parent block, the overlay
-  // target differs from the DOM event target. Claim that one case in capture
-  // and feed it through the public selection API; ordinary leaf clicks stay
-  // completely native and place the caret as before.
-  const onHoverMouseDown = (event: MouseEvent) => {
-    if (event.button !== 0 || event.defaultPrevented || !hoverId) return;
-    const rawId = rawRootOf(event.target)?.dataset.pbId;
-    if (!rawId || rawId === hoverId) {
-      hideHover();
-      return;
-    }
-    const target = hoverId;
-    event.preventDefault();
-    hideHover();
-    editor.selectBlock(target, {
-      toggle: event.metaKey || event.ctrlKey,
-      range: event.shiftKey,
-      block: true,
-    });
-  };
-  canvas.addEventListener("mousedown", onHoverMouseDown, true);
-  disposers.push(() => canvas.removeEventListener("mousedown", onHoverMouseDown, true));
+  // The inspect layer never owns a click. It only retires its current visual
+  // marker while the authoritative editor selection/caret path handles the
+  // gesture.
+  listen("mousedown", () => hideHover());
 
   const deepActiveElement = (): Element | null => {
     let active: Element | null = ownerDocument.activeElement;
@@ -2011,6 +2035,18 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       block.settings && name in block.settings
         ? block.settings[name]
         : def?.settings?.find((setting) => setting.setting === name)?.default;
+    const styleValue = (name: string, fallback = ""): string => {
+      const breakpoints = styleBreakpoints();
+      const activeIndex = Math.max(
+        0,
+        breakpoints.findIndex(({ key }) => key === activeBreakpoint()),
+      );
+      for (let index = activeIndex; index >= 0; index -= 1) {
+        const value = editor.getStyle(id, name, breakpoints[index].key);
+        if (value) return value;
+      }
+      return fallback;
+    };
     const openMenu = (trigger: HTMLButtonElement, panel: HTMLElement, focusFirst = true): void => {
       const rect = trigger.getBoundingClientRect();
       panel.hidden = false;
@@ -2028,8 +2064,8 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
 
     for (const spec of specs) {
       if (
-        (spec.setting === "containerWidth" || spec.setting === "containerBleed") &&
-        settingValue("isContainer") !== true
+        (spec.style === "containerWidth" || spec.style === "containerBleed") &&
+        styleValue("containerEnabled", "false") !== "true"
       )
         continue;
       if (spec.control === "add-child" && spec.type) {
@@ -2056,7 +2092,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         continue;
       }
       if (spec.control === "toggle-style" && spec.style && spec.value) {
-        const active = editor.getStyle(id, spec.style) === spec.value;
+        const active = styleValue(spec.style) === spec.value;
         const icon = iconSvg(
           active ? (spec.activeIcon ?? spec.icon ?? "") : (spec.icon ?? ""),
           "h-5 w-5",
@@ -2067,14 +2103,14 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         setOn(toggle, active);
         toggle.setAttribute("aria-pressed", String(active));
         toggle.addEventListener("click", () => {
-          editor.setStyle(id, spec.style!, active ? "" : spec.value!);
+          editor.setStyle(id, spec.style!, active ? "" : spec.value!, activeBreakpoint());
         });
         add(spec, toggle);
         continue;
       }
 
       if (spec.control === "text-align") {
-        const active = editor.getStyle(id, "textAlign") ?? "";
+        const active = styleValue("textAlign");
         const selected = ALIGNMENTS.find((alignment) => alignment.key === active);
         const trigger = button(
           BTN,
@@ -2096,7 +2132,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
             );
             item.addEventListener("click", () => {
               closePanel();
-              editor.setStyle(id, "textAlign", alignment.key === active ? "" : alignment.key);
+              editor.setStyle(
+                id,
+                "textAlign",
+                alignment.key === active ? "" : alignment.key,
+                activeBreakpoint(),
+              );
               refocusCarrier(id);
             });
             panel.appendChild(item);
@@ -2276,13 +2317,18 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         spec.control === "transform-options"
           ? block.type
           : spec.control === "style-options"
-            ? editor.getStyle(id, spec.style!)
+            ? styleValue(
+                spec.style!,
+                def?.settings?.find((setting) => setting.style === spec.style)?.default as
+                  | string
+                  | undefined,
+              )
             : spec.field
               ? block.fields[spec.field]
               : settingValue(spec.setting!);
       const active = spec.options.find((option) => option.value === value);
       const containerOptionLabel = (option: { value: string; label: string }): string => {
-        if (spec.setting !== "containerWidth") return option.label;
+        if (spec.style !== "containerWidth") return option.label;
         const widths = containerWidths();
         if (option.value === "content") return `${option.label} · Max ${widths.content}`;
         if (option.value === "wide") return `${option.label} · Max ${widths.wide}`;
@@ -2316,7 +2362,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
             closePanel();
             if (spec.control === "transform-options") editor.transformBlock(id, option.value);
             else if (spec.control === "style-options")
-              editor.setStyle(id, spec.style!, option.value === value ? "" : option.value);
+              editor.setStyle(
+                id,
+                spec.style!,
+                option.value === value ? "" : option.value,
+                activeBreakpoint(),
+              );
             else if (spec.field) editor.setField(id, spec.field, option.value);
             else editor.setSetting(id, spec.setting!, option.value);
             refocusCarrier(id);
@@ -2446,6 +2497,10 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
 
     toolbarAnchorId = id;
     toolbar.hidden = false; // unhide before measuring — offsetHeight needs layout
+    if (hoverId) {
+      const hoverRoot = rootOf(hoverId);
+      if (hoverRoot && toolbarProtectsHoverRoot(hoverRoot)) hideHover();
+    }
     positionToolbar();
   }
 
@@ -2531,6 +2586,17 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     delete appender.dataset.target;
     delete appender.dataset.edge;
   };
+  // Document-level pointermove clears these markers while moving through
+  // empty canvas space, but no further move is delivered after the pointer
+  // crosses the editable canvas/iframe boundary. Retire both hover affordances
+  // there so neither freezes at its last content position.
+  const clearCanvasHover = () => {
+    hideHover();
+    hideAppender();
+  };
+  canvas.addEventListener("pointerleave", clearCanvasHover);
+  disposers.push(() => canvas.removeEventListener("pointerleave", clearCanvasHover));
+
   const edgeDepth = (root: HTMLElement): number => {
     let depth = 0;
     for (
@@ -2594,23 +2660,33 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       const previous = at.list[at.index - 1];
       const previousRoot = previous ? rootOf(previous.id) : null;
       const previousRect = previousRoot?.getBoundingClientRect();
-      const gapStart = previousRect ? Math.min(previousRect.bottom, rect.top) : rect.top;
-      const gapEnd = previousRect ? Math.max(previousRect.bottom, rect.top) : rect.top;
-      const beforeDistance =
-        event.clientY < gapStart
-          ? gapStart - event.clientY
-          : event.clientY > gapEnd
-            ? event.clientY - gapEnd
-            : 0;
-      if (beforeDistance <= 12) {
-        candidates.push({
-          id,
-          root,
-          edge: "before",
-          distance: beforeDistance,
-          depth: edgeDepth(root),
-          lineY: (gapStart + gapEnd) / 2,
-        });
+      // A preceding model sibling can be beside this block (grid/flex), not
+      // above it. Treating two side-by-side blocks' overlapping Y ranges as a
+      // vertical "gap" projected an inserter across the middle of media and
+      // stole its clicks. Only offer the horizontal line when the siblings
+      // occupy the same horizontal run.
+      const sharesHorizontalRun =
+        !previousRect ||
+        Math.min(previousRect.right, rect.right) - Math.max(previousRect.left, rect.left) > 1;
+      if (sharesHorizontalRun) {
+        const gapStart = previousRect ? Math.min(previousRect.bottom, rect.top) : rect.top;
+        const gapEnd = previousRect ? Math.max(previousRect.bottom, rect.top) : rect.top;
+        const beforeDistance =
+          event.clientY < gapStart
+            ? gapStart - event.clientY
+            : event.clientY > gapEnd
+              ? event.clientY - gapEnd
+              : 0;
+        if (beforeDistance <= 12) {
+          candidates.push({
+            id,
+            root,
+            edge: "before",
+            distance: beforeDistance,
+            depth: edgeDepth(root),
+            lineY: (gapStart + gapEnd) / 2,
+          });
+        }
       }
 
       // The final sibling owns the trailing document/container boundary.

@@ -14,6 +14,8 @@ export const TEXT_SUPPORTS: StyleSupports = {
   color: { text: true, background: true },
   spacing: {
     padding: true,
+    paddingInline: true,
+    paddingBlock: true,
     paddingTop: { default: false },
     paddingRight: { default: false },
     paddingBottom: { default: false },
@@ -32,6 +34,8 @@ export const LAYOUT_SUPPORTS: StyleSupports = {
   color: { text: true, background: true },
   spacing: {
     padding: true,
+    paddingInline: true,
+    paddingBlock: true,
     paddingTop: { default: false },
     paddingRight: { default: false },
     paddingBottom: { default: false },

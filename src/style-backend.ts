@@ -22,6 +22,7 @@
 import { classList } from "./carriers";
 import type { Block } from "./carriers";
 import { patchStyleClasses, readStyleClass } from "./style";
+import type { StyleBreakpoint } from "./style";
 import { activeTheme, hasToken } from "./theme";
 import type { Theme } from "./theme";
 
@@ -32,10 +33,17 @@ export interface StyleBackend {
   /** Human name — chrome may surface which carrier is active. */
   readonly name: string;
   /** Read a prop's current value off the block's carrier. */
-  read(block: Block, prop: string, theme?: Theme): string | undefined;
+  read(block: Block, prop: string, theme?: Theme, breakpoint?: StyleBreakpoint): string | undefined;
   /** Write prop=value onto the block's carrier ("" clears). Mutates the block
    * (callers wrap in the editor's commit choke point). */
-  write(block: Block, prop: string, value: string, scope?: StyleScope, theme?: Theme): void;
+  write(
+    block: Block,
+    prop: string,
+    value: string,
+    scope?: StyleScope,
+    theme?: Theme,
+    breakpoint?: StyleBreakpoint,
+  ): void;
   /** Support CSS the host must put on the page for carried values to resolve
    * (inline backend: the theme's :root variables). Absent = none needed. */
   css?(theme?: Theme): string;
@@ -46,12 +54,18 @@ export interface StyleBackend {
 /** The default backend: lenses over the block's class list. */
 export const classesBackend: StyleBackend = {
   name: "classes",
-  read: (block, prop, theme = activeTheme()) =>
-    readStyleClass(prop, classList(block.classes), theme),
-  write(block, prop, value, _scope, theme = activeTheme()) {
+  read: (block, prop, theme = activeTheme(), breakpoint = "base") =>
+    readStyleClass(prop, classList(block.classes), theme, breakpoint),
+  write(block, prop, value, _scope, theme = activeTheme(), breakpoint = "base") {
     // Always assign (possibly "") — upcast materializes `classes` on every
     // typed block, and the round-trip law compares presence too.
-    block.classes = patchStyleClasses(prop, value, classList(block.classes), theme).join(" ");
+    block.classes = patchStyleClasses(
+      prop,
+      value,
+      classList(block.classes),
+      theme,
+      breakpoint,
+    ).join(" ");
   },
 };
 
@@ -75,12 +89,16 @@ const varRef = (ns: string) => ({
 
 const spacing = {
   to: (v: string, theme: Theme) =>
-    /^\d+(\.\d+)?$/.test(v) && hasToken(theme, "spacing")
-      ? `calc(var(--spacing) * ${v})`
-      : /^\d+(\.\d+)?$/.test(v)
-        ? `calc(0.25rem * ${v})`
-        : v,
-  from: (css: string) => {
+    hasToken(theme, `spacing-${v}`)
+      ? `var(--spacing-${v})`
+      : /^\d+(\.\d+)?$/.test(v) && hasToken(theme, "spacing")
+        ? `calc(var(--spacing) * ${v})`
+        : /^\d+(\.\d+)?$/.test(v)
+          ? `calc(0.25rem * ${v})`
+          : v,
+  from: (css: string, theme: Theme) => {
+    const token = /^var\(--spacing-(.+)\)$/.exec(css.trim());
+    if (token && hasToken(theme, `spacing-${token[1]}`)) return token[1];
     const m = /^calc\((?:var\(--spacing\)|0\.25rem) \* (\d+(?:\.\d+)?)\)$/.exec(css.trim());
     return m ? m[1] : css.trim() || undefined;
   },
@@ -108,6 +126,8 @@ const DECLS: Record<string, DeclSpec> = {
   textColor: { property: "color", ...varRef("color") },
   backgroundColor: { property: "background-color", ...varRef("color") },
   padding: { property: "padding", ...spacing },
+  paddingInline: { property: "padding-inline", ...spacing },
+  paddingBlock: { property: "padding-block", ...spacing },
   paddingTop: { property: "padding-top", ...spacing },
   paddingRight: { property: "padding-right", ...spacing },
   paddingBottom: { property: "padding-bottom", ...spacing },
@@ -216,13 +236,46 @@ function serializeDecls(block: Block, decls: [string, string][]): void {
 /** The zero-dep backend: declarations in the root's style attribute. */
 export const inlineBackend: StyleBackend = {
   name: "inline",
-  read(block, prop, theme = activeTheme()) {
+  read(block, prop, theme = activeTheme(), breakpoint = "base") {
+    if (breakpoint !== "base") return undefined;
+    if (prop === "containerEnabled" || prop === "containerWidth" || prop === "containerBleed")
+      return readStyleClass(prop, classList(block.classes), theme, breakpoint);
+    if (prop === "layoutMode") {
+      const decls = new Map(parseDecls(block.css));
+      const display = decls.get("display");
+      if (display === "grid") return "grid";
+      if (display === "flex") return decls.get("flex-direction") === "column" ? "stack" : "row";
+      if (display === "block") return "group";
+      return undefined;
+    }
     const spec = DECLS[prop];
     if (!spec) return undefined;
     const decl = parseDecls(block.css).find(([p]) => p === spec.property);
     return decl ? spec.from(decl[1], theme) : undefined;
   },
-  write(block, prop, value, _scope, theme = activeTheme()) {
+  write(block, prop, value, _scope, theme = activeTheme(), breakpoint = "base") {
+    if (breakpoint !== "base") return;
+    if (prop === "containerEnabled" || prop === "containerWidth" || prop === "containerBleed") {
+      block.classes = patchStyleClasses(
+        prop,
+        value,
+        classList(block.classes),
+        theme,
+        breakpoint,
+      ).join(" ");
+      return;
+    }
+    if (prop === "layoutMode") {
+      const decls = parseDecls(block.css).filter(
+        ([property]) => property !== "display" && property !== "flex-direction",
+      );
+      if (value === "group") decls.push(["display", "block"]);
+      if (value === "row") decls.push(["display", "flex"], ["flex-direction", "row"]);
+      if (value === "stack") decls.push(["display", "flex"], ["flex-direction", "column"]);
+      if (value === "grid") decls.push(["display", "grid"]);
+      serializeDecls(block, decls);
+      return;
+    }
     const spec = DECLS[prop];
     if (!spec) return;
     let decls = parseDecls(block.css).filter(([p]) => p !== spec.property);

@@ -89,17 +89,23 @@ function tokenize(carrier: Element): Item[] {
   const items: Item[] = [];
   (function walk(node: Node, marks: MarkName[], link: LinkVal | undefined) {
     for (const child of node.childNodes) {
-      if (child instanceof Text) {
-        for (let off = 0; off < child.data.length; off++) {
-          items.push({ ch: child.data[off], node: child, off, marks: new Set(marks), link });
+      // DOM constructors are realm-specific. The editable document can live
+      // in a same-origin iframe, so `child instanceof Text/Element` against
+      // the host window silently rejects every canvas node. nodeType is the
+      // realm-neutral contract here.
+      if (child.nodeType === 3) {
+        const text = child as Text;
+        for (let off = 0; off < text.data.length; off++) {
+          items.push({ ch: text.data[off], node: text, off, marks: new Set(marks), link });
         }
-      } else if (child instanceof Element) {
-        const tag = child.tagName.toLowerCase();
+      } else if (child.nodeType === 1) {
+        const element = child as Element;
+        const tag = element.tagName.toLowerCase();
         const mark = markOfTag(tag);
-        if (mark) walk(child, [...marks, mark], link);
+        if (mark) walk(element, [...marks, mark], link);
         else if (tag === "a")
-          walk(child, marks, linkOf(child)); // innermost anchor wins
-        else items.push({ atom: child, marks: new Set(marks), link });
+          walk(element, marks, linkOf(element)); // innermost anchor wins
+        else items.push({ atom: element, marks: new Set(marks), link });
       }
     }
   })(carrier, [], undefined);
@@ -270,12 +276,13 @@ export function selectItemRange(carrier: Element, start: number, end: number): v
   const startIt = items[start];
   const endIt = items[end - 1];
   if (!startIt || !endIt) return;
-  const range = document.createRange();
+  const ownerDocument = carrier.ownerDocument;
+  const range = ownerDocument.createRange();
   if (startIt.ch != null) range.setStart(startIt.node, startIt.off);
   else range.setStartBefore(startIt.atom);
   if (endIt.ch != null) range.setEnd(endIt.node, endIt.off + 1);
   else range.setEndAfter(endIt.atom);
-  const sel = window.getSelection();
+  const sel = ownerDocument.defaultView?.getSelection();
   sel?.removeAllRanges();
   sel?.addRange(range);
 }

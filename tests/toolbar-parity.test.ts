@@ -83,6 +83,10 @@ describe("declared contextual toolbars", () => {
     expect(outline.dataset.target).toBe("p");
     expect(label.dataset.target).toBe("p");
     expect(label.textContent).toContain("Paragraph");
+    expect(getComputedStyle(outline).pointerEvents).toBe("none");
+    expect(getComputedStyle(label).pointerEvents).toBe("none");
+    expect(getComputedStyle(canvas).cursor).toBe("default");
+    expect(getComputedStyle(paragraph).cursor).toBe("text");
 
     const down = new MouseEvent("mousedown", {
       bubbles: true,
@@ -94,6 +98,35 @@ describe("declared contextual toolbars", () => {
     paragraph.dispatchEvent(down);
     expect(down.defaultPrevented).toBe(false); // the native caret/edit flow owns the click
     expect(outline.hidden).toBe(true);
+  });
+
+  test("hover and insertion markers clear when the pointer leaves the content canvas", () => {
+    setup(`<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>`);
+    const paragraph = canvas.querySelector<HTMLElement>('[data-pb-id="p"]')!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(30, 40, 300, 50));
+
+    paragraph.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 100, clientY: 42 }),
+    );
+
+    const outline = chrome().querySelector<HTMLElement>(".pbe-hover-outline")!;
+    const label = chrome().querySelector<HTMLElement>(".pbe-hover-label")!;
+    const appender = chrome().querySelector<HTMLElement>(".pbe-appender")!;
+    expect(outline.dataset.target).toBe("p");
+    expect(label.dataset.target).toBe("p");
+    expect(appender.style.visibility).toBe("visible");
+    expect(appender.dataset.target).toBe("p");
+
+    canvas.dispatchEvent(new PointerEvent("pointerleave"));
+
+    expect(outline.hidden).toBe(true);
+    expect(label.hidden).toBe(true);
+    expect(outline.dataset.target).toBeUndefined();
+    expect(label.dataset.target).toBeUndefined();
+    expect(appender.style.visibility).toBe("hidden");
+    expect(appender.style.pointerEvents).toBe("none");
+    expect(appender.dataset.target).toBeUndefined();
   });
 
   test("hover visualizes the block's margin, border, padding, and content boxes", () => {
@@ -123,11 +156,20 @@ describe("declared contextual toolbars", () => {
     expect(part("content").style.height).toBe("80px");
   });
 
-  test("the block currently holding the caret does not draw a hover preselection", async () => {
-    setup(`<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>`);
+  test("an active text toolbar suppresses hover on its block and ancestor chain", async () => {
+    setup(
+      `<div data-pb-block="group" data-pb-id="outer" data-pb-children>` +
+        `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
+        `<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p></div></div>`,
+    );
+    const root = canvas.querySelector<HTMLElement>('[data-pb-id="outer"]')!;
+    const group = canvas.querySelector<HTMLElement>('[data-pb-id="group"]')!;
     const paragraph = canvas.querySelector<HTMLElement>('[data-pb-id="p"]')!;
+    expect(editor.getBlock("outer")?.id).toBe("outer");
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
-    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(30, 40, 300, 50));
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 10, 480, 280));
+    vi.spyOn(group, "getBoundingClientRect").mockReturnValue(new DOMRect(30, 30, 400, 200));
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 50, 300, 50));
 
     editor.selectBlock("p");
     await vi.waitFor(() => expect(editor.selection.active).toBe("p"));
@@ -137,6 +179,84 @@ describe("declared contextual toolbars", () => {
 
     expect(chrome().querySelector<HTMLElement>(".pbe-hover-outline")!.hidden).toBe(true);
     expect(chrome().querySelector<HTMLElement>(".pbe-hover-label")!.hidden).toBe(true);
+
+    group.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 410, clientY: 210 }),
+    );
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-outline")!.hidden).toBe(true);
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-label")!.hidden).toBe(true);
+
+    // Marker suppression is visual only: the parent's direct padding remains
+    // a selection surface while its child is being edited.
+    const paddingDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 410,
+      clientY: 210,
+    });
+    group.dispatchEvent(paddingDown);
+    expect(paddingDown.defaultPrevented).toBe(true);
+    expect(editor.selection.blocks).toEqual(["group"]);
+
+    editor.selectBlock("p");
+    await vi.waitFor(() => expect(editor.selection.active).toBe("p"));
+    root.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 470, clientY: 270 }),
+    );
+    const outline = chrome().querySelector<HTMLElement>(".pbe-hover-outline")!;
+    expect(outline.hidden).toBe(false);
+    expect(outline.dataset.target).toBe("outer");
+
+    // The top-level composition root remains selectable through the
+    // geometric edge target while its visible marker confirms the boundary.
+    const edgeDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 470,
+      clientY: 270,
+    });
+    root.dispatchEvent(edgeDown);
+    expect(edgeDown.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(editor.selection.blocks).toEqual(["outer"]));
+
+    root.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 470, clientY: 270 }),
+    );
+    expect(outline.hidden).toBe(false);
+    expect(outline.dataset.target).toBe("outer");
+  });
+
+  test("an active media toolbar removes an existing hover veil and keeps it suppressed", async () => {
+    setup(
+      `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
+        `<figure data-pb-block="image" data-pb-id="image"><img data-pb-image="image" src="/x.jpg" alt=""></figure>` +
+        `</div>`,
+    );
+    const group = canvas.querySelector<HTMLElement>('[data-pb-id="group"]')!;
+    const image = canvas.querySelector<HTMLElement>('[data-pb-id="image"]')!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
+    vi.spyOn(group, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 20, 400, 240));
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue(new DOMRect(30, 40, 360, 180));
+
+    image.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 100, clientY: 100 }),
+    );
+    const outline = chrome().querySelector<HTMLElement>(".pbe-hover-outline")!;
+    expect(outline.dataset.target).toBe("image");
+
+    editor.selectBlock("image");
+    await vi.waitFor(() => expect(toolbar().hidden).toBe(false));
+    expect(outline.hidden).toBe(true);
+
+    image.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 100, clientY: 100 }),
+    );
+    expect(outline.hidden).toBe(true);
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-label")!.hidden).toBe(true);
+    expect(getComputedStyle(group).cursor).toBe("default");
+    expect(getComputedStyle(image).cursor).toBe("default");
   });
 
   test("the hover label moves above an open editing toolbar instead of colliding", async () => {
@@ -184,7 +304,7 @@ describe("declared contextual toolbars", () => {
     expect(Number.parseFloat(label.style.top) + label.offsetHeight).toBeLessThanOrEqual(71);
   });
 
-  test("a rounded button's transparent corner preselects and selects its Buttons parent", () => {
+  test("a rounded button's transparent corner only preselects its Buttons parent", () => {
     setup(
       `<div data-pb-block="buttons" data-pb-id="buttons" data-pb-children>` +
         `<a data-pb-block="button" data-pb-id="button" data-pb-rich="label" data-pb-link="url" href="#" style="border-radius:20px">Action</a>` +
@@ -211,22 +331,88 @@ describe("declared contextual toolbars", () => {
       clientY: 101,
     });
     button.dispatchEvent(down);
-    expect(down.defaultPrevented).toBe(true);
-    expect(editor.selection.blocks).toEqual(["buttons"]);
+    expect(down.defaultPrevented).toBe(false);
+    expect(editor.selection.blocks).toEqual([]);
   });
 
-  test("nested blocks remain inspectable after selecting their parent, including margin and padding", () => {
+  test("group padding reselects the group after selecting its sibling image", () => {
     setup(
-      `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
-        `<p data-pb-block="paragraph" data-pb-id="paragraph" data-pb-rich="body" style="margin-bottom:20px">Body</p>` +
-        `<h2 data-pb-block="heading" data-pb-id="heading" data-pb-tag="level" data-pb-text="text">Title</h2>` +
+      `<div data-pb-block="group" data-pb-id="outer" data-pb-children>` +
+        `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
+        `<p data-pb-block="paragraph" data-pb-id="paragraph" data-pb-rich="body">Body</p>` +
+        `</div>` +
+        `<figure data-pb-block="image" data-pb-id="image"><img data-pb-image="image" src="/x.jpg" alt=""></figure>` +
         `</div>`,
     );
+    const outer = canvas.querySelector<HTMLElement>('[data-pb-id="outer"]')!;
+    const group = canvas.querySelector<HTMLElement>('[data-pb-id="group"]')!;
+    const paragraph = canvas.querySelector<HTMLElement>('[data-pb-id="paragraph"]')!;
+    const image = canvas.querySelector<HTMLElement>('[data-pb-id="image"]')!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 400));
+    vi.spyOn(outer, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 10, 460, 360));
+    vi.spyOn(group, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 20, 200, 300));
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(60, 100, 120, 40));
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue(new DOMRect(250, 20, 200, 300));
+
+    const moveOverPadding = (buttons = 0) =>
+      paragraph.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          buttons,
+          clientX: 100,
+          clientY: 50,
+        }),
+      );
+    const clickPadding = () => {
+      const down = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: 100,
+        clientY: 50,
+      });
+      // The browser's direct hit for authored Group padding is the Group.
+      // Hover geometry must not replace that authoritative click target.
+      group.dispatchEvent(down);
+      expect(down.defaultPrevented).toBe(true);
+      expect(editor.selection.blocks).toEqual(["group"]);
+    };
+
+    moveOverPadding();
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-outline")!.dataset.target).toBe("group");
+    clickPadding();
+
+    image.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: 300,
+        clientY: 100,
+      }),
+    );
+    expect(editor.selection.blocks).toEqual(["image"]);
+
+    moveOverPadding(1); // a tiny drag while pressing clears the visual marker
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-outline")!.hidden).toBe(true);
+    clickPadding();
+  });
+
+  test("nested blocks remain inspectable while their selected parent surface stays quiet", async () => {
+    setup(
+      `<div data-pb-block="group" data-pb-id="outer" data-pb-children>` +
+        `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
+        `<p data-pb-block="paragraph" data-pb-id="paragraph" data-pb-rich="body" style="margin-bottom:20px">Body</p>` +
+        `<h2 data-pb-block="heading" data-pb-id="heading" data-pb-tag="level" data-pb-text="text">Title</h2>` +
+        `</div></div>`,
+    );
+    const root = canvas.querySelector<HTMLElement>('[data-pb-id="outer"]')!;
     const group = canvas.querySelector<HTMLElement>('[data-pb-id="group"]')!;
     const paragraph = canvas.querySelector<HTMLElement>('[data-pb-id="paragraph"]')!;
     const heading = canvas.querySelector<HTMLElement>('[data-pb-id="heading"]')!;
     paragraph.style.marginBottom = "20px";
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 400));
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 10, 460, 360));
     vi.spyOn(group, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 20, 400, 300));
     vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(60, 60, 240, 40));
     vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(new DOMRect(60, 140, 240, 40));
@@ -237,6 +423,7 @@ describe("declared contextual toolbars", () => {
       );
 
     editor.selectBlock("group");
+    await vi.waitFor(() => expect(toolbar().hidden).toBe(false));
 
     move(100, 80); // nested content, despite the parent already being selected
     expect(target()).toBe("paragraph");
@@ -244,8 +431,8 @@ describe("declared contextual toolbars", () => {
     move(100, 110); // the paragraph's bottom margin
     expect(target()).toBe("paragraph");
 
-    move(30, 220); // otherwise-empty group padding
-    expect(target()).toBe("group");
+    move(30, 220); // the active parent's otherwise-empty padding stays quiet
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-outline")!.hidden).toBe(true);
   });
 
   test("flex space between child blocks resolves to their container", () => {
@@ -382,6 +569,57 @@ describe("declared contextual toolbars", () => {
     );
   });
 
+  test("pattern clicks use direct content bounds instead of the enclosing hover target", () => {
+    setup(
+      `<div data-pb-block="group" data-pb-id="outer" data-pb-children>` +
+        `<div data-pb-block="pattern" data-pb-id="pattern" data-pb-pattern="call-to-action" data-pb-children>` +
+        `<h2 data-pb-block="heading" data-pb-id="heading" data-pb-tag="level" data-pb-text="text">Title</h2>` +
+        `</div></div>`,
+    );
+    const outer = canvas.querySelector<HTMLElement>('[data-pb-id="outer"]')!;
+    const pattern = canvas.querySelector<HTMLElement>('[data-pb-id="pattern"]')!;
+    const heading = canvas.querySelector<HTMLElement>('[data-pb-id="heading"]')!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
+    vi.spyOn(outer, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 10, 480, 280));
+    vi.spyOn(pattern, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 20, 460, 260));
+    vi.spyOn(heading, "getBoundingClientRect").mockReturnValue(new DOMRect(30, 40, 300, 50));
+
+    // Hover geometry cannot enter an opaque pattern, so the visible inspect
+    // target is its enclosing document block. That must not own the click.
+    heading.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 100, clientY: 60 }),
+    );
+    expect(chrome().querySelector<HTMLElement>(".pbe-hover-outline")!.dataset.target).toBe("outer");
+
+    const contentDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 100,
+      clientY: 60,
+    });
+    heading.dispatchEvent(contentDown);
+    expect(contentDown.defaultPrevented).toBe(false);
+    expect(editor.selection.blocks).toEqual([]);
+    heading.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+
+    // The same DOM target outside the content block's rendered box represents
+    // surrounding pattern layout and therefore selects the pattern instance.
+    heading.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 450, clientY: 200 }),
+    );
+    const backgroundDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 450,
+      clientY: 200,
+    });
+    heading.dispatchEvent(backgroundDown);
+    expect(backgroundDown.defaultPrevented).toBe(true);
+    expect(editor.selection.blocks).toEqual(["pattern"]);
+  });
+
   test("hovering a block edge reveals a line inserter and inserts at that edge", async () => {
     setup(
       `<p data-pb-block="paragraph" data-pb-id="first" data-pb-rich="body">First</p>` +
@@ -432,6 +670,48 @@ describe("declared contextual toolbars", () => {
       "middle",
       "last",
     ]);
+  });
+
+  test("side-by-side siblings do not project an inserter through the middle of media", () => {
+    setup(
+      `<div data-pb-block="group" data-pb-id="outer" data-pb-children>` +
+        `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
+        `<p data-pb-block="paragraph" data-pb-id="paragraph" data-pb-rich="body">Body</p>` +
+        `</div>` +
+        `<figure data-pb-block="image" data-pb-id="image"><img data-pb-image="image" src="/x.jpg" alt=""></figure>` +
+        `</div>`,
+    );
+    const outer = canvas.querySelector<HTMLElement>('[data-pb-id="outer"]')!;
+    const group = canvas.querySelector<HTMLElement>('[data-pb-id="group"]')!;
+    const paragraph = canvas.querySelector<HTMLElement>('[data-pb-id="paragraph"]')!;
+    const image = canvas.querySelector<HTMLElement>('[data-pb-id="image"]')!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 400));
+    vi.spyOn(outer, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 10, 460, 360));
+    vi.spyOn(group, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 20, 200, 300));
+    vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 60, 160, 40));
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue(new DOMRect(250, 20, 200, 300));
+
+    image.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: 350,
+        clientY: 170,
+      }),
+    );
+    const appender = chrome().querySelector<HTMLElement>(".pbe-appender")!;
+    expect(appender.style.visibility).toBe("hidden");
+    expect(appender.style.pointerEvents).toBe("none");
+
+    const down = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 350,
+      clientY: 170,
+    });
+    image.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    expect(editor.selection.blocks).toEqual(["image"]);
   });
 
   test("rich text gets inline formats, while alignment is opt-in", async () => {
@@ -520,7 +800,7 @@ describe("declared contextual toolbars", () => {
     await vi.waitFor(() => expect(controlRects("Container width")).toBe(0));
     expect(controlRects("Bleed")).toBe(0);
 
-    editor.setSetting("g", "isContainer", true);
+    editor.setStyle("g", "containerEnabled", "true");
     await vi.waitFor(() => expect(control("Container width")).toBeTruthy());
     expect(control("Bleed")).toBeTruthy();
     expect(control("Container width").querySelector("svg")).toBeTruthy();
@@ -543,11 +823,9 @@ describe("declared contextual toolbars", () => {
       (button) => button.textContent === "Bleed right",
     )!;
     right.click();
-    expect(editor.getBlock("g")?.settings).toEqual({
-      isContainer: true,
-      containerWidth: "content",
-      containerBleed: "right",
-    });
+    expect(editor.getStyle("g", "containerEnabled")).toBe("true");
+    expect(editor.getStyle("g", "containerWidth")).toBe("content");
+    expect(editor.getStyle("g", "containerBleed")).toBe("right");
     expect(canvas.querySelector('[data-pb-id="g"]')?.classList).toContain("pbe-container--content");
     expect(canvas.querySelector('[data-pb-id="g"]')?.classList).toContain(
       "pbe-container--bleed-right",

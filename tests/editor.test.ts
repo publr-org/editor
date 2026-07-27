@@ -7,28 +7,44 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import {
   DEFAULT_BLOCK_POLICY,
   DEFAULT_THEME,
+  HEARTH_THEME,
+  SITE_TYPOGRAPHY_DEFAULTS,
+  TAILWIND_COMPAT_THEME,
   RAW_TYPE,
   blockTypes,
+  colorContexts,
   colors,
+  containerWidths,
   createEditor,
   downcast,
   escHtml,
   fontSizes,
   getBlockType,
+  patchStyleClasses,
   radii,
+  readStyleClass,
+  responsiveContainerCss,
   registerBlock,
   registerPattern,
+  semanticColorRoles,
+  semanticColors,
   runtimeThemeCss,
   collectClasses,
   inlineBackend,
+  paletteTokens,
   setActiveTheme,
   spacingBase,
+  spacings,
   str,
+  styleBreakpoints,
   styleClasses,
   themeFromCssText,
   themeFromTokens,
+  themeBaseCss,
   themeToCssText,
   unresolvedUtilities,
+  withHearthDefaults,
+  withTailwindCompatibility,
   unregisterBlock,
   unregisterPattern,
   upcast,
@@ -1274,6 +1290,35 @@ describe("history: undo/redo on the commit() choke point", () => {
     expect(editor.getModel().blocks.map((b) => b.fields.body)).toEqual(["a", "b"]);
   });
 
+  test("insertBlockAdjacent inserts at the requested edge without a placeholder block", () => {
+    setup(P("a") + P("b"));
+    const anchor = editor.getModel().blocks[1];
+
+    const before = editor.insertBlockAdjacent(anchor.id, "before", "heading")!;
+    expect(editor.getModel().blocks.map((b) => b.type)).toEqual([
+      "paragraph",
+      "heading",
+      "paragraph",
+    ]);
+    expect(editor.getModel().blocks[1].id).toBe(before.id);
+    expect(
+      canvas.querySelector(`[data-pb-id="${before.id}"]`)!.contains(document.activeElement),
+    ).toBe(true);
+
+    const after = editor.insertBlockAdjacent(anchor.id, "after", "heading")!;
+    expect(editor.getModel().blocks.map((b) => b.id)).toEqual([
+      editor.getModel().blocks[0].id,
+      before.id,
+      anchor.id,
+      after.id,
+    ]);
+    expect(editor.insertBlockAdjacent("missing", "after", "heading")).toBeNull();
+
+    editor.undo();
+    editor.undo();
+    expect(editor.getModel().blocks.map((b) => b.fields.body)).toEqual(["a", "b"]);
+  });
+
   test("appender bootstraps an empty document", () => {
     setup("");
     expect(editor.getModel().blocks).toHaveLength(0);
@@ -1520,6 +1565,46 @@ describe("innerBlocks: children slots, group / ungroup", () => {
     expect(editor.getModel().blocks).toHaveLength(2);
   });
 
+  test("moveBlockTo reorders across tree levels, is undoable, and rejects cycles", () => {
+    setup(P("before") + G(P("inside")) + P("after"));
+    const before = editor.getModel().blocks[0];
+    const group = editor.getModel().blocks[1];
+    const after = editor.getModel().blocks[2];
+
+    expect(editor.canMoveTo(after.id, group.id)).toBe(true);
+    expect(editor.moveBlockTo(after.id, group.id, 0)).toBe(true);
+    expect(editor.getModel().blocks.map((block) => block.id)).toEqual([before.id, group.id]);
+    expect(group.children!.map((block) => block.id)).toEqual([after.id, group.children![1].id]);
+
+    editor.undo();
+    expect(editor.getModel().blocks.map((block) => block.id)).toEqual([
+      before.id,
+      group.id,
+      after.id,
+    ]);
+
+    const restoredGroup = editor.getBlock(group.id)!;
+    const child = restoredGroup.children![0];
+    expect(editor.moveBlockTo(child.id, null, 0)).toBe(true);
+    expect(editor.getModel().blocks.map((block) => block.id)).toEqual([
+      child.id,
+      before.id,
+      group.id,
+      after.id,
+    ]);
+    expect(editor.canMoveTo(group.id, child.id)).toBe(false);
+    expect(editor.moveBlockTo(group.id, group.id, 0)).toBe(false);
+  });
+
+  test("moveBlockTo never allows a container to become a child of its descendant", () => {
+    setup(G(G(P("deep"))) + P("tail"));
+    const outer = editor.getModel().blocks[0];
+    const inner = outer.children![0];
+    expect(editor.canMoveTo(outer.id, inner.id)).toBe(false);
+    expect(editor.moveBlockTo(outer.id, inner.id, 0)).toBe(false);
+    expect(editor.getModel().blocks[0].id).toBe(outer.id);
+  });
+
   test("a freshly inserted container is seeded with one empty default block and lands BLOCK-SELECTED", () => {
     setup(P("x"));
     const g = editor.insertBlock("group")!;
@@ -1713,11 +1798,32 @@ describe("innerBlocks: children slots, group / ungroup", () => {
     expect(editor.selection.blocks).toEqual([group.id]); // selection kept the click
   });
 
-  test("an empty container appends on any surface click; undoable", () => {
+  test("an empty container selects on its surface and appends only at its bottom edge", () => {
     setup(G("") + P("x"));
     const group = editor.getModel().blocks[0];
     const root = canvas.querySelector<HTMLElement>(`[data-pb-id="${group.id}"]`)!;
-    root.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 100));
+
+    root.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientY: 50,
+      }),
+    );
+    expect(editor.getModel().blocks[0].children).toEqual([]);
+    expect(editor.selection.blocks).toEqual([group.id]);
+    document.body.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+
+    root.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientY: 96,
+      }),
+    );
     expect(editor.getModel().blocks[0].children!.map((b) => b.type)).toEqual(["paragraph"]);
     const kid = editor.getModel().blocks[0].children![0];
     expect(canvas.querySelector(`[data-pb-id="${kid.id}"]`)!.contains(document.activeElement)).toBe(
@@ -1975,13 +2081,13 @@ describe("settings: declared sidebar metadata + the setField/transformBlock prim
     );
     // exactly one binding: field XOR transform XOR setting
     expect(() => reg([{ control: "toggle-group", label: "L", options: LEVELS }])).toThrow(
-      /exactly one of "field", "transform" or "setting"/,
+      /exactly one of "field", "transform", "setting" or "style"/,
     );
     expect(() =>
       reg([
         { control: "toggle-group", label: "L", field: "shape", transform: true, options: LEVELS },
       ]),
-    ).toThrow(/exactly one of "field", "transform" or "setting"/);
+    ).toThrow(/exactly one of "field", "transform", "setting" or "style"/);
     // a field-bound setting must name a field the render carries
     expect(() =>
       reg([{ control: "toggle-group", label: "L", field: "nope", options: LEVELS }]),
@@ -2882,6 +2988,15 @@ describe("policy: scoped per-container (D2 — orderable + slot allowedBlocks)",
     expect(editor.replaceBlock("C1", "paragraph")).not.toBeNull(); // paragraph is allowed
   });
 
+  test("existing children remain reorderable when current admission would reject fresh insertion", () => {
+    const editor = mount({ slots: { d2grp: { allowedBlocks: ["heading"] } } });
+    editor.loadHtml(nested); // upcast is intentionally permissive
+    expect(editor.canMove("C1")).toBe(true);
+    expect(editor.canMoveTo("C1", "G")).toBe(true);
+    expect(editor.moveBlockTo("C1", "G", 1)).toBe(true);
+    expect(editor.getBlock("G")!.children!.map((block) => block.id)).toEqual(["C2", "C1"]);
+  });
+
   test("a slot policy never restricts the ROOT (independent, not cascaded)", () => {
     const editor = mount({ slots: { d2grp: { allowedBlocks: ["heading"] } } });
     expect(editor.canInsert("paragraph")).toBe(true); // root stays unrestricted
@@ -3053,8 +3168,8 @@ describe("style: color (C2)", () => {
     `<p data-pb-block="color-p" data-pb-id="${id}" data-pb-rich="body">x</p>`;
 
   test("theme tokens → color utilities; raw CSS → arbitrary-value", () => {
-    expect(styleClasses({ textColor: "red-500" })).toEqual(["text-red-500"]); // token (E1)
-    expect(styleClasses({ backgroundColor: "white" })).toEqual(["bg-white"]); // bare token
+    expect(styleClasses({ textColor: "accent" })).toEqual(["text-accent"]); // semantic token
+    expect(styleClasses({ backgroundColor: "surface" })).toEqual(["bg-surface"]);
     expect(styleClasses({ textColor: "#111111" })).toEqual(["text-[#111111]"]); // raw CSS
     expect(styleClasses({ backgroundColor: "var(--color-accent)" })).toEqual([
       "bg-[var(--color-accent)]",
@@ -3071,13 +3186,29 @@ describe("style: color (C2)", () => {
     editor.setStyle("P", "textColor", "#111111");
     editor.setStyle("P", "backgroundColor", "var(--color-accent)");
     expect(editor.getStyle("P", "textColor")).toBe("#111111"); // arbitrary form reads back
-    expect(editor.getStyle("P", "backgroundColor")).toBe("var(--color-accent)");
+    expect(editor.getStyle("P", "backgroundColor")).toBe("accent");
     const model = editor.getModel();
     expect(upcast(parse(downcast(model)))).toEqual(model); // round-trip
     const data = editor.serialize({ pipeline: "data" });
     expect(data).toContain("text-[#111111]");
     expect(data).toContain("bg-[var(--color-accent)]");
     expect(data).not.toContain("data-pb-style");
+  });
+
+  test("contextual semantic variables read back as their governed palette keys", () => {
+    const editor = mount();
+    editor.setTheme({
+      tokens: [
+        ...DEFAULT_THEME.tokens,
+        { name: "color-brand-surface", value: "#607f99" },
+        { name: "color-brand-accent", value: "#f7dda4" },
+      ],
+    });
+    editor.loadHtml(
+      '<p data-pb-block="color-p" data-pb-id="P" data-pb-rich="body" class="bg-[var(--color-brand-surface)] text-[var(--color-brand-accent)]">x</p>',
+    );
+    expect(editor.getStyle("P", "backgroundColor")).toBe("brand-surface");
+    expect(editor.getStyle("P", "textColor")).toBe("brand-accent");
   });
 
   test("a block that supports only some panels rejects the others", () => {
@@ -3140,6 +3271,11 @@ describe("style: dimensions — padding/margin (C3)", () => {
     expect(styleClasses({ margin: "8" })).toEqual(["m-8"]);
     expect(styleClasses({ padding: "1.5" })).toEqual(["p-1.5"]); // any number is a step
     expect(styleClasses({ padding: "12px" })).toEqual(["p-[12px]"]);
+  });
+
+  test("named spacing tokens generate resolvable utilities and round-trip", () => {
+    expect(styleClasses({ padding: "m" })).toEqual(["p-[var(--spacing-m)]"]);
+    expect(readStyleClass("padding", ["p-[var(--spacing-m)]"], DEFAULT_THEME)).toBe("m");
   });
 
   test("setStyle applies padding + margin and round-trips", () => {
@@ -3206,7 +3342,7 @@ describe("style: border — width/color/radius (C4)", () => {
     expect(styleClasses({ borderWidth: "2" })).toEqual(["border-2"]);
     expect(styleClasses({ borderRadius: "lg" })).toEqual(["rounded-lg"]); // radius-lg token
     expect(styleClasses({ borderRadius: "5px" })).toEqual(["rounded-[5px]"]);
-    expect(styleClasses({ borderColor: "red-500" })).toEqual(["border-red-500"]); // token
+    expect(styleClasses({ borderColor: "border" })).toEqual(["border-border"]); // semantic token
     expect(styleClasses({ borderColor: "#111111" })).toEqual(["border-[#111111]"]);
   });
 
@@ -3322,8 +3458,11 @@ describe("style supports v2: descriptive capabilities and expanded lenses", () =
             fontWeight: { default: false, values: ["normal", "bold"], allowCustom: false },
             fontStyle: true,
           },
+          color: { text: true, background: true },
           spacing: {
             padding: true,
+            paddingInline: true,
+            paddingBlock: true,
             paddingTop: true,
             paddingRight: true,
             paddingBottom: true,
@@ -3415,6 +3554,65 @@ describe("style supports v2: descriptive capabilities and expanded lenses", () =
     expect(upcast(parse(editor.serialize()))).toEqual(editor.getModel());
   });
 
+  test("responsive scopes author independent layout and logical padding values", () => {
+    const editor = mount();
+    editor.setTheme(HEARTH_THEME);
+    editor.setStyles("V", {
+      gridColumns: "1",
+      alignItems: "center",
+      gap: "8",
+      backgroundColor: "inverse-surface",
+      textColor: "inverse-foreground",
+      paddingInline: "8",
+      paddingBlock: "10",
+    });
+    editor.setStyle("V", "gridColumns", "1fr auto 1fr", "md");
+    editor.setStyle("V", "paddingInline", "20", "lg");
+
+    expect(editor.getStyle("V", "gridColumns")).toBe("1");
+    expect(editor.getStyle("V", "gridColumns", "md")).toBe("1fr auto 1fr");
+    expect(editor.getStyle("V", "paddingInline")).toBe("8");
+    expect(editor.getStyle("V", "paddingInline", "lg")).toBe("20");
+    expect(editor.getStyle("V", "backgroundColor")).toBe("inverse-surface");
+    expect(editor.getStyle("V", "textColor")).toBe("inverse-foreground");
+
+    const classes = editor.getBlock("V")!.classes!.split(/\s+/);
+    for (const cls of [
+      "grid-cols-1",
+      "items-center",
+      "gap-8",
+      "bg-inverse-surface",
+      "text-inverse-foreground",
+      "px-8",
+      "py-10",
+      "md:grid-cols-[1fr_auto_1fr]",
+      "lg:px-20",
+    ])
+      expect(classes).toContain(cls);
+
+    expect(editor.resetStylePanel("V", "layout", "md")).toBe(true);
+    expect(editor.getStyle("V", "gridColumns", "md")).toBe("");
+    expect(editor.getStyle("V", "gridColumns")).toBe("1");
+    editor.undo();
+    expect(editor.getStyle("V", "gridColumns", "md")).toBe("1fr auto 1fr");
+  });
+
+  test("one container layout lens reads and writes responsive Group, Row, Stack, and Grid", () => {
+    expect(readStyleClass("layoutMode", ["mx-auto", "lg:flex"], DEFAULT_THEME, "base")).toBe(
+      undefined,
+    );
+    expect(readStyleClass("layoutMode", ["mx-auto", "lg:flex"], DEFAULT_THEME, "lg")).toBe("row");
+
+    let classes = patchStyleClasses("layoutMode", "stack", ["mx-auto"], DEFAULT_THEME, "base");
+    expect(classes).toEqual(["mx-auto", "flex", "flex-col"]);
+    classes = patchStyleClasses("layoutMode", "row", classes, DEFAULT_THEME, "lg");
+    expect(classes).toEqual(["mx-auto", "flex", "flex-col", "lg:flex", "lg:flex-row"]);
+    classes = patchStyleClasses("layoutMode", "grid", classes, DEFAULT_THEME, "lg");
+    expect(classes).toEqual(["mx-auto", "flex", "flex-col", "lg:grid"]);
+    classes = patchStyleClasses("layoutMode", "group", classes, DEFAULT_THEME, "lg");
+    expect(classes).toEqual(["mx-auto", "flex", "flex-col", "lg:block"]);
+  });
+
   test("capability metadata is validated and deeply frozen", () => {
     const support = getBlockType("v2-box")!.supports!.typography!.fontWeight!;
     expect(support).toEqual({ default: false, values: ["normal", "bold"], allowCustom: false });
@@ -3482,14 +3680,18 @@ describe("style supports v2: descriptive capabilities and expanded lenses", () =
 
 // ---------------------------------------------------------------------------
 
-describe("style: variations — named class-sets (C6)", () => {
+describe("style: variants — semantic style recipes", () => {
   beforeAll(() => {
     if (!getBlockType("var-p"))
       registerBlock("var-p", {
         label: "Var",
-        variations: [
-          { name: "display", label: "Display", class: "text-3xl font-bold" },
-          { name: "subtitle", label: "Subtitle", class: "text-lg text-neutral-500" },
+        variants: [
+          { name: "display", label: "Display", styles: { fontSize: "3xl", fontWeight: "bold" } },
+          {
+            name: "subtitle",
+            label: "Subtitle",
+            styles: { fontSize: "lg", textColor: "muted-foreground" },
+          },
         ],
         render: (f) => `<p data-pb-block="var-p" data-pb-rich="body">${str(f.body)}</p>`,
       });
@@ -3516,16 +3718,20 @@ describe("style: variations — named class-sets (C6)", () => {
   const VP = (id: string) =>
     `<p data-pb-block="var-p" data-pb-id="${id}" data-pb-rich="body">x</p>`;
 
-  test("blockVariations reflects the declared variations", () => {
+  test("blockVariants reflects semantic style recipes", () => {
     const editor = mount();
     editor.loadHtml(VP("P"));
-    expect(editor.blockVariations("P")).toEqual([
-      { name: "display", label: "Display", class: "text-3xl font-bold" },
-      { name: "subtitle", label: "Subtitle", class: "text-lg text-neutral-500" },
+    expect(editor.blockVariants("P")).toEqual([
+      { name: "display", label: "Display", styles: { fontSize: "3xl", fontWeight: "bold" } },
+      {
+        name: "subtitle",
+        label: "Subtitle",
+        styles: { fontSize: "lg", textColor: "muted-foreground" },
+      },
     ]);
   });
 
-  test("a variation writes its marker + class-set into the carrier and round-trips", () => {
+  test("a variant resolves its semantic recipe into the carrier and round-trips", () => {
     const editor = mount();
     editor.loadHtml(VP("P"));
     editor.setStyle("P", "variation", "display");
@@ -3567,30 +3773,295 @@ describe("style: variations — named class-sets (C6)", () => {
     expect(() =>
       registerBlock("bad-var", {
         label: "Bad",
-        variations: [],
+        variants: [],
         render: () => `<p data-pb-block="bad-var" data-pb-rich="body"></p>`,
       }),
-    ).toThrow(/variations/);
+    ).toThrow(/variants/);
+  });
+
+  test("registerBlock rejects utility-class variant recipes", () => {
+    expect(() =>
+      registerBlock("bad-class-var", {
+        label: "Bad",
+        variants: [{ name: "loud", label: "Loud", class: "text-red-500" } as any],
+        render: () => `<p data-pb-block="bad-class-var" data-pb-rich="body"></p>`,
+      }),
+    ).toThrow(/styles/);
   });
 });
 
 // ---------------------------------------------------------------------------
 
 describe("theme: token scales drive the style vocabulary (E1)", () => {
-  test("DEFAULT_THEME namespaces (generated 1:1 from the jit default)", () => {
+  test("DEFAULT_THEME keeps the generated scales but exposes semantic colors only", () => {
     const sizes = fontSizes(DEFAULT_THEME).map((o) => o.key);
     expect(sizes).toContain("xs");
     expect(sizes).toContain("9xl"); // the FULL Tailwind scale, not a curated subset
     expect(sizes.some((k) => k.startsWith("shadow"))).toBe(false); // text-shadow-* excluded
-    expect(colors(DEFAULT_THEME).find((c) => c.key === "red-500")).toMatchObject({
+    expect(colors(DEFAULT_THEME).map((color) => color.key)).toEqual([
+      "surface",
+      "foreground",
+      "border",
+      "accent-surface",
+      "accent-foreground",
+      "accent-border",
+      "muted-surface",
+      "muted-foreground",
+      "muted-border",
+    ]);
+    expect(colors(DEFAULT_THEME).find((c) => c.key === "red-500")).toBeUndefined();
+    expect(colors(DEFAULT_THEME).find((c) => c.key === "white")).toBeUndefined();
+    expect(colors(TAILWIND_COMPAT_THEME).find((c) => c.key === "red-500")).toMatchObject({
       family: "red",
       step: "500",
     });
-    expect(colors(DEFAULT_THEME).find((c) => c.key === "white")).toMatchObject({
+    expect(colors(TAILWIND_COMPAT_THEME).find((c) => c.key === "white")).toMatchObject({
       family: "white",
     });
+    expect(semanticColors(DEFAULT_THEME).map((color) => color.key)).toEqual([
+      "surface",
+      "foreground",
+      "border",
+      "accent-surface",
+      "accent-foreground",
+      "accent-border",
+      "muted-surface",
+      "muted-foreground",
+      "muted-border",
+    ]);
+    expect(semanticColors(DEFAULT_THEME).some((color) => color.key === "red-500")).toBe(false);
+    const contextual = semanticColors(
+      themeFromTokens({
+        "color-surface": "#fff",
+        "color-brand-surface": "#607f99",
+        "color-brand-accent-surface": "#f7dda4",
+        "color-brand-accent-foreground": "#29413d",
+        "color-inverse-surface": "#a45332",
+      }),
+    );
+    expect(contextual.map((color) => color.key)).toEqual([
+      "surface",
+      "brand-surface",
+      "brand-accent-surface",
+      "brand-accent-foreground",
+      "inverse-surface",
+    ]);
+    expect(contextual.find((color) => color.key === "brand-accent-surface")).toMatchObject({
+      family: "Brand",
+      label: "Brand · Accent Surface",
+      value: "#f7dda4",
+    });
+    expect(semanticColors(HEARTH_THEME).find((color) => color.key === "surface")?.value).toBe(
+      "#fbf8ef",
+    );
+    expect(semanticColors(HEARTH_THEME).find((color) => color.key === "brand-surface")?.value).toBe(
+      "#607f99",
+    );
+    expect(colorContexts(DEFAULT_THEME)).toEqual([{ key: "default", label: "Default" }]);
+    expect(colorContexts(HEARTH_THEME).map((context) => context.label)).toEqual([
+      "Default",
+      "Terracotta",
+      "Slate blue",
+    ]);
+    expect(semanticColorRoles(DEFAULT_THEME).map((role) => role.key)).toEqual([
+      "surface",
+      "foreground",
+      "border",
+      "accent-surface",
+      "accent-foreground",
+      "accent-border",
+      "muted-surface",
+      "muted-foreground",
+      "muted-border",
+    ]);
+    expect(
+      semanticColors({
+        tokens: HEARTH_THEME.tokens,
+        semanticColorRoles: [
+          {
+            key: "notice",
+            label: "Notice",
+            description: "Callout color",
+            value: "#f00",
+          },
+        ],
+        colorContexts: [{ key: "default", label: "Primary" }],
+      }),
+    ).toEqual([]);
     expect(radii(DEFAULT_THEME).map((o) => o.key)).toContain("2xl");
     expect(spacingBase(DEFAULT_THEME)).toBe("0.25rem"); // the v4 multiplier
+    expect(spacings(DEFAULT_THEME).map((o) => o.key)).toEqual([
+      "2xs",
+      "xs",
+      "s",
+      "m",
+      "l",
+      "xl",
+      "2xl",
+    ]);
+    expect(containerWidths(DEFAULT_THEME)).toEqual({
+      content: "645px",
+      wide: "1340px",
+      gutter: "24px",
+    });
+    expect(containerWidths(themeFromTokens({ "container-wide": "72rem" }))).toEqual({
+      content: "645px",
+      wide: "72rem",
+      gutter: "24px",
+    });
+    expect(
+      DEFAULT_THEME.tokens.find((token) => token.name === "publr-body-line-height")?.value,
+    ).toBe(SITE_TYPOGRAPHY_DEFAULTS.bodyLineHeight);
+    expect(DEFAULT_THEME.tokens.find((token) => token.name === "publr-heading-color")?.value).toBe(
+      "inherit",
+    );
+    const defaultsCss = themeBaseCss();
+    expect(defaultsCss).toContain("@layer base");
+    expect(defaultsCss).toContain('data-pbe-template-width="content"');
+    expect(defaultsCss).toContain("var(--publr-heading-1-size, 2.25rem)");
+    expect(defaultsCss).toContain("var(--publr-paragraph-spacing, 1rem)");
+  });
+
+  test("the Hearth workspace upgrades only the legacy neutral seed", () => {
+    const upgraded = withHearthDefaults(DEFAULT_THEME);
+    expect(upgraded.tokens.find((token) => token.name === "color-surface")?.value).toBe("#fbf8ef");
+    expect(upgraded.tokens.find((token) => token.name === "color-inverse-surface")).toBeUndefined();
+    expect(colorContexts(upgraded)).toEqual([{ key: "default", label: "Default" }]);
+    expect(upgraded.tokens.find((token) => token.name === "publr-heading-color")?.value).toBe(
+      "inherit",
+    );
+
+    const legacySevenRoleTheme = withHearthDefaults({
+      tokens: [
+        { name: "color-surface", value: "#ffffff" },
+        { name: "color-foreground", value: "#18181b" },
+        { name: "color-accent", value: "#3858e9" },
+        { name: "color-accent-foreground", value: "#ffffff" },
+        { name: "color-muted", value: "#f4f4f5" },
+        { name: "color-muted-foreground", value: "#71717a" },
+        { name: "color-border", value: "#e4e4e7" },
+      ],
+      semanticColorRoles: [
+        ["surface", "Surface"],
+        ["foreground", "Foreground"],
+        ["accent", "Accent"],
+        ["accent-foreground", "On accent"],
+        ["muted", "Muted"],
+        ["muted-foreground", "Muted text"],
+        ["border", "Border"],
+      ].map(([key, label]) => ({ key, label, description: label, value: "#000000" })),
+      colorContexts: [{ key: "default", label: "Default" }],
+    });
+    expect(semanticColorRoles(legacySevenRoleTheme).map((role) => role.key)).toEqual([
+      "surface",
+      "foreground",
+      "border",
+      "accent-surface",
+      "accent-foreground",
+      "accent-border",
+      "muted-surface",
+      "muted-foreground",
+      "muted-border",
+    ]);
+    expect(
+      legacySevenRoleTheme.tokens.find((token) => token.name === "color-accent-surface")?.value,
+    ).toBe("#294b45");
+    expect(
+      legacySevenRoleTheme.tokens.find((token) => token.name === "color-muted-border")?.value,
+    ).toBe("#cbd5cc");
+
+    const upgradedPersistedTypography = withHearthDefaults(
+      themeFromTokens({
+        "publr-heading-color": "var(--color-foreground)",
+      }),
+    );
+    expect(
+      upgradedPersistedTypography.tokens.find((token) => token.name === "publr-heading-color")
+        ?.value,
+    ).toBe("inherit");
+
+    const customized = withHearthDefaults(
+      themeFromTokens({
+        "color-surface": "#123456",
+        "color-foreground": "#abcdef",
+      }),
+    );
+    expect(customized.tokens.find((token) => token.name === "color-surface")?.value).toBe(
+      "#123456",
+    );
+    expect(customized.tokens.find((token) => token.name === "color-brand-surface")).toBeUndefined();
+    expect(colorContexts(customized)).toEqual([{ key: "default", label: "Default" }]);
+
+    const missing = withHearthDefaults(themeFromTokens({ "font-sans": "system-ui" }));
+    expect(missing.tokens.find((token) => token.name === "color-surface")?.value).toBe("#fbf8ef");
+    expect(missing.tokens.find((token) => token.name === "color-accent-surface")?.value).toBe(
+      "#294b45",
+    );
+    expect(missing.tokens.find((token) => token.name === "container-content")?.value).toBe("645px");
+    expect(spacings(missing).map((option) => option.key)).toEqual([
+      "2xs",
+      "xs",
+      "s",
+      "m",
+      "l",
+      "xl",
+      "2xl",
+    ]);
+    expect(missing.tokens.find((token) => token.name === "publr-body-font-size")?.value).toBe(
+      SITE_TYPOGRAPHY_DEFAULTS.bodyFontSize,
+    );
+    expect(
+      spacings(
+        withHearthDefaults(themeFromTokens({ spacing: "0.25rem", "spacing-custom": "1.125rem" })),
+      ).map((option) => option.key),
+    ).toEqual(["custom"]);
+  });
+
+  test("responsive viewport widths resolve from portable breakpoint tokens", () => {
+    const theme = themeFromTokens({
+      ...Object.fromEntries(DEFAULT_THEME.tokens.map((token) => [token.name, token.value])),
+      "breakpoint-sm": "36.25rem",
+      "breakpoint-md": "780px",
+      "breakpoint-lg": "77rem",
+      "publr-preview-base": "360px",
+      "color-accent": "#f00",
+    });
+    const widths = Object.fromEntries(
+      styleBreakpoints(theme).map((breakpoint) => [breakpoint.key, breakpoint.viewport]),
+    );
+    expect(widths).toMatchObject({
+      base: "360px",
+      sm: "580px",
+      md: "780px",
+      lg: "1232px",
+      xl: "1280px",
+      "2xl": "1536px",
+    });
+    expect(runtimeThemeCss(["lg:text-accent"], theme)).toContain("@media (min-width:1232px)");
+    const containerCss = responsiveContainerCss(theme);
+    expect(containerCss).toContain("@media (min-width:1232px)");
+    expect(containerCss).toContain(".lg\\:pbe-container--on");
+    expect(containerCss).toContain(".lg\\:pbe-container--off");
+    expect(containerCss).toContain(".lg\\:pbe-container--bleed-right");
+    expect(
+      styleBreakpoints(
+        themeFromTokens({
+          "publr-breakpoints-configured": "1",
+          "color-accent": "#f00",
+        }),
+      ).map((breakpoint) => breakpoint.key),
+    ).toEqual(["base"]);
+  });
+
+  test("Tailwind compatibility is opt-in and preserves site-owned semantic roles", () => {
+    const compatible = withTailwindCompatibility(
+      themeFromTokens({
+        "color-accent": "#ff006e",
+        "color-accent-foreground": "#120009",
+      }),
+    );
+    expect(colors(compatible).some((color) => color.key === "red-500")).toBe(true);
+    expect(compatible.tokens.find((token) => token.name === "color-accent")?.value).toBe("#ff006e");
   });
 
   test("a theme token grows the vocabulary: text-xxxxl becomes a preset", () => {
@@ -3615,9 +4086,10 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
       "text-hero": "4.5rem",
       "color-brand": "#123456",
       "radius-card": "1.25rem",
+      "breakpoint-sm": "640px",
     });
     const css = runtimeThemeCss(
-      ["text-hero", "text-brand", "bg-brand", "border-brand", "rounded-card"],
+      ["text-hero", "text-brand", "bg-brand", "border-brand", "rounded-card", "sm:text-brand"],
       theme,
     );
     expect(css).toContain(".text-hero{font-size:4.5rem}");
@@ -3625,6 +4097,23 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
     expect(css).toContain(".bg-brand{background-color:#123456}");
     expect(css).toContain(".border-brand{border-color:#123456}");
     expect(css).toContain(".rounded-card{border-radius:1.25rem}");
+    expect(css).toContain("@media (min-width:640px){.sm\\3a text-brand{color:#123456}}");
+
+    const frame = document.createElement("iframe");
+    frame.style.width = "640px";
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument!;
+    const tag = doc.createElement("style");
+    const sample = doc.createElement("p");
+    tag.textContent = `.text-white{color:#fff}${css}`;
+    sample.className = "text-white sm:text-brand";
+    doc.head.appendChild(tag);
+    doc.body.appendChild(sample);
+    try {
+      expect(doc.defaultView!.getComputedStyle(sample).color).toBe("rgb(18, 52, 86)");
+    } finally {
+      frame.remove();
+    }
   });
 });
 
@@ -3679,6 +4168,14 @@ describe("style backends: the inline carrier + unresolved utilities (E2)", () =>
     expect(html).toContain('style="font-size: var(--text-lg); padding: calc(var(--spacing) * 4)"');
     const model = editor.getModel();
     expect(upcast(parse(downcast(model)))).toEqual(model); // style attr round-trips
+  });
+
+  test("inline backend resolves named spacing tokens", () => {
+    const editor = mount({ styleBackend: inlineBackend });
+    editor.loadHtml(IP("P"));
+    editor.setStyle("P", "padding", "m");
+    expect(editor.getBlock("P")!.css).toContain("padding: var(--spacing-m)");
+    expect(editor.getStyle("P", "padding")).toBe("m");
   });
 
   test("inline backend: border width brings border-style along (self-sufficient carrier)", () => {
@@ -3737,7 +4234,7 @@ describe("style backends: the inline carrier + unresolved utilities (E2)", () =>
 
   test("@theme CSS import/export round-trips (E4)", () => {
     const theme = themeFromCssText(
-      `/* site */ @theme { --text-xxxxl: 6rem; --color-brand: #3858e9; }`,
+      `/* site */ @theme { --text-xxxxl: 6rem; --color-brand: #3858e9 }`,
     )!;
     expect(theme.tokens).toEqual([
       { name: "text-xxxxl", value: "6rem" },
@@ -3749,6 +4246,22 @@ describe("style backends: the inline carrier + unresolved utilities (E2)", () =>
       "@theme {\n  --text-xxxxl: 6rem;\n  --color-brand: #3858e9;\n}",
     );
     expect(themeToCssText(theme, ":root")).toContain(":root {"); // the inline backend's published form
+  });
+
+  test("explicitly imported Tailwind colors become managed palette values", () => {
+    const imported = themeFromCssText(`@theme {
+      --color-red-50: oklch(97.1% 0.013 17.38);
+      --color-red-500: oklch(63.7% 0.237 25.331);
+      --color-surface: #fff;
+    }`)!;
+
+    expect(paletteTokens(imported).map((token) => token.name)).toEqual([
+      "color-red-50",
+      "color-red-500",
+    ]);
+    expect(
+      paletteTokens(TAILWIND_COMPAT_THEME).some((token) => token.name === "color-red-500"),
+    ).toBe(false);
   });
 
   test("collectClasses gathers the unique class universe (E3 compile input)", () => {
@@ -3811,7 +4324,7 @@ describe("island settings: per-kind validation, the sparse island round trip, se
     const s = (spec: object) => [{ label: "L", ...spec }];
     // non-toggle-group kinds reduce to "setting is required"…
     expect(() => reg(s({ control: "toggle" }))).toThrow(
-      /exactly one of "field", "transform" or "setting"/,
+      /exactly one of "field", "transform", "setting" or "style"/,
     );
     // …because field/transform are toggle-group-only vocabulary
     expect(() => reg(s({ control: "toggle", field: "body" }))).toThrow(

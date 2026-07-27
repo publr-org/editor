@@ -48,12 +48,11 @@ import * as socialLink from "./social-link";
 import * as html from "./html";
 // design (containers)
 import * as patternRoot from "./pattern-root";
+import * as templatePart from "./template-part";
+import * as templateSlot from "./template-slot";
 import * as columns from "./columns";
 import * as column from "./column";
 import * as group from "./group";
-import * as row from "./row";
-import * as stack from "./stack";
-import * as grid from "./grid";
 
 /** [type, definition] in registration (= inserter) order. */
 export const coreBlocks: readonly (readonly [string, BlockDefinition])[] = [
@@ -90,10 +89,9 @@ export const coreBlocks: readonly (readonly [string, BlockDefinition])[] = [
   [columns.type, columns.definition],
   [column.type, column.definition],
   [group.type, group.definition],
-  [row.type, row.definition],
-  [stack.type, stack.definition],
-  [grid.type, grid.definition],
   [patternRoot.type, patternRoot.definition],
+  [templatePart.type, templatePart.definition],
+  [templateSlot.type, templateSlot.definition],
 ];
 
 /** Register the whole core set (idempotence is the caller's business — registerBlock throws on duplicates). */

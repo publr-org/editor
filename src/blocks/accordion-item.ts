@@ -34,6 +34,6 @@ export const definition: BlockDefinition = {
     },
   ],
   render(fields: Fields, settings?: Settings) {
-    return `<details data-pb-block="accordion-item" class="border border-neutral-300 px-4 py-3"${settings?.openByDefault === true ? " open" : ""}><summary data-pb-rich="title" class="cursor-pointer font-semibold">${str(fields.title)}</summary><div data-pb-children class="mt-2"></div></details>`;
+    return `<details data-pb-block="accordion-item" class="border border-border px-4 py-3"${settings?.openByDefault === true ? " open" : ""}><summary data-pb-rich="title" class="cursor-pointer font-semibold">${str(fields.title)}</summary><div data-pb-children class="mt-2"></div></details>`;
   },
 };

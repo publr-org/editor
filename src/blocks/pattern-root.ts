@@ -18,6 +18,15 @@ export const definition: BlockDefinition = {
   description: "A pattern instance. Edits here never change the original design.",
   internal: true,
   phantom: true,
+  settings: [
+    {
+      control: "text",
+      label: "Color style",
+      setting: "colorContext",
+      default: "",
+      role: "design",
+    },
+  ],
   render() {
     return `<div data-pb-block="pattern" data-pb-children></div>`;
   },

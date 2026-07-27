@@ -57,10 +57,9 @@ body {
    block then retires). Keep in sync with DEMO_PICK + SPACING_STEPS +
    BORDER_WIDTH_STEPS. */
 @source inline("{p,m}-{0,1,2,4,6,8,12,16}");
-@source inline("text-{sm,base,lg,xl,2xl}");
-@source inline("{text,bg,border}-{white,brand}");
-@source inline("{text,bg,border}-neutral-{100,500,900}");
-@source inline("{text,bg,border}-amber-300");
+@source inline("text-{sm,base,lg,xl,2xl,3xl,4xl,5xl,6xl,7xl}");
+@source inline("font-{sans,serif}");
+@source inline("{text,bg,border}-{surface,foreground,accent,accent-foreground,muted,muted-foreground,border}");
 @source inline("border border-{2,4,8}");
 @source inline("rounded-{sm,md,lg,xl}");
 @source inline("leading-{tight,normal,relaxed}");
@@ -93,10 +92,6 @@ body {
   --color-accent-hover: color-mix(in oklch, var(--primary) 90%, black);
   /* Editor-internal accent: carrier focus rings, block selection, menu hover. */
   --color-canvas-accent: #565dd9;
-  /* The demo SITE theme's custom token (DEMO_THEME in demo.ts declares it for
-     the controls; this declaration makes the build-time Tailwind resolve the
-     brand utilities — exactly how a v4 site extends its theme). */
-  --color-brand: #3858e9;
 }
 
 .pbe-accordion summary {
@@ -139,23 +134,74 @@ body {
    utilities — a pasted, fully-authored button keeps its own look, a fresh one
    gets the default. Mirrors chrome.css (the lib artifact). */
 @layer components {
+  /* Semantic page containers. Measurements come from the active site theme;
+     a marked Group constrains itself and carries only a content / wide role. */
+  .pbe-container--on {
+    --pbe-container-width: var(--container-wide, 1340px);
+  }
+  .pbe-container--content {
+    --pbe-container-width: var(--container-content, 645px);
+  }
+  .pbe-container--wide {
+    --pbe-container-width: var(--container-wide, 1340px);
+  }
+  .pbe-container--on {
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: calc(var(--pbe-container-width) + 2 * var(--container-gutter, 24px)) !important;
+    margin-inline: auto !important;
+    padding-inline: var(--container-gutter, 24px);
+  }
+  /* Bleed leaves the Group itself on its semantic container and extends only
+     the selected edge children through the container margin to the viewport.
+     The settings island is the first DOM child on serialized output, hence
+     the explicit script-adjacent first-block selector. */
+  .pbe-container--bleed-left,
+  .pbe-container--bleed-right,
+  .pbe-container--bleed-both {
+    --pbe-container-edge: max(
+      var(--container-gutter, 24px),
+      calc((100vw - var(--pbe-container-width)) / 2)
+    );
+  }
+  :is(.pbe-container--bleed-left, .pbe-container--bleed-both)
+    > :is(:first-child:not(script), script[data-pb-settings] + *) {
+    margin-inline-start: calc(-1 * var(--pbe-container-edge)) !important;
+  }
+  :is(.pbe-container--bleed-right, .pbe-container--bleed-both) > :last-child {
+    margin-inline-end: calc(-1 * var(--pbe-container-edge)) !important;
+  }
+  /* Base “none” replaces the active base bleed class through the style lens.
+     Prefixed none classes get an inherited-bleed reset from responsiveContainerCss(). */
+  .pbe-container--off {
+    width: auto !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    padding-inline: 0;
+  }
+  .pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *) {
+    margin-inline-start: 0 !important;
+  }
+  .pbe-container--off > :last-child {
+    margin-inline-end: 0 !important;
+  }
   .pbe-btn {
     display: inline-block;
     text-decoration: none;
   }
   .pbe-btn--solid {
     border-radius: var(--radius-sm, 0.25rem);
-    background: var(--color-accent, #3858e9);
+    background: var(--color-accent);
     padding: 0.5rem 1rem;
     font-weight: 500;
-    color: #fff;
+    color: var(--color-accent-foreground);
   }
   .pbe-btn--outline {
     border-radius: var(--radius-sm, 0.25rem);
     border: 1px solid currentColor;
     padding: 0.5rem 1rem;
     font-weight: 500;
-    color: var(--color-accent, #3858e9);
+    color: var(--color-accent);
   }
   .pbe-columns--gap-none,
   .pbe-buttons--gap-none {

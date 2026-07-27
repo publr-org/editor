@@ -1,29 +1,18 @@
-// The container family — Group and its layout siblings (Row / Stack /
-// Grid). SEPARATE registered types (each will grow its own
-// layout settings later), joined by one shared TRANSFORM setting: its options
-// are block types, and picking one switches the block in place
-// (editor.transformBlock — id, children, authored classes all survive).
-// The root IS the children slot — inner blocks are appended straight into it.
-//
-// Layout classes are the render's BASELINE (subtracted from authored classes
-// on upcast, re-emitted on downcast) — the variant rides the wire as plain
-// markup + classes, zero new vocabulary, same trick as toolbar alignment.
-//
-// The group's tagName is modeled as a TAG CARRIER on the root
-// (story #370, retiring the invented section block): the semantic element
-// rides the wire as markup, switched from the sidebar. Row/Stack/Grid are
-// variations of one container family, so tagName belongs to the whole
-// family here too. Fields carry over transformBlock by name — the chosen
-// tag survives group ⇄ row/stack/grid.
+// Group is the one container block. Row / Stack / Grid are responsive visual
+// layouts of that same block — never separate model types. The active layout
+// is carried by ordinary display/direction utility classes through the
+// universal style lens, so a Group can stack on Mobile and become a Row on
+// Desktop without changing identity or disturbing its children.
 
 import type { BlockDefinition, Fields, SettingSpec } from "../registry";
-import { ALIGN_ITEMS, FLEX_WRAPS, JUSTIFY_CONTENT } from "../style";
+import { ALIGN_ITEMS, JUSTIFY_CONTENT } from "../style";
 import { LAYOUT_SUPPORTS } from "./supports";
 
-export const CONTAINER_SWITCH: SettingSpec = {
+export const CONTAINER_LAYOUT: SettingSpec = {
   control: "toggle-group",
-  label: "Transform to",
-  transform: true,
+  label: "Layout",
+  style: "layoutMode",
+  default: "group",
   role: "structure",
   options: [
     { value: "group", label: "Group", icon: "group" },
@@ -33,19 +22,57 @@ export const CONTAINER_SWITCH: SettingSpec = {
   ],
 };
 
-// The conventional tag offering for a group container — plus nav and dl
-// (real-world templates use them as pure layout containers: nav link rows,
-// dl stat/definition grids; the Tailwind Plus stress fixture has three dl
-// groups). An out-of-list tag renders as div, so admitting a tag here is
-// what makes its round-trip exact.
 const TAGS = ["div", "header", "main", "section", "article", "aside", "footer", "nav", "dl"];
 
 const CONTAINER_TAG: SettingSpec = {
-  control: "toggle-group",
+  control: "select",
   label: "HTML element",
   field: "tag",
   role: "structure",
   options: TAGS.map((t) => ({ value: t, label: t })),
+};
+
+const IS_CONTAINER: SettingSpec = {
+  control: "toggle",
+  label: "Container",
+  style: "containerEnabled",
+  default: "false",
+  role: "structure",
+  help: "Constrain this Group itself to one of the site’s semantic container widths.",
+};
+
+const CONTAINER_WIDTH_OPTIONS = [
+  { value: "content", label: "Content width", icon: "container-width" },
+  { value: "wide", label: "Wide width", icon: "container-width" },
+] as const;
+
+const CONTAINER_WIDTH: SettingSpec = {
+  control: "select",
+  label: "Container width",
+  style: "containerWidth",
+  default: "wide",
+  role: "structure",
+  options: CONTAINER_WIDTH_OPTIONS,
+  help: "Uses the semantic widths configured in the site’s Design System.",
+  when: { style: "containerEnabled", equals: "true" },
+};
+
+const CONTAINER_BLEED_OPTIONS = [
+  { value: "none", label: "No bleed", icon: "bleed-none" },
+  { value: "left", label: "Bleed left", icon: "bleed-left" },
+  { value: "right", label: "Bleed right", icon: "bleed-right" },
+  { value: "both", label: "Bleed both", icon: "bleed-both" },
+] as const;
+
+const CONTAINER_BLEED: SettingSpec = {
+  control: "select",
+  label: "Bleed",
+  style: "containerBleed",
+  default: "none",
+  role: "structure",
+  options: CONTAINER_BLEED_OPTIONS,
+  help: "Keeps this Group’s layout on the selected container while extending its edge blocks to the viewport.",
+  when: { style: "containerEnabled", equals: "true" },
 };
 
 export function containerDefinition(
@@ -54,71 +81,73 @@ export function containerDefinition(
   description: string,
   classes: string,
 ): BlockDefinition {
-  const layoutSupports = {
-    ...LAYOUT_SUPPORTS,
-    layout: {
-      ...LAYOUT_SUPPORTS.layout,
-      ...(type === "row" ? { flexWrap: true } : {}),
-      ...(type === "grid"
-        ? { gridColumns: { values: ["1", "2", "3", "4", "5", "6"], allowCustom: true } }
-        : {}),
-    },
-  };
-  const layoutToolbar =
-    type === "group"
-      ? []
-      : [
-          {
-            control: "style-options" as const,
-            label: "Change justification",
-            style: "justifyContent",
-            options: JUSTIFY_CONTENT.map(({ key, label }) => ({ value: key, label })),
-          },
-          {
-            control: "style-options" as const,
-            label: "Change vertical alignment",
-            style: "alignItems",
-            options: ALIGN_ITEMS.map(({ key, label }) => ({ value: key, label })),
-          },
-          ...(type === "row"
-            ? [
-                {
-                  control: "style-options" as const,
-                  label: "Change wrapping",
-                  style: "flexWrap",
-                  options: FLEX_WRAPS.map(({ key, label }) => ({ value: key, label })),
-                },
-              ]
-            : []),
-          ...(type === "grid"
-            ? [
-                {
-                  control: "style-options" as const,
-                  label: "Change columns",
-                  style: "gridColumns",
-                  options: ["1", "2", "3", "4", "5", "6"].map((value) => ({
-                    value,
-                    label: value,
-                  })),
-                },
-              ]
-            : []),
-        ];
   return {
     label,
     category: "Design",
-    icon: type, // group/row/stack/grid share names with the icon set
+    icon: "group",
     description,
-    supports: layoutSupports,
+    supports: {
+      ...LAYOUT_SUPPORTS,
+      layout: {
+        ...LAYOUT_SUPPORTS.layout,
+        layoutMode: true,
+        containerEnabled: true,
+        containerWidth: true,
+        containerBleed: true,
+        flexWrap: true,
+        gridColumns: {
+          values: ["1", "2", "3", "4", "5", "6"],
+          allowCustom: true,
+        },
+      },
+    },
     toolbar: [
       {
-        control: "transform-options",
-        label: "Change layout",
-        options: CONTAINER_SWITCH.options,
+        control: "style-options",
+        label: "Container width",
+        style: "containerWidth",
+        options: CONTAINER_WIDTH_OPTIONS,
+        role: "structure",
       },
-      ...layoutToolbar,
+      {
+        control: "style-options",
+        label: "Bleed",
+        style: "containerBleed",
+        options: CONTAINER_BLEED_OPTIONS,
+        role: "structure",
+      },
+      {
+        control: "style-options",
+        label: "Change justification",
+        icon: "justify-start",
+        style: "justifyContent",
+        options: JUSTIFY_CONTENT.map(({ key, label: optionLabel }) => ({
+          value: key,
+          label: optionLabel,
+          icon: `justify-${key}`,
+        })),
+      },
+      {
+        control: "style-options",
+        label: "Change vertical alignment",
+        icon: "align-stretch",
+        style: "alignItems",
+        options: ALIGN_ITEMS.map(({ key, label: optionLabel }) => ({
+          value: key,
+          label: optionLabel,
+          icon: `align-${key}`,
+        })),
+      },
+      {
+        control: "toggle-style",
+        label: "Wrap",
+        icon: "wrap-none",
+        activeIcon: "wrap",
+        style: "flexWrap",
+        value: "wrap",
+      },
     ],
-    settings: [CONTAINER_SWITCH, CONTAINER_TAG],
+    settings: [CONTAINER_LAYOUT, IS_CONTAINER, CONTAINER_WIDTH, CONTAINER_BLEED, CONTAINER_TAG],
     render(fields: Fields) {
       const tag = typeof fields.tag === "string" && TAGS.includes(fields.tag) ? fields.tag : "div";
       return `<${tag} data-pb-block="${type}" data-pb-tag="tag"${classes ? ` class="${classes}"` : ""} data-pb-children></${tag}>`;

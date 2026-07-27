@@ -5,20 +5,189 @@
 //
 // The structured value is the source of truth (block.style, an island that
 // round-trips); this maps it to classes on the block root. The value VOCABULARY
-// is Tailwind-native (E1, css-engine thoughts): a value is a THEME TOKEN key
-// (`fontSize: "lg"` → text-lg, `textColor: "red-500"` → text-red-500, spacing
-// steps are numeric: `padding: "4"` → p-4) or raw CSS, which becomes an
+// is theme-native (E1, css-engine thoughts): a value is a THEME TOKEN key
+// (`fontSize: "lg"`, `textColor: "foreground"`, `padding: "medium"`) or raw
+// CSS, which becomes an
 // arbitrary-value utility (`fontSize: "17px"` → text-[17px]) for the JIT.
 // Scales are NOT hardcoded here — token membership is the theme's call
 // (src/theme.ts); control options derive from the same tokens. Adding a prop =
 // one STYLE_PROPS entry + one PROP_SUPPORT line. thoughts/011 + css-engine.
 
-import { activeTheme, hasToken } from "./theme";
+import { activeTheme, hasToken, tokenValue } from "./theme";
 import type { Theme } from "./theme";
 
 /** A block's structured style values: prop name → value (theme token key,
  * numeric step, or raw CSS). */
 export type StyleValues = Record<string, string>;
+
+/** Responsive authoring scope. `base` is the unprefixed utility; the other
+ * values materialize as Tailwind-compatible variant prefixes (`md:…`). */
+export type StyleBreakpoint = "base" | "sm" | "md" | "lg" | "xl" | "2xl" | (string & {});
+
+export interface StyleBreakpointDefinition {
+  key: StyleBreakpoint;
+  label: string;
+  shortLabel: string;
+  viewport: string;
+  token?: string;
+}
+
+/** Marks a theme whose breakpoint collection has been explicitly authored.
+ * Legacy/curated themes without breakpoint tokens receive the standard
+ * starter collection; once this marker exists, an empty collection is
+ * intentional and remains empty. */
+export const BREAKPOINT_CONFIGURATION_TOKEN = "publr-breakpoints-configured";
+
+export const STYLE_BREAKPOINTS: readonly StyleBreakpointDefinition[] = [
+  {
+    key: "base",
+    label: "Mobile",
+    shortLabel: "M",
+    viewport: "390px",
+    token: "publr-preview-base",
+  },
+  {
+    key: "sm",
+    label: "Small",
+    shortLabel: "S",
+    viewport: "640px",
+    token: "breakpoint-sm",
+  },
+  {
+    key: "md",
+    label: "Tablet",
+    shortLabel: "T",
+    viewport: "768px",
+    token: "breakpoint-md",
+  },
+  {
+    key: "lg",
+    label: "Desktop",
+    shortLabel: "D",
+    viewport: "1024px",
+    token: "breakpoint-lg",
+  },
+  {
+    key: "xl",
+    label: "Large desktop",
+    shortLabel: "XL",
+    viewport: "1280px",
+    token: "breakpoint-xl",
+  },
+  {
+    key: "2xl",
+    label: "Wide desktop",
+    shortLabel: "2XL",
+    viewport: "1536px",
+    token: "breakpoint-2xl",
+  },
+];
+
+/** Resolve preview/media-query widths from the active portable theme. The
+ * static list above supplies reset defaults; the live collection is every
+ * `breakpoint-*` token currently present in the theme. */
+export function styleBreakpoints(
+  theme: Theme = activeTheme(),
+): readonly StyleBreakpointDefinition[] {
+  const known = new Map(STYLE_BREAKPOINTS.map((breakpoint) => [breakpoint.key, breakpoint]));
+  const toViewport = (value: string): string => {
+    const relative = value.match(/^(\d+(?:\.\d+)?)(rem|em)$/);
+    return relative ? `${Number(relative[1]) * 16}px` : value;
+  };
+  const base = known.get("base")!;
+  const rows: StyleBreakpointDefinition[] = [
+    {
+      ...base,
+      viewport: toViewport(tokenValue(theme, base.token!) ?? base.viewport),
+    },
+  ];
+  const authoredMediaTokens = theme.tokens.filter((token) => token.name.startsWith("breakpoint-"));
+  const mediaTokens =
+    authoredMediaTokens.length ||
+    theme.tokens.some((token) => token.name === BREAKPOINT_CONFIGURATION_TOKEN)
+      ? authoredMediaTokens
+      : STYLE_BREAKPOINTS.slice(1).map((breakpoint) => ({
+          name: breakpoint.token ?? `breakpoint-${breakpoint.key}`,
+          value: breakpoint.viewport,
+        }));
+  for (const token of mediaTokens) {
+    if (!token.name.startsWith("breakpoint-")) continue;
+    const key = token.name.slice("breakpoint-".length);
+    if (!key) continue;
+    const preset = known.get(key);
+    rows.push({
+      key,
+      label:
+        preset?.label ??
+        key
+          .split("-")
+          .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+          .join(" "),
+      shortLabel: preset?.shortLabel ?? key.toUpperCase(),
+      viewport: toViewport(token.value),
+      token: token.name,
+    });
+  }
+  const toPx = (value: string): number => {
+    const match = value.match(/^(\d+(?:\.\d+)?)px$/);
+    return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+  };
+  rows.splice(
+    1,
+    rows.length - 1,
+    ...rows.slice(1).sort((a, b) => toPx(a.viewport) - toPx(b.viewport)),
+  );
+  return rows;
+}
+
+/** Semantic Group container classes participate in the same mobile-first
+ * breakpoint carrier as utility-backed styles. They are component recipes,
+ * so generate their prefixed selectors from the live theme breakpoints rather
+ * than hard-coding Tailwind's starter collection. */
+export function responsiveContainerCss(theme: Theme = activeTheme()): string {
+  const rules = styleBreakpoints(theme)
+    .filter(({ key }) => key !== "base")
+    .map(({ key, viewport }) => {
+      const prefix = `${key.replace(/[^a-zA-Z0-9_-]/g, "\\$&")}\\:`;
+      const scoped = (name: string) => `:is(#canvas, .pbe-preview) .${prefix}${name}`;
+      const first = (name: string) =>
+        `${scoped(name)} > :is(:first-child:not(script), script[data-pb-settings] + *)`;
+      const last = (name: string) => `${scoped(name)} > :last-child`;
+      const constrain = `
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width) + 2 * var(--container-gutter,24px))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--container-gutter,24px);`;
+      const unbleed = constrain;
+      const bleed = `
+  --pbe-container-edge:max(var(--container-gutter,24px),calc((100vw - var(--pbe-container-width))/2));`;
+      const reset = `
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;`;
+      return `@media (min-width:${viewport}) {
+${scoped("pbe-container--on")}{--pbe-container-width:var(--container-wide,1340px);${constrain}}
+${scoped("pbe-container--content")}{--pbe-container-width:var(--container-content,645px)}
+${scoped("pbe-container--wide")}{--pbe-container-width:var(--container-wide,1340px)}
+${scoped("pbe-container--bleed-none")}{${unbleed}}
+${first("pbe-container--bleed-none")}{margin-inline-start:0!important}
+${last("pbe-container--bleed-none")}{margin-inline-end:0!important}
+${scoped("pbe-container--bleed-left")},
+${scoped("pbe-container--bleed-right")},
+${scoped("pbe-container--bleed-both")}{${bleed}}
+${first("pbe-container--bleed-left")},
+${first("pbe-container--bleed-both")}{margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+${last("pbe-container--bleed-right")},
+${last("pbe-container--bleed-both")}{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+${scoped("pbe-container--off")}{${reset}}
+${first("pbe-container--off")}{margin-inline-start:0!important}
+${last("pbe-container--off")}{margin-inline-end:0!important}
+}`;
+    });
+  return rules.length ? `@layer components {\n${rules.join("\n")}\n}` : "";
+}
 
 export interface StyleCapability {
   /** Shown without using the panel's optional-controls menu. Defaults to true. */
@@ -46,6 +215,8 @@ export interface StyleSupports {
   color?: { text?: StyleSupport; background?: StyleSupport };
   spacing?: {
     padding?: StyleSupport;
+    paddingInline?: StyleSupport;
+    paddingBlock?: StyleSupport;
     paddingTop?: StyleSupport;
     paddingRight?: StyleSupport;
     paddingBottom?: StyleSupport;
@@ -65,6 +236,10 @@ export interface StyleSupports {
     aspectRatio?: StyleSupport;
   };
   layout?: {
+    layoutMode?: StyleSupport;
+    containerEnabled?: StyleSupport;
+    containerWidth?: StyleSupport;
+    containerBleed?: StyleSupport;
     gap?: StyleSupport;
     rowGap?: StyleSupport;
     columnGap?: StyleSupport;
@@ -88,7 +263,7 @@ export const styleSupportEnabled = (support: StyleSupport | undefined): boolean 
 // against a given theme (token → its utility, else arbitrary-value). null = none.
 interface StyleProp {
   panel: keyof StyleSupports;
-  toClass: (value: string, theme: Theme) => string | null;
+  toClass: (value: string, theme: Theme) => string | readonly string[] | null;
 }
 
 /** Keyword utilities (not theme scales — they ARE the spec): decoration + case. */
@@ -158,7 +333,13 @@ const arbitrary = (value: string): string => value.trim().replace(/\s+/g, "_");
 const colorClass =
   (prefix: string) =>
   (v: string, theme: Theme): string | null =>
-    v ? (hasToken(theme, `color-${v}`) ? `${prefix}-${v}` : `${prefix}-[${arbitrary(v)}]`) : null;
+    v
+      ? ["transparent", "current", "inherit"].includes(v)
+        ? `${prefix}-${v}`
+        : hasToken(theme, `color-${v}`)
+          ? `${prefix}-${v}`
+          : `${prefix}-[${arbitrary(v)}]`
+      : null;
 
 // value → class for a token namespace: `lg` → text-lg if the theme has
 // text-lg, else arbitrary (`17px` → text-[17px]). utility and namespace
@@ -168,20 +349,64 @@ const tokenClass =
   (v: string, theme: Theme): string | null =>
     v ? (hasToken(theme, `${ns}-${v}`) ? `${utility}-${v}` : `${utility}-[${arbitrary(v)}]`) : null;
 
-// value → class for the numeric spacing scale: any number is a step
-// (`p-4`, `m-1.5`); anything else is a raw length (`p-[3px]`).
+// value → class for numeric spacing steps or a named theme spacing token.
+// Unknown values remain available as raw CSS lengths (`p-[3px]`).
 const stepClass =
   (prefix: string) =>
-  (v: string): string | null =>
-    v ? (NUM.test(v) ? `${prefix}-${v}` : `${prefix}-[${arbitrary(v)}]`) : null;
+  (v: string, theme: Theme): string | null =>
+    v
+      ? v === "auto"
+        ? `${prefix}-auto`
+        : NUM.test(v)
+          ? `${prefix}-${v}`
+          : hasToken(theme, `spacing-${v}`)
+            ? `${prefix}-[var(--spacing-${v})]`
+            : `${prefix}-[${arbitrary(v)}]`
+      : null;
 
 const fixedClass = (scale: readonly { key: string; class: string }[]) => (v: string) =>
   v ? (scale.find((option) => option.key === v)?.class ?? null) : null;
 
+// Keyword sizing values the dimension lens OWNS alongside steps and raw
+// lengths — an authored `w-full` must be REPLACED by a width write (never
+// shadowed by an appended `w-[240px]` it would then fight). Fractions
+// (`w-1/2`) stay authored per the v0 "/" scope rule.
+const DIMENSION_KEYWORDS = ["auto", "full", "px", "screen", "min", "max", "fit"];
+
 const dimensionClass = (prefix: string) => (v: string) =>
-  v ? (NUM.test(v) ? `${prefix}-${v}` : `${prefix}-[${arbitrary(v)}]`) : null;
+  v
+    ? DIMENSION_KEYWORDS.includes(v) || NUM.test(v)
+      ? `${prefix}-${v}`
+      : `${prefix}-[${arbitrary(v)}]`
+    : null;
 const gridColumnsClass = (v: string) =>
   v ? (/^(?:[1-9]|1[0-2])$/.test(v) ? `grid-cols-${v}` : `grid-cols-[${arbitrary(v)}]`) : null;
+
+/** One container block, four responsive layout presentations. Row writes an
+ * explicit direction so it can override an inherited Stack at a wider
+ * breakpoint; Group writes `block` for the same reason. */
+const layoutModeClass = (v: string): readonly string[] | null => {
+  if (v === "group") return ["block"];
+  if (v === "row") return ["flex", "flex-row"];
+  if (v === "stack") return ["flex", "flex-col"];
+  if (v === "grid") return ["grid"];
+  return null;
+};
+
+/** Group container facts use semantic classes rather than expanding their
+ * layout recipe into utilities. The site sheet owns that recipe, while the
+ * ordinary responsive class lens supplies prefixes such as `lg:`. */
+const containerEnabledClass = (v: string) => {
+  if (v === "true") return "pbe-container--on";
+  if (v === "false") return "pbe-container--off";
+  return null;
+};
+const containerWidthClass = (v: string) =>
+  v === "content" || v === "wide" ? `pbe-container--${v}` : null;
+const containerBleedClass = (v: string) =>
+  v === "none" || v === "left" || v === "right" || v === "both"
+    ? `pbe-container--bleed-${v}`
+    : null;
 
 const ASPECTS = [
   { key: "auto", class: "aspect-auto" },
@@ -191,6 +416,10 @@ const ASPECTS = [
 
 // The style vocabulary. Each prop maps a value → class against the theme.
 export const STYLE_PROPS: Record<string, StyleProp> = {
+  layoutMode: { panel: "layout", toClass: layoutModeClass },
+  containerEnabled: { panel: "layout", toClass: containerEnabledClass },
+  containerWidth: { panel: "layout", toClass: containerWidthClass },
+  containerBleed: { panel: "layout", toClass: containerBleedClass },
   fontSize: { panel: "typography", toClass: tokenClass("text", "text") },
   textAlign: { panel: "typography", toClass: fixedClass(TEXT_ALIGNMENTS) },
   fontWeight: { panel: "typography", toClass: fixedClass(FONT_WEIGHTS) },
@@ -198,6 +427,8 @@ export const STYLE_PROPS: Record<string, StyleProp> = {
   textColor: { panel: "color", toClass: colorClass("text") },
   backgroundColor: { panel: "color", toClass: colorClass("bg") },
   padding: { panel: "spacing", toClass: stepClass("p") },
+  paddingInline: { panel: "spacing", toClass: stepClass("px") },
+  paddingBlock: { panel: "spacing", toClass: stepClass("py") },
   paddingTop: { panel: "spacing", toClass: stepClass("pt") },
   paddingRight: { panel: "spacing", toClass: stepClass("pr") },
   paddingBottom: { panel: "spacing", toClass: stepClass("pb") },
@@ -230,6 +461,14 @@ export const STYLE_PROPS: Record<string, StyleProp> = {
     toClass: (v) =>
       v ? (v === "1" ? "border" : NUM.test(v) ? `border-${v}` : `border-[${arbitrary(v)}]`) : null,
   },
+  borderTopWidth: {
+    panel: "border",
+    toClass: (v) => (v ? (v === "1" ? "border-t" : NUM.test(v) ? `border-t-${v}` : null) : null),
+  },
+  borderLeftWidth: {
+    panel: "border",
+    toClass: (v) => (v ? (v === "1" ? "border-l" : NUM.test(v) ? `border-l-${v}` : null) : null),
+  },
   borderColor: { panel: "border", toClass: colorClass("border") },
   borderRadius: { panel: "border", toClass: tokenClass("rounded", "radius") },
   borderStyle: { panel: "border", toClass: fixedClass(BORDER_STYLES) },
@@ -243,6 +482,10 @@ export const STYLE_PROPS: Record<string, StyleProp> = {
 
 // prop → the `supports` predicate that opts a block into it. One line per prop.
 const PROP_SUPPORT: Record<string, (s: StyleSupports) => StyleSupport | undefined> = {
+  layoutMode: (s) => s.layout?.layoutMode,
+  containerEnabled: (s) => s.layout?.containerEnabled,
+  containerWidth: (s) => s.layout?.containerWidth,
+  containerBleed: (s) => s.layout?.containerBleed,
   fontSize: (s) => s.typography?.fontSize,
   textAlign: (s) => s.typography?.textAlign,
   fontWeight: (s) => s.typography?.fontWeight,
@@ -254,6 +497,8 @@ const PROP_SUPPORT: Record<string, (s: StyleSupports) => StyleSupport | undefine
   textColor: (s) => s.color?.text,
   backgroundColor: (s) => s.color?.background,
   padding: (s) => s.spacing?.padding,
+  paddingInline: (s) => s.spacing?.paddingInline,
+  paddingBlock: (s) => s.spacing?.paddingBlock,
   paddingTop: (s) => s.spacing?.paddingTop,
   paddingRight: (s) => s.spacing?.paddingRight,
   paddingBottom: (s) => s.spacing?.paddingBottom,
@@ -282,23 +527,31 @@ const PROP_SUPPORT: Record<string, (s: StyleSupports) => StyleSupport | undefine
   borderStyle: (s) => s.border?.style,
 };
 
-/** A named style VARIATION (C6): a block-declared class-set the user can pick
- * ("Styles" — Default/Display/Subtitle/…). Unlike the universal
- * props, variations are per block TYPE, so they resolve against the definition. */
-export interface StyleVariation {
+/** A named visual variant. Registration uses the same structured values as
+ * the universal inspector, so semantic token keys—not utility classes—form
+ * the public API. The class carrier remains an internal serialization detail. */
+export interface StyleVariant {
   readonly name: string;
   readonly label: string;
-  readonly class: string;
+  readonly styles: Readonly<StyleValues>;
 }
 
-/** Resolve the active variation's classes from a block's declared variations. */
-export function variationClasses(
-  variations: readonly StyleVariation[] | undefined,
+/** @deprecated Use StyleVariant. */
+export type StyleVariation = StyleVariant;
+
+/** Resolve a variant recipe through the active theme into carrier classes. */
+export function variantClasses(
+  variants: readonly StyleVariant[] | undefined,
   key: string | undefined,
+  theme: Theme = activeTheme(),
 ): string[] {
-  if (!variations || !key) return [];
-  return (variations.find((v) => v.name === key)?.class ?? "").split(/\s+/).filter(Boolean);
+  if (!variants || !key) return [];
+  const variant = variants.find((candidate) => candidate.name === key);
+  return variant ? styleClasses(variant.styles, theme) : [];
 }
+
+/** @deprecated Use variantClasses. */
+export const variationClasses = variantClasses;
 
 /** The universal serializer: a block's style values → Tailwind classes on its
  * root, resolved against the theme (defaults to the page-active theme). */
@@ -310,7 +563,8 @@ export function styleClasses(
   const out: string[] = [];
   for (const [prop, value] of Object.entries(style)) {
     const cls = STYLE_PROPS[prop]?.toClass(value, theme);
-    if (cls) out.push(cls);
+    if (typeof cls === "string") out.push(cls);
+    else if (cls) out.push(...cls);
   }
   return out;
 }
@@ -363,17 +617,32 @@ const fromColor =
       if (!suffix.startsWith("[") && hasToken(theme, `color-${suffix}`)) return suffix;
     }
     const raw = arb(prefix, cls);
-    return raw !== null && COLORISH.test(raw) ? raw : null;
+    if (raw === null || !COLORISH.test(raw)) return null;
+    const tokenVar = /^var\(--color-([a-zA-Z0-9_-]+)\)$/.exec(raw);
+    return tokenVar && hasToken(theme, `color-${tokenVar[1]}`) ? tokenVar[1] : raw;
   };
 
 // numeric-step reverse: `p-4` → "4"; `p-[3px]` → "3px".
 const fromStep =
   (prefix: string) =>
-  (cls: string): string | null => {
+  (cls: string, theme: Theme): string | null => {
     const m = new RegExp(`^${prefix}-(\\d+(?:\\.\\d+)?)$`).exec(cls);
     if (m) return m[1];
-    return arb(prefix, cls);
+    const raw = arb(prefix, cls);
+    if (raw === null) return null;
+    const tokenVar = /^var\(--spacing-([a-zA-Z0-9_-]+)\)$/.exec(raw);
+    return tokenVar && hasToken(theme, `spacing-${tokenVar[1]}`) ? tokenVar[1] : raw;
   };
+
+// dimension reverse: steps/arbitrary plus the owned keywords (`w-full` → "full").
+const fromDimension = (prefix: string) => {
+  const step = fromStep(prefix);
+  return (cls: string, theme: Theme): string | null => {
+    const suffix = cls.startsWith(`${prefix}-`) ? cls.slice(prefix.length + 1) : null;
+    if (suffix !== null && DIMENSION_KEYWORDS.includes(suffix)) return suffix;
+    return step(cls, theme);
+  };
+};
 
 const fromKeyword =
   (scale: readonly { key: string; class: string }[]) =>
@@ -383,6 +652,30 @@ const fromKeyword =
 // prop → reverse mapping (class → value, resolved forms only; an unknown
 // token suffix is NOT claimed — it surfaces via unresolvedUtilities instead).
 const FROM_CLASS: Record<string, (cls: string, theme: Theme) => string | null> = {
+  layoutMode: (cls) => {
+    if (cls === "block") return "group";
+    if (cls === "grid") return "grid";
+    if (cls === "flex" || cls === "flex-row") return "row";
+    if (cls === "flex-col") return "stack";
+    return null;
+  },
+  containerEnabled: (cls) => {
+    if (cls === "pbe-container" || cls === "pbe-container--on") return "true";
+    if (cls === "pbe-container--off") return "false";
+    return null;
+  },
+  containerWidth: (cls) => {
+    if (cls === "pbe-container--content") return "content";
+    if (cls === "pbe-container--wide") return "wide";
+    return null;
+  },
+  containerBleed: (cls) => {
+    if (cls === "pbe-container--bleed-none") return "none";
+    if (cls === "pbe-container--bleed-left") return "left";
+    if (cls === "pbe-container--bleed-right") return "right";
+    if (cls === "pbe-container--bleed-both") return "both";
+    return null;
+  },
   fontSize: fromToken("text", "text", false),
   textAlign: fromKeyword(TEXT_ALIGNMENTS),
   fontWeight: fromKeyword(FONT_WEIGHTS),
@@ -390,6 +683,8 @@ const FROM_CLASS: Record<string, (cls: string, theme: Theme) => string | null> =
   textColor: fromColor("text"),
   backgroundColor: fromColor("bg"),
   padding: fromStep("p"),
+  paddingInline: fromStep("px"),
+  paddingBlock: fromStep("py"),
   paddingTop: fromStep("pt"),
   paddingRight: fromStep("pr"),
   paddingBottom: fromStep("pb"),
@@ -399,11 +694,11 @@ const FROM_CLASS: Record<string, (cls: string, theme: Theme) => string | null> =
   marginRight: fromStep("mr"),
   marginBottom: fromStep("mb"),
   marginLeft: fromStep("ml"),
-  width: fromStep("w"),
-  height: fromStep("h"),
-  minHeight: fromStep("min-h"),
-  minWidth: fromStep("min-w"),
-  flexBasis: fromStep("basis"),
+  width: fromDimension("w"),
+  height: fromDimension("h"),
+  minHeight: fromDimension("min-h"),
+  minWidth: fromDimension("min-w"),
+  flexBasis: fromDimension("basis"),
   aspectRatio: (cls) => {
     const fixed = fromKeyword(ASPECTS)(cls);
     return fixed ?? arb("aspect", cls);
@@ -434,10 +729,16 @@ const FROM_CLASS: Record<string, (cls: string, theme: Theme) => string | null> =
   letterCase: fromKeyword(LETTER_CASES),
 };
 
-// The v0 scope rule + never touch arbitrary-PROPERTY classes ([color:red]).
-const lensable = (cls: string): boolean => {
-  const structure = cls.replace(/\[[^\]]*\]/g, "[]");
-  return !structure.includes(":") && !structure.includes("/") && !cls.startsWith("[");
+// Resolve one responsive authoring scope to the utility body the existing
+// prop lenses understand. State/interaction variants remain authored escape
+// hatches: selecting `md` claims `md:grid-cols-3`, never `md:hover:…`.
+const classAtBreakpoint = (cls: string, breakpoint: StyleBreakpoint): string | null => {
+  const prefix = breakpoint === "base" ? "" : `${breakpoint}:`;
+  if (prefix && !cls.startsWith(prefix)) return null;
+  const body = prefix ? cls.slice(prefix.length) : cls;
+  const structure = body.replace(/\[[^\]]*\]/g, "[]");
+  if ((!prefix && cls !== body) || structure.includes(":") || structure.includes("/")) return null;
+  return body.startsWith("[") ? null : body;
 };
 
 /** Read a prop's value out of a class list (last owner wins, like CSS). */
@@ -445,13 +746,15 @@ export function readStyleClass(
   prop: string,
   classes: readonly string[],
   theme: Theme = activeTheme(),
+  breakpoint: StyleBreakpoint = "base",
 ): string | undefined {
   const from = FROM_CLASS[prop];
   if (!from) return undefined;
   let value: string | undefined;
   for (const cls of classes) {
-    if (!lensable(cls)) continue;
-    const v = from(cls, theme);
+    const body = classAtBreakpoint(cls, breakpoint);
+    if (!body) continue;
+    const v = from(body, theme);
     if (v !== null) value = v;
   }
   return value;
@@ -464,11 +767,16 @@ export function patchStyleClasses(
   value: string,
   classes: readonly string[],
   theme: Theme = activeTheme(),
+  breakpoint: StyleBreakpoint = "base",
 ): string[] {
   const from = FROM_CLASS[prop];
-  const kept = classes.filter((cls) => !from || !lensable(cls) || from(cls, theme) === null);
+  const kept = classes.filter((cls) => {
+    const body = classAtBreakpoint(cls, breakpoint);
+    return !from || !body || from(body, theme) === null;
+  });
   const next = value ? STYLE_PROPS[prop]?.toClass(value, theme) : null;
-  if (next) kept.push(next);
+  const nextClasses = Array.isArray(next) ? next : next ? [next] : [];
+  kept.push(...nextClasses.map((cls) => (breakpoint === "base" ? cls : `${breakpoint}:${cls}`)));
   return kept;
 }
 
@@ -489,12 +797,12 @@ const UTILITY_SHAPES: { prefix: string; namespaces: string[]; skip?: RegExp }[] 
   {
     prefix: "text",
     namespaces: ["text", "color"],
-    skip: /^(left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip)$/,
+    skip: /^(left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip|current|transparent|inherit)$/,
   },
   {
     prefix: "bg",
     namespaces: ["color"],
-    skip: /^(cover|contain|center|fixed|local|scroll|repeat|no-repeat|none|top|bottom|left|right|auto|clip-.*|origin-.*|gradient-.*|linear-.*|radial-.*|conic-.*)$/,
+    skip: /^(cover|contain|center|fixed|local|scroll|repeat|no-repeat|none|top|bottom|left|right|auto|transparent|current|inherit|clip-.*|origin-.*|gradient-.*|linear-.*|radial-.*|conic-.*)$/,
   },
   {
     prefix: "border",
@@ -513,7 +821,10 @@ export function unresolvedUtilities(
 ): UnresolvedUtility[] {
   const out: UnresolvedUtility[] = [];
   for (const cls of classes) {
-    if (!lensable(cls)) continue;
+    // Diagnostics only operate on the unprefixed authoring scope. Responsive
+    // utilities are inspected through their breakpoint lens in the sidebar,
+    // while state variants remain an explicit advanced escape hatch.
+    if (!classAtBreakpoint(cls, "base")) continue;
     for (const { prefix, namespaces, skip } of UTILITY_SHAPES) {
       if (!cls.startsWith(`${prefix}-`)) continue;
       const suffix = cls.slice(prefix.length + 1);

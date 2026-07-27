@@ -33,12 +33,19 @@ export const definition: BlockDefinition = {
     },
     { control: "add-child", label: "Add social icon", type: "social-link" },
   ],
-  variations: [
-    { name: "logos", label: "Logos only", class: "gap-4" },
+  variants: [
+    { name: "logos", label: "Logos only", styles: { gap: "4" } },
     {
       name: "pill",
       label: "Pill",
-      class: "rounded-full bg-neutral-100 px-4 py-2",
+      styles: {
+        borderRadius: "9999px",
+        backgroundColor: "muted",
+        paddingTop: "2",
+        paddingRight: "4",
+        paddingBottom: "2",
+        paddingLeft: "4",
+      },
     },
   ],
   allowedChildren: ["social-link"],

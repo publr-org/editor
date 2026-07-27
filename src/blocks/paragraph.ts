@@ -14,10 +14,22 @@ export const definition: BlockDefinition = {
   icon: "paragraph",
   description: "Start with the basic building block of all narrative.",
   supports: TEXT_SUPPORTS,
-  variations: [
-    { name: "display", label: "Display", class: "text-3xl font-bold leading-tight" },
-    { name: "subtitle", label: "Subtitle", class: "text-lg text-neutral-500" },
-    { name: "annotation", label: "Annotation", class: "text-sm text-neutral-500 italic" },
+  variants: [
+    {
+      name: "display",
+      label: "Display",
+      styles: { fontSize: "3xl", fontWeight: "bold", lineHeight: "tight" },
+    },
+    {
+      name: "subtitle",
+      label: "Subtitle",
+      styles: { fontSize: "lg", textColor: "muted-foreground" },
+    },
+    {
+      name: "annotation",
+      label: "Annotation",
+      styles: { fontSize: "sm", textColor: "muted-foreground", fontStyle: "italic" },
+    },
   ],
   toolbar: [{ control: "text-align", label: "Align text" }],
   settings: [

@@ -34,9 +34,27 @@ export const definition: BlockDefinition = {
   placeholder: "Add text…",
   description: "Prompt visitors to take action with a button-style link.",
   supports: TEXT_SUPPORTS,
-  variations: [
-    { name: "outline", label: "Outline", class: "bg-transparent text-current ring-1 ring-current" },
-    { name: "link", label: "Link", class: "bg-transparent p-0 text-current underline" },
+  variants: [
+    {
+      name: "outline",
+      label: "Outline",
+      styles: {
+        backgroundColor: "transparent",
+        textColor: "accent",
+        borderColor: "accent",
+        borderWidth: "1",
+      },
+    },
+    {
+      name: "link",
+      label: "Link",
+      styles: {
+        backgroundColor: "transparent",
+        textColor: "accent",
+        padding: "0",
+        decoration: "underline",
+      },
+    },
   ],
   toolbar: [
     {

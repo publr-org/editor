@@ -19,7 +19,7 @@ export const definition: BlockDefinition = {
     { control: "text-align", label: "Align text" },
     { control: "toggle-setting", label: "Citation", setting: "showCitation", role: "content" },
   ],
-  variations: [{ name: "plain", label: "Plain", class: "border-l-0 pl-0" }],
+  variants: [{ name: "plain", label: "Plain", styles: { borderLeftWidth: "0", paddingLeft: "0" } }],
   settings: [
     {
       control: "toggle",

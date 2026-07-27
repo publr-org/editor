@@ -264,33 +264,28 @@
   }
 }
 
-/* Button style presets (base layer so authored utilities win — see the layer
-   note above: `components` can land after `utilities` when a host registered
-   its layer order first): the button render emits a semantic `pbe-btn--*`
-   class, never a bundle of peer utilities — a pasted, fully-authored button
-   keeps its own look, a fresh one gets the default. Colors reference the
-   theme's accent token. */
-@layer base {
+/* Semantic page containers must live in the same layer as the generated
+   breakpoint rules. Their sizing declarations are important so structural
+   container state wins over incidental width utilities; splitting base state
+   and responsive state across layers reverses their priority and makes
+   `pbe-container--off` beat `lg:pbe-container--on` in the editor iframe. */
+@layer components {
   /* Mirrors src/styles.css for the distributable editor canvas. */
+  .pbe-container--on {
+    --pbe-container-width: var(--container-wide, 1340px);
+  }
   .pbe-container--content {
     --pbe-container-width: var(--container-content, 645px);
-    box-sizing: border-box;
-    width: min(
-      max(0px, calc(100% - 2 * var(--container-gutter, 24px))),
-      var(--container-content, 645px)
-    ) !important;
-    max-width: var(--container-content, 645px) !important;
-    margin-inline: auto !important;
   }
   .pbe-container--wide {
     --pbe-container-width: var(--container-wide, 1340px);
+  }
+  .pbe-container--on {
     box-sizing: border-box;
-    width: min(
-      max(0px, calc(100% - 2 * var(--container-gutter, 24px))),
-      var(--container-wide, 1340px)
-    ) !important;
-    max-width: var(--container-wide, 1340px) !important;
+    width: 100% !important;
+    max-width: calc(var(--pbe-container-width) + 2 * var(--container-gutter, 24px)) !important;
     margin-inline: auto !important;
+    padding-inline: var(--container-gutter, 24px);
   }
   .pbe-container--bleed-left,
   .pbe-container--bleed-right,
@@ -299,10 +294,6 @@
       var(--container-gutter, 24px),
       calc((100vw - var(--pbe-container-width)) / 2)
     );
-    width: 100% !important;
-    max-width: none !important;
-    margin-inline: 0 !important;
-    padding-inline: var(--pbe-container-edge) !important;
   }
   :is(.pbe-container--bleed-left, .pbe-container--bleed-both)
     > :is(:first-child:not(script), script[data-pb-settings] + *) {
@@ -311,6 +302,27 @@
   :is(.pbe-container--bleed-right, .pbe-container--bleed-both) > :last-child {
     margin-inline-end: calc(-1 * var(--pbe-container-edge)) !important;
   }
+  .pbe-container--off {
+    width: auto !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    padding-inline: 0;
+  }
+  .pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *) {
+    margin-inline-start: 0 !important;
+  }
+  .pbe-container--off > :last-child {
+    margin-inline-end: 0 !important;
+  }
+}
+
+/* Button style presets (base layer so authored utilities win — see the layer
+   note above: `components` can land after `utilities` when a host registered
+   its layer order first): the button render emits a semantic `pbe-btn--*`
+   class, never a bundle of peer utilities — a pasted, fully-authored button
+   keeps its own look, a fresh one gets the default. Colors reference the
+   theme's accent token. */
+@layer base {
   .pbe-btn {
     display: inline-block;
     text-decoration: none;
@@ -394,6 +406,16 @@
   .pbe-cover {
     min-height: 430px;
   }
+}
+
+/* Cursor semantics follow the actual editing surface. Structural padding,
+   media, and canvas background keep the normal arrow; only live text
+   carriers advertise caret placement. */
+.pbe-canvas {
+  cursor: default;
+}
+.pbe-canvas [contenteditable="true"] {
+  cursor: text;
 }
 
 /* Raw-html blocks: opaque but clickable — the block is the interaction. */
@@ -901,6 +923,39 @@
   width: 320px;
 }
 
+/* Inspector sections read as one compact stack. Closed sections no longer
+   keep the open-state bottom margin that made the sidebar feel half empty. */
+#block-styles > details {
+  padding-block: 0;
+}
+#block-styles > details > summary {
+  min-height: 54px;
+  margin-bottom: 0;
+  gap: 8px;
+}
+#block-styles > details[open] {
+  padding-bottom: 18px;
+}
+#block-styles > details[open] > summary {
+  margin-bottom: 14px;
+}
+#block-styles > details > summary::after {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 120ms ease;
+}
+#block-styles > details[open] > summary::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+#block-styles > details > summary > button {
+  margin-left: auto;
+}
+
 /* ALWAYS full-bleed: no shell-owned padding around the canvas — spacing is
    the content's responsibility. (The 48px article-column breathing room and
    its `.max-w-none` wide-mode override died with the wide toggle.) */
@@ -908,6 +963,138 @@
   width: 100%;
   max-width: none;
   padding: 0;
+}
+
+.pbe-responsive-deck {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.pbe-responsive-surface {
+  display: contents;
+}
+
+/* Patterns and template parts use a Gutenberg-like stage: the authored
+   composition keeps its real iframe viewport, while the iframe itself becomes
+   a centered white sheet on a neutral canvas. The responsive viewport
+   controls still own width/zoom; this only supplies the surrounding workspace
+   and vertical placement. */
+#editor-content[data-isolation-stage] {
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: safe center;
+  padding: clamp(24px, 5vh, 64px) clamp(24px, 3vw, 48px) !important;
+  background: color-mix(in oklch, var(--background) 86%, var(--foreground));
+}
+
+#editor-content[data-isolation-stage] .pbe-canvas-viewport {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin-block: auto;
+}
+
+/* Responsive comparison is the same neutral, scrollable stage used by
+   isolated patterns, but projects every configured breakpoint at once. One
+   surface holds the live editor; synchronized projections promote themselves
+   to the live surface when clicked. */
+#editor-content[data-responsive-compare] {
+  display: block;
+  padding: 0 !important;
+  background: color-mix(in oklch, var(--background) 86%, var(--foreground));
+  /* The focused live iframe changes flex order when another breakpoint is
+     promoted. Chromium's scroll anchoring otherwise keeps that iframe at its
+     old screen coordinate by shifting the whole horizontal stage. */
+  overflow-anchor: none;
+}
+
+#editor-content[data-responsive-compare] .pbe-responsive-deck {
+  box-sizing: border-box;
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  height: 100%;
+  align-items: flex-start;
+  gap: clamp(24px, 3vw, 44px);
+  padding: 56px clamp(24px, 3vw, 48px) 32px;
+}
+
+#editor-content[data-responsive-compare] .pbe-responsive-surface {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.pbe-responsive-surface__label {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--background);
+  padding-inline: 10px;
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 0.08);
+}
+
+.pbe-responsive-surface__label small {
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pbe-responsive-surface__label strong {
+  margin-inline-start: auto;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--ring) 12%, var(--background));
+  padding: 4px 6px;
+  color: var(--ring);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pbe-responsive-preview-viewport {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--color-surface, #fff);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 12px 32px rgb(0 0 0 / 0.12);
+}
+
+.pbe-responsive-preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+#editor-content[data-responsive-compare] .pbe-canvas-viewport {
+  margin: 0;
+  /* Width and zoom are one atomic presentation change in comparison mode.
+     Animating only width exposes the iframe at its full size for a frame
+     while a projected breakpoint is promoted to the live editor. */
+  transition: none;
+}
+
+#editor-content[data-responsive-compare] .pbe-viewport-resizer {
+  display: none !important;
 }
 
 #editor-shell input:not([type="range"]):not([type="checkbox"]):not([type="file"]),
@@ -968,19 +1155,34 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Isolation mode skin (pattern definition/instance — state.templateChromeShown,
-   worn by #editor-shell as .pbe-isolation). The shell itself carries the
-   scope: the topbar turns the isolation purple and the whole editor gets a
-   matching frame — an unmissable "you are editing a pattern, not the page"
-   signal. Literal colors throughout: every control here sits on the fixed
-   isolation purple, so the admin-token remaps (--color-white → background,
-   neutral-* → foreground) must not resolve these.
+   Isolation mode skin (patterns, templates, and template parts —
+   state.templateChromeShown, worn by #editor-shell as .pbe-isolation). The shell itself carries the
+   scope: the topbar and matching frame make the isolated editing context
+   unmissable. Template and template-part editing stays purple; patterns use
+   blue so their scope is recognizable at a glance. Literal colors throughout
+   keep admin-token remaps (--color-white → background, neutral-* → foreground)
+   from leaking into this chrome.
 --------------------------------------------------------------------------- */
 #editor-shell.pbe-isolation {
+  --isolation-frame-width: 6px;
   --isolation: #581c87;
+  --isolation-commit: #3c1d53;
+  --isolation-commit-hover: #4a2564;
+  --isolation-commit-foreground: #fff;
   box-sizing: border-box; /* no preflight in this sheet — the frame must not grow h-full */
-  border: 6px solid var(--isolation);
+  border: var(--isolation-frame-width) solid var(--isolation);
   border-top: none;
+}
+
+#editor-shell.pbe-isolation.pbe-isolation-pattern {
+  --isolation: #285ae1;
+  --isolation-commit: #fff;
+  --isolation-commit-hover: #eef3ff;
+  --isolation-commit-foreground: #173b9e;
+}
+
+#editor-shell.pbe-isolation.pbe-isolation-nested {
+  overflow: visible;
 }
 
 #editor-shell.pbe-isolation #topbar {
@@ -992,7 +1194,7 @@
 }
 
 /* The remap below repaints chrome text with admin tokens; on the isolation
-   violet every generic topbar control is white. The class/element arms sit
+   color every generic topbar control is white. The class/element arms sit
    in :where() (zero specificity) so the id-targeted treatments further down
    (#inserter-toggle, #template-save, the viewport switcher) always win. */
 #editor-shell.pbe-isolation #topbar :where(button, .text-neutral-900, .text-neutral-500) {
@@ -1047,8 +1249,56 @@
   color: #ffd9d9;
 }
 
-/* The mode's one commit pair, full bar height: Cancel a lighter violet
-   fill, the commit a near-black purple — both read on the isolation bar. */
+#editor-shell.pbe-isolation
+  #isolation-breadcrumbs
+  .pbe-isolation-crumb-item:last-child
+  .pbe-isolation-crumb-separator {
+  display: none;
+}
+#editor-shell.pbe-isolation #isolation-breadcrumbs {
+  box-sizing: border-box;
+  align-self: stretch;
+  inline-size: calc(100% + var(--isolation-frame-width) * 2);
+  margin-inline: calc(var(--isolation-frame-width) * -1);
+  background: #171717;
+}
+#editor-shell.pbe-isolation #isolation-breadcrumbs .pbe-isolation-crumb {
+  border: 0;
+  background: transparent;
+  opacity: 1;
+}
+#editor-shell.pbe-isolation #isolation-breadcrumbs .pbe-isolation-crumb[data-kind="pattern"] {
+  color: #3974ef;
+}
+#editor-shell.pbe-isolation #isolation-breadcrumbs .pbe-isolation-crumb[data-kind="template-part"],
+#editor-shell.pbe-isolation #isolation-breadcrumbs .pbe-isolation-crumb[data-kind="template"] {
+  color: #9452e8;
+}
+#editor-shell.pbe-isolation
+  #isolation-breadcrumbs
+  .pbe-isolation-crumb:not([aria-current="true"]):hover {
+  background: rgb(255 255 255 / 0.07);
+  filter: brightness(1.18);
+}
+#editor-shell.pbe-isolation
+  #isolation-breadcrumbs
+  .pbe-isolation-crumb[data-kind="pattern"][aria-current="true"] {
+  background: rgb(40 90 225 / 0.22);
+}
+#editor-shell.pbe-isolation
+  #isolation-breadcrumbs
+  .pbe-isolation-crumb:is(
+    [data-kind="template-part"],
+    [data-kind="template"]
+  )[aria-current="true"] {
+  background: rgb(88 28 135 / 0.35);
+}
+#editor-shell.pbe-isolation #isolation-breadcrumbs .pbe-isolation-crumb-separator {
+  color: rgb(255 255 255 / 0.32);
+}
+
+/* The mode's one commit pair, full bar height. Its colors follow the current
+   isolation identity: purple for templates, white-on-blue for patterns. */
 #editor-shell.pbe-isolation #template-cancel {
   color: #fff;
 }
@@ -1057,26 +1307,61 @@
   background: none;
 }
 #editor-shell.pbe-isolation #template-save {
-  background: #3c1d53;
-  border: 1px solid rgba(78, 19, 123, 0.5);
-  color: #fff;
+  background: var(--isolation-commit);
+  border: 1px solid color-mix(in srgb, var(--isolation) 72%, black);
+  color: var(--isolation-commit-foreground);
 }
 #editor-shell.pbe-isolation #template-save:hover {
-  background: #4a2564;
-  color: #fff;
+  background: var(--isolation-commit-hover);
+  color: var(--isolation-commit-foreground);
 }
 
-/* Shared template structure is violet in the list view, matching the
-   isolation frame and keeping reusable parts visually distinct from ordinary
-   document blocks. Selected rows retain the normal high-contrast selection. */
+/* Reusable structure keeps its identity through every tree interaction:
+   violet for template parts and blue for patterns. The increasingly strong
+   fills make rest, hover, and selection distinct in both appearances. */
 #tree-rows [data-template-part]:not([data-template-part="false"]) {
-  color: #7c3aed;
-  background: color-mix(in srgb, #8b5cf6 9%, transparent);
+  --pbe-tree-identity: #7c3aed;
+  --pbe-tree-identity-fill: #8b5cf6;
+}
+
+#tree-rows [data-pattern]:not([data-pattern="false"]) {
+  --pbe-tree-identity: #285ae1;
+  --pbe-tree-identity-fill: #285ae1;
 }
 
 #tree-rows
-  [data-template-part]:not([data-template-part="false"]):has(button[data-id].bg-ui-accent) {
-  color: inherit;
+  :is(
+    [data-template-part]:not([data-template-part="false"]),
+    [data-pattern]:not([data-pattern="false"])
+  ) {
+  color: var(--pbe-tree-identity);
+  background: color-mix(in srgb, var(--pbe-tree-identity-fill) 9%, transparent);
+}
+
+#tree-rows
+  :is(
+    [data-template-part]:not([data-template-part="false"]),
+    [data-pattern]:not([data-pattern="false"])
+  ):hover {
+  color: var(--pbe-tree-identity);
+  background: color-mix(in srgb, var(--pbe-tree-identity-fill) 16%, transparent);
+}
+
+#tree-rows
+  :is(
+    [data-template-part]:not([data-template-part="false"]),
+    [data-pattern]:not([data-pattern="false"])
+  ).bg-ui-accent {
+  color: var(--pbe-tree-identity);
+  background: color-mix(in srgb, var(--pbe-tree-identity-fill) 24%, transparent);
+}
+
+#tree-rows
+  :is(
+    [data-template-part]:not([data-template-part="false"]),
+    [data-pattern]:not([data-pattern="false"])
+  ).bg-ui-accent:hover {
+  background: color-mix(in srgb, var(--pbe-tree-identity-fill) 30%, transparent);
 }
 
 /* Tree View block sorting: the real row stays in place while an absolutely
@@ -1177,12 +1462,6 @@
    inset active underline upward and makes the three labels look like pills. */
 :is(#tree, #inserter, #sidebar) button[role="tab"] {
   border-radius: 0;
-}
-
-:is(#tree, #inserter, #pattern-flyout, #sidebar, #pattern-explorer)
-  button:not([role="tab"]):not([data-pattern-preview]):hover {
-  background: var(--ui-accent);
-  color: var(--accent-foreground);
 }
 
 :is(#tree, #inserter, #pattern-flyout, #sidebar, #pattern-explorer) button:focus-visible {
@@ -1542,6 +1821,133 @@
   background: color-mix(in oklch, var(--ring) 8%, var(--background));
   color: var(--foreground);
 }
+.pbe-responsive-field {
+  --pbe-responsive-accent: oklch(0.52 0.22 292);
+  --pbe-responsive-pill: var(--pbe-responsive-accent);
+  margin-top: 9px;
+  color: var(--muted-foreground);
+}
+.pbe-responsive-field__summary {
+  display: flex;
+  width: max-content;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--pbe-responsive-pill);
+  padding: 5px 9px 5px 8px;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  box-shadow: none;
+}
+.pbe-responsive-field__summary::-webkit-details-marker {
+  display: none;
+}
+.pbe-responsive-field__summary:hover {
+  background: color-mix(in oklch, var(--pbe-responsive-pill) 88%, white);
+}
+.pbe-responsive-field__summary:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--pbe-responsive-accent) 70%, white);
+  outline-offset: 2px;
+}
+.pbe-responsive-field__icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: color-mix(in oklch, var(--pbe-responsive-accent) 62%, white);
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pbe-responsive-field__icon circle {
+  fill: currentColor;
+  stroke: none;
+}
+.pbe-responsive-field__summary strong {
+  border-left: 1px solid rgb(255 255 255 / 0.28);
+  padding-left: 6px;
+  color: rgb(255 255 255 / 0.64);
+  font-size: 8px;
+  font-weight: 600;
+}
+.pbe-responsive-field__track i {
+  min-width: 3px;
+  flex-basis: 0;
+  background: color-mix(in oklch, var(--pbe-responsive-accent) 32%, var(--background));
+}
+.pbe-responsive-field__track i[data-changed] {
+  box-shadow: -2px 0 0 var(--background);
+}
+.pbe-responsive-field__chevron {
+  display: block;
+  width: 11px;
+  height: 11px;
+  flex: none;
+  margin-left: 1px;
+  color: rgb(255 255 255 / 0.72);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+.pbe-responsive-field[open] .pbe-responsive-field__chevron {
+  transform: rotate(180deg);
+}
+.pbe-responsive-field__detail {
+  margin-top: 10px;
+  padding-inline: 2px;
+}
+.pbe-responsive-field__track {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--border);
+}
+.pbe-responsive-field__points {
+  display: flex;
+}
+.pbe-responsive-field__point {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.pbe-responsive-field__point i {
+  width: 1px;
+  height: 6px;
+  margin-bottom: 3px;
+  background: var(--border);
+}
+.pbe-responsive-field__point[data-changed] i {
+  width: 2px;
+  height: 8px;
+  background: var(--pbe-responsive-color, var(--pbe-responsive-accent));
+}
+.pbe-responsive-field__point[data-active] {
+  color: var(--foreground);
+  font-weight: 700;
+}
+.pbe-responsive-field__point[data-active] span {
+  text-decoration: underline;
+  text-decoration-color: var(--pbe-responsive-color, var(--pbe-responsive-accent));
+  text-underline-offset: 2px;
+}
+.pbe-responsive-field__point:hover {
+  color: var(--foreground);
+}
 
 .pbe-settings-layout {
   padding-top: 18px;
@@ -1893,6 +2299,11 @@
   background: var(--background);
   box-shadow: 0 0 0 1px var(--border);
 }
+#sidebar .pbe-box-model__link[aria-pressed="true"] {
+  background: var(--ring);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ring) 72%, white);
+}
 .pbe-box-model__value {
   position: absolute;
   z-index: 3;
@@ -1916,6 +2327,11 @@
   color: var(--ring);
   box-shadow: 0 0 0 1px var(--ring);
   font-weight: 650;
+}
+#sidebar .pbe-box-model__value[aria-pressed="true"] {
+  background: var(--ring);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ring) 72%, white);
 }
 .pbe-box-model__value:hover,
 .pbe-box-model__value:focus {
@@ -1958,15 +2374,261 @@
   letter-spacing: 0.06em;
 }
 .pbe-box-model__control {
-  margin-top: 10px;
-}
-.pbe-box-model__control-label {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--muted-foreground);
-  font-size: 11px;
   text-transform: none;
   letter-spacing: normal;
+}
+.pbe-spacing-pane__header {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pbe-spacing-pane__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.pbe-spacing-pane__sync,
+.pbe-spacing-pane__close {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) * 0.75);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1;
+}
+.pbe-spacing-pane__sync svg {
+  width: 15px;
+  height: 15px;
+}
+.pbe-spacing-pane__close {
+  font-size: 17px;
+  font-weight: 300;
+}
+.pbe-spacing-pane__sync:hover,
+.pbe-spacing-pane__close:hover {
+  border-color: var(--input);
+  background: var(--ui-accent);
+  color: var(--foreground);
+}
+#sidebar .pbe-spacing-pane__sync[aria-pressed="true"] {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 12%, var(--popover));
+  color: var(--ring);
+  box-shadow: none;
+}
+.pbe-spacing-pane__row {
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: 24px minmax(0, 1fr) 40px 24px;
+  align-items: center;
+  gap: 6px;
+}
+.pbe-spacing-pane__row-set {
+  display: contents;
+}
+.pbe-spacing-pane__row.pbe-spacing-pane__custom {
+  grid-template-columns: 24px 78px minmax(0, 1fr) 24px;
+}
+.pbe-spacing-side {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  margin-inline: auto;
+  place-items: center;
+}
+.pbe-spacing-side svg {
+  width: 24px;
+  height: 24px;
+}
+.pbe-spacing-pane__rail {
+  position: relative;
+  height: 32px;
+  min-width: 0;
+}
+.pbe-spacing-pane__track {
+  position: absolute;
+  top: 14px;
+  right: 8px;
+  left: 8px;
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  height: 5px;
+}
+.pbe-spacing-pane__track span {
+  min-width: 0;
+  border-right: 3px solid var(--popover);
+  border-radius: 1px;
+  background: var(--input);
+}
+.pbe-spacing-pane__track span:last-child {
+  border-right: 0;
+}
+.pbe-spacing-pane__track span[data-active="true"] {
+  background: var(--ring);
+}
+.pbe-spacing-pane__thumb {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--popover);
+  border-radius: 50%;
+  background: var(--ring);
+  box-shadow: 0 0 0 1px var(--ring);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.pbe-spacing-pane__range {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 32px;
+  cursor: pointer;
+  appearance: none;
+  background: transparent;
+}
+.pbe-spacing-pane__range::-webkit-slider-runnable-track {
+  height: 5px;
+  background: transparent;
+}
+.pbe-spacing-pane__range::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  appearance: none;
+  opacity: 0;
+}
+.pbe-spacing-pane__range::-moz-range-track {
+  height: 5px;
+  background: transparent;
+}
+.pbe-spacing-pane__range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  opacity: 0;
+}
+.pbe-spacing-pane__range:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.pbe-spacing-pane__tooltip {
+  position: absolute;
+  z-index: 3;
+  bottom: 29px;
+  max-width: 88px;
+  padding: 3px 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 100ms linear;
+}
+.pbe-spacing-pane__row:hover .pbe-spacing-pane__tooltip,
+.pbe-spacing-pane__row:focus-within .pbe-spacing-pane__tooltip {
+  opacity: 1;
+}
+.pbe-spacing-pane .pbe-spacing-pane__value {
+  position: static;
+  display: grid;
+  width: 40px;
+  height: 28px;
+  padding: 0 4px;
+  place-items: center;
+  font-size: 10px;
+  text-align: center;
+}
+.pbe-spacing-pane__custom-toggle {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) * 0.75);
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.pbe-spacing-pane__custom-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+.pbe-spacing-pane__custom-toggle:hover,
+#sidebar .pbe-spacing-pane__custom-toggle[aria-pressed="true"] {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--ring) 12%, var(--popover));
+  color: var(--ring);
+}
+.pbe-spacing-pane__custom-field {
+  display: flex;
+  width: 78px;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--input);
+  border-radius: 4px;
+  background: var(--background);
+}
+.pbe-spacing-pane__custom-field input,
+.pbe-spacing-pane__custom-field select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 10px;
+  outline: none;
+}
+.pbe-spacing-pane__custom-field input {
+  width: 42px;
+  padding: 0 2px 0 6px;
+  appearance: textfield;
+}
+.pbe-spacing-pane__custom-field input::-webkit-inner-spin-button,
+.pbe-spacing-pane__custom-field input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+.pbe-spacing-pane__custom-field select {
+  width: 36px;
+  cursor: pointer;
+  color: var(--ring);
+}
+.pbe-spacing-pane__custom-rail {
+  position: relative;
+  height: 32px;
+  min-width: 0;
+}
+.pbe-spacing-pane__custom-track {
+  position: absolute;
+  top: 14px;
+  right: 8px;
+  left: 8px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--input);
+}
+.pbe-spacing-pane__custom-track i {
+  display: block;
+  height: 100%;
+  background: var(--ring);
 }
 .pbe-scale--editable {
   padding-right: 84px;
@@ -2041,6 +2703,24 @@
   border-radius: 50%;
   background: var(--ring);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+}
+.pbe-scale[data-responsive] {
+  --pbe-responsive-accent: oklch(0.52 0.22 292);
+}
+.pbe-scale[data-responsive] .pbe-scale__track span {
+  background: var(--pbe-responsive-accent);
+}
+.pbe-scale[data-responsive] .pbe-scale__input::-webkit-slider-thumb {
+  background: var(--pbe-responsive-accent);
+  box-shadow: 0 1px 3px color-mix(in oklch, var(--pbe-responsive-accent) 30%, transparent);
+}
+.pbe-scale[data-responsive] .pbe-scale__input::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--foreground);
+  border-radius: 50%;
+  background: var(--pbe-responsive-accent);
+  box-shadow: 0 1px 3px color-mix(in oklch, var(--pbe-responsive-accent) 30%, transparent);
 }
 .pbe-custom-value {
   margin-top: 5px;

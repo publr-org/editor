@@ -52,10 +52,10 @@ body {
 }
 
 /* The canvas reads as a form input: bordered box, accent ring while the
-   caret is inside. The bottom padding is the click-to-append area. */
+   caret is inside. Block insertion is handled by the hover-edge affordance. */
 .field-canvas {
   min-height: 44px;
-  padding: 10px 14px 18px;
+  padding: 10px 14px;
   border: 1px solid var(--field-border);
   border-radius: 2px;
   background: #fff;

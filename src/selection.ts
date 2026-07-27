@@ -52,6 +52,50 @@ export interface BlockSelectionOptions {
   resolveTarget?: (id: string, point?: { clientX: number; clientY: number }) => string;
 }
 
+const INTERACTIVE_TARGET_SELECTOR = [
+  "a[href]",
+  "area[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "label",
+  "summary",
+  "iframe",
+  "audio[controls]",
+  "video[controls]",
+  "[contenteditable]:not([contenteditable='false'])",
+  "[tabindex]",
+  "[draggable='true']",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='combobox']",
+  "[role='link']",
+  "[role='menuitem']",
+  "[role='menuitemcheckbox']",
+  "[role='menuitemradio']",
+  "[role='option']",
+  "[role='radio']",
+  "[role='slider']",
+  "[role='spinbutton']",
+  "[role='switch']",
+  "[role='tab']",
+  "[role='textbox']",
+  "[data-pbe-keep-selection]",
+  "[data-publr-component='field']",
+  "[data-p-on*='click']",
+  "[data-p-on*='mousedown']",
+  "[data-p-on*='pointerdown']",
+].join(",");
+
+/** True when a pointer event belongs to a control rather than inert page chrome. */
+export function targetsInteractiveControl(event: Event): boolean {
+  return event.composedPath().some((target) => {
+    const element = target as Element;
+    return typeof element.matches === "function" && element.matches(INTERACTIVE_TARGET_SELECTOR);
+  });
+}
+
 export function createBlockSelection({
   canvas,
   getBlocks,
@@ -60,6 +104,14 @@ export function createBlockSelection({
 }: BlockSelectionOptions) {
   const ownerDocument = canvas.ownerDocument;
   const ownerWindow = ownerDocument.defaultView ?? window;
+  // The shell may move the authored canvas through same-origin document
+  // surfaces. DOM constructor identity is a brittle way to recognize an
+  // event/selection node across that boundary; use the node's actual
+  // capabilities instead.
+  const elementOf = (value: EventTarget | Node | null): Element | null => {
+    if (value && typeof (value as Element).closest === "function") return value as Element;
+    return (value as Node | null)?.parentElement ?? null;
+  };
   const state = reactive<SelectionState>({ blocks: [], active: null });
   let ids: string[] = [];
   const resolve = (id: string | null, point?: { clientX: number; clientY: number }) =>
@@ -75,7 +127,7 @@ export function createBlockSelection({
   let explicitIds: string[] = []; // kept in document (model) order regardless of click order
 
   function endpointId(node: Node | null): string | null {
-    const el = node instanceof ownerWindow.Element ? node : node?.parentElement;
+    const el = elementOf(node);
     const root = el?.closest("[data-pb-id]"); // NEAREST root — may be a nested block
     return resolve(root && canvas.contains(root) ? root.getAttribute("data-pb-id") : null);
   }
@@ -116,7 +168,7 @@ export function createBlockSelection({
     let active: string | null = null;
     if (canvas.contains(ownerDocument.activeElement) && sel?.rangeCount) {
       const rootAt = (node: Node | null) => {
-        const el = node instanceof ownerWindow.Element ? node : node?.parentElement;
+        const el = elementOf(node);
         const root = el?.closest("[data-pb-id]");
         return root && canvas.contains(root) ? root : null;
       };
@@ -137,7 +189,8 @@ export function createBlockSelection({
     // prevented-mousedown gestures (tree view, Cmd/Ctrl+click) must release
     // it here: the block is the focus of attention now.
     const focused = ownerDocument.activeElement;
-    if (focused instanceof ownerWindow.HTMLElement && canvas.contains(focused)) focused.blur();
+    if (focused && canvas.contains(focused) && typeof (focused as HTMLElement).blur === "function")
+      (focused as HTMLElement).blur();
   }
 
   // An explicit block selection is keyboard-active. Before the canvas moved
@@ -244,9 +297,9 @@ export function createBlockSelection({
     // search etc.), even while a block selection is up.
     const focused = ownerDocument.activeElement;
     if (
-      focused instanceof ownerWindow.HTMLElement &&
+      focused &&
       !canvas.contains(focused) &&
-      (focused.matches("input, textarea, select") || focused.isContentEditable)
+      (focused.matches("input, textarea, select") || (focused as HTMLElement).isContentEditable)
     )
       return;
 
@@ -285,7 +338,7 @@ export function createBlockSelection({
     target: EventTarget | Element | null,
     point?: { clientX: number; clientY: number },
   ): string | null {
-    const root = target instanceof ownerWindow.Element ? target.closest("[data-pb-id]") : null;
+    const root = elementOf(target)?.closest("[data-pb-id]") ?? null;
     return resolve(root && canvas.contains(root) ? root.getAttribute("data-pb-id") : null, point);
   }
 
@@ -329,7 +382,8 @@ export function createBlockSelection({
     // A prevented mousedown is an owned gesture (the appender claiming a
     // click on a container's surface) — never also a selection click.
     if (event.button !== 0 || event.defaultPrevented) return;
-    const targetId = rootIdOf(event.target, event);
+    const target = elementOf(event.target);
+    const targetId = rootIdOf(target, event);
     if (!targetId) return;
 
     // Cmd/Ctrl+click toggles individual blocks in and out of the selection —
@@ -380,9 +434,7 @@ export function createBlockSelection({
     // The zone BELOW a container's last child belongs to the appender (which
     // preventDefaults — caught above). Clicking an editable carrier releases
     // any explicit selection (the caret takes over).
-    const inCarrier =
-      event.target instanceof ownerWindow.Element &&
-      !!event.target.closest("[data-pb-text],[data-pb-rich]");
+    const inCarrier = !!target?.closest("[data-pb-text],[data-pb-rich]");
     if (isRaw(targetId) || isContainer(targetId) || !inCarrier) {
       // WE own this gesture — without preventDefault, Chromium's default
       // places a caret at the nearest TEXT position, which for a click on a
@@ -421,11 +473,10 @@ export function createBlockSelection({
   function onDocMouseDown(event: MouseEvent) {
     if (event.button !== 0 || event.defaultPrevented || !explicitIds.length) return;
     if (rootIdOf(event.target, event)) return; // clicks on blocks are handled in onMouseDown
-    if (
-      event.target instanceof ownerWindow.Element &&
-      event.target.closest("[data-pbe-keep-selection]")
-    )
-      return;
+    // The canvas itself is focusable so explicit block selections keep
+    // receiving keyboard commands. Its otherwise-empty surface is still
+    // background, not a control.
+    if (event.target !== canvas && targetsInteractiveControl(event)) return;
     clear();
   }
 

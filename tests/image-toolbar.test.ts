@@ -186,7 +186,8 @@ describe("chrome: the image floating toolbar", () => {
     host?.remove();
   });
 
-  const toolbar = () => host.querySelector<HTMLElement>(".pbe-toolbar")!;
+  const chrome = () => host.querySelector<HTMLElement>("[data-pbe-inline-chrome]")!.shadowRoot!;
+  const toolbar = () => chrome().querySelector<HTMLElement>(".pbe-toolbar")!;
   const byLabel = (label: string) =>
     toolbar().querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 
@@ -224,13 +225,13 @@ describe("chrome: the image floating toolbar", () => {
     editor.selectBlock("img1");
     await vi.waitFor(() => expect(byLabel("Replace")).toBeTruthy());
     byLabel("Replace")!.click();
-    const panel = host.querySelector<HTMLElement>(".pbe-replace")!;
+    const panel = chrome().querySelector<HTMLElement>(".pbe-replace")!;
     expect(panel.hidden).toBe(false);
     expect(panel.textContent).toContain("Insert from URL");
     expect(panel.textContent).toContain("Reset");
     expect(panel.querySelector("a")?.getAttribute("href")).toBe("/a.jpg");
     panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(document.activeElement).toBe(byLabel("Replace"));
+    expect(chrome().activeElement).toBe(byLabel("Replace"));
   });
 
   test("the Replace dropdown's Media Library entry browses with the CURRENT value", async () => {
@@ -245,7 +246,7 @@ describe("chrome: the image floating toolbar", () => {
     editor.selectBlock("img1");
     await vi.waitFor(() => expect(byLabel("Replace")).toBeTruthy());
     byLabel("Replace")!.click();
-    const panel = host.querySelector<HTMLElement>(".pbe-replace")!;
+    const panel = chrome().querySelector<HTMLElement>(".pbe-replace")!;
     // adapter affordances render alongside the built-ins, library first
     const items = [...panel.querySelectorAll("button, label")].map((b) => b.textContent!.trim());
     expect(items[0]).toBe("Media Library");
@@ -272,16 +273,16 @@ describe("chrome: the image floating toolbar", () => {
     editor.selectBlock("img1");
     await vi.waitFor(() => expect(byLabel("Replace")).toBeTruthy());
     byLabel("Replace")!.click();
-    const fileInput = host.querySelector<HTMLInputElement>(".pbe-replace input[type=file]")!;
+    const fileInput = chrome().querySelector<HTMLInputElement>(".pbe-replace input[type=file]")!;
     const dt = new DataTransfer();
     dt.items.add(new File(["x"], "swap.png", { type: "image/png" }));
     fileInput.files = dt.files;
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     // no placeholder card on a filled field — the floating pill is the feedback
-    await vi.waitFor(() => expect(host.querySelector(".pbe-media-busy")).toBeTruthy());
-    expect(host.querySelector(".pbe-media-busy")!.textContent).toContain("Uploading…");
+    await vi.waitFor(() => expect(chrome().querySelector(".pbe-media-busy")).toBeTruthy());
+    expect(chrome().querySelector(".pbe-media-busy")!.textContent).toContain("Uploading…");
     resolveUpload({ src: "/cms/media/swap.png", width: "5", height: "5" });
-    await vi.waitFor(() => expect(host.querySelector(".pbe-media-busy")).toBeNull());
+    await vi.waitFor(() => expect(chrome().querySelector(".pbe-media-busy")).toBeNull());
     expect(editor.getBlock("img1")!.fields.image).toMatchObject({ src: "/cms/media/swap.png" });
   });
 
@@ -291,10 +292,10 @@ describe("chrome: the image floating toolbar", () => {
     await vi.waitFor(() => expect(byLabel("Link")).toBeTruthy());
     const trigger = byLabel("Link")!;
     trigger.click();
-    const panel = host.querySelector<HTMLElement>(".pbe-link")!;
-    expect(panel.contains(document.activeElement)).toBe(true);
+    const panel = chrome().querySelector<HTMLElement>(".pbe-link")!;
+    expect(panel.contains(chrome().activeElement)).toBe(true);
     panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(document.activeElement).toBe(trigger);
+    expect(chrome().activeElement).toBe(trigger);
     expect(panel.hidden).toBe(true);
   });
 });

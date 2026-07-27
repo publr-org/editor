@@ -150,3 +150,12 @@ export async function toImageValue(
   }
   return { src: value.src, alt, width, height };
 }
+
+/** Normalize document metadata without dropping the host's opaque media id. */
+export async function toDocumentMediaValue(
+  value: MediaValue,
+  ctx: { file?: File; prevAlt?: string } = {},
+): Promise<MediaValue> {
+  const image = await toImageValue(value, ctx);
+  return { ...image, ...(value.id ? { id: value.id } : {}) };
+}

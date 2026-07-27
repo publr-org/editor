@@ -715,15 +715,36 @@ export function createEditor({
 
   // Vertical-only scroll: scrollIntoView has no "leave horizontal alone"
   // option, and its inline panning strands a wide canvas sideways with no
-  // gesture to bring it back. Snapshot every ancestor's scrollLeft, let the
-  // browser do the (instant) scroll, then put the horizontal axis back.
+  // gesture to bring it back. Snapshot every ancestor's scrollLeft — walking
+  // through same-origin iframe boundaries as well — let the browser do the
+  // instant vertical reveal, then put every horizontal axis back. The
+  // cross-frame walk matters in responsive comparison: selecting a projected
+  // desktop block must not pan the outer breakpoint stage toward the live
+  // iframe's previous position.
   function scrollBlockIntoView(el: Element, block: ScrollLogicalPosition = "nearest") {
     const saved: Array<[Element, number]> = [];
-    for (let n = el.parentElement; n; n = n.parentElement) saved.push([n, n.scrollLeft]);
-    const x = ownerWindow.scrollX;
+    const windows: Array<[Window, number]> = [];
+    const seenWindows = new Set<Window>();
+    let cursor: Element | null = el;
+    let view: Window | null = el.ownerDocument.defaultView;
+    while (cursor && view) {
+      for (let n = cursor.parentElement; n; n = n.parentElement) saved.push([n, n.scrollLeft]);
+      if (!seenWindows.has(view)) {
+        seenWindows.add(view);
+        windows.push([view, view.scrollX]);
+      }
+      try {
+        const frame = view.frameElement;
+        if (!frame) break;
+        cursor = frame;
+        view = frame.ownerDocument.defaultView;
+      } catch {
+        break; // a cross-origin embedding boundary cannot be inspected
+      }
+    }
     el.scrollIntoView({ block, inline: "nearest" });
     for (const [n, left] of saved) if (n.scrollLeft !== left) n.scrollLeft = left;
-    if (ownerWindow.scrollX !== x) ownerWindow.scrollTo(x, ownerWindow.scrollY);
+    for (const [win, left] of windows) if (win.scrollX !== left) win.scrollTo(left, win.scrollY);
   }
 
   // Where a fresh insert lands (call after renderCanvas): a CONTAINER selects
@@ -1067,18 +1088,12 @@ export function createEditor({
     ensureCanvasFocus();
   });
 
-  // The APPENDER: clicking below the last block appends an empty default
-  // block (its ghost prompt + the slash menu take it from there) — or
-  // refocuses a trailing empty one instead of stacking empties. Works on
-  // EVERY list: the root for clicks on the canvas itself, a container's
-  // children for clicks on the container's own surface below its last child
-  // (an empty container appends anywhere on its surface). Clicks in the gaps
-  // BETWEEN blocks are not ours — selection handles those, which is also why
-  // this runs in the CAPTURE phase and preventDefaults: block selection
-  // honors defaultPrevented, so an owned append never doubles as a
-  // select-the-container click. Modified clicks stay selection gestures.
-  // Hosts provide the root click area via canvas bottom padding; containers
-  // provide theirs via their own padding.
+  // The legacy surface APPENDER is retained as a narrow fallback when chrome
+  // is not mounted. Container padding is primarily the container's selection
+  // surface: only the 12px strip immediately after its last child (or along
+  // an empty container's bottom edge) may append. The visible chrome inserter
+  // uses the same edge-sized target. Root canvas padding keeps its historical
+  // behavior for hosts that use the core editor without chrome.
   canvas.addEventListener(
     "mousedown",
     (event) => {
@@ -1106,7 +1121,15 @@ export function createEditor({
 
       const last = list[list.length - 1] as Block | undefined;
       const lastRoot = last && rootOf(last.id);
-      if (lastRoot && event.clientY <= lastRoot.getBoundingClientRect().bottom) return;
+      if (lastRoot) {
+        const bottom = lastRoot.getBoundingClientRect().bottom;
+        if (event.clientY <= bottom) return;
+        if (containerId && event.clientY > bottom + 12) return;
+      } else if (containerId) {
+        const containerRoot = rootOf(containerId);
+        if (!containerRoot || event.clientY < containerRoot.getBoundingClientRect().bottom - 12)
+          return;
+      }
       event.preventDefault(); // we place the caret ourselves; also hands selection its keep-out signal
 
       const textish = defaultDef.fields.filter((f) => f.type === "text" || f.type === "rich");
@@ -1942,7 +1965,7 @@ export function createEditor({
     },
 
     /** Reset one role-grouped settings section in a single history entry. */
-    resetSettings(id: string, role: ControlRole): boolean {
+    resetSettings(id: string, role: ControlRole, breakpoint: StyleBreakpoint = "base"): boolean {
       const block = findBlock(id);
       const def = block && getBlockType(block.type);
       const mode = editingModeFor(id);
@@ -1953,6 +1976,7 @@ export function createEditor({
       );
       const changes = specs.filter((setting) => {
         if (setting.setting) return !!block.settings && setting.setting in block.settings;
+        if (setting.style) return !!styleBackend.read(block, setting.style, undefined, breakpoint);
         const field = def.fields.find((candidate) => candidate.name === setting.field);
         return (
           !!field && JSON.stringify(block.fields[field.name]) !== JSON.stringify(field.default)
@@ -1963,6 +1987,8 @@ export function createEditor({
         () => {
           for (const setting of changes) {
             if (setting.setting) delete block.settings?.[setting.setting];
+            else if (setting.style)
+              styleBackend.write(block, setting.style, "", "element", undefined, breakpoint);
             else {
               const field = def.fields.find((candidate) => candidate.name === setting.field)!;
               block.fields[field.name] = cloneValue(field.default);

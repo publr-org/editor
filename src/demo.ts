@@ -20,16 +20,20 @@
 import * as PublrEditor from "./index";
 import { probeWasmCssEngine } from "./wasm-engine";
 import preflightCss from "../vendor/jit/preflight.css?raw";
-import { registerCoreBlocks, registerCorePatterns } from "./blocks";
+import { registerCoreBlocks } from "./blocks";
 import { registerHomepagePatterns } from "./blocks/homepage-patterns";
+import siteCss from "./styles.css?inline";
 import "./styles.css";
 
 const {
   createEditorShell,
   DEFAULT_THEME,
+  HEARTH_THEME,
+  TAILWIND_COMPAT_THEME,
   inlineBackend,
+  getPattern,
+  PATTERN_ROOT_TYPE,
   probeCssEngine,
-  setActiveTheme,
   themeFromTokens,
 } = PublrEditor;
 
@@ -45,25 +49,40 @@ const fixtureFiles = import.meta.glob("../tests/manual/**/*.md", {
 
 // --- the demo SITE THEME (E1) -----------------------------------------------
 //
-// A site curates its theme; the full Tailwind default is what you start FROM.
-// This one picks a subset of the default (values stay 1:1 — picked, not
-// copied) plus one custom token, `color-brand`, which is also declared in
-// styles.css's @theme so the demo's build-time Tailwind resolves the brand
-// utilities (the wasm engine takes over that job in E3). Style controls
+// A site curates its theme. This one picks a subset of Publr's semantic default
+// (values stay 1:1 — picked, not copied). Style controls
 // derive their options from THIS document — add a token here (or via a
 // fixture's theme fence) and the matching control grows.
 const DEMO_PICK = new Set([
   "spacing",
+  "spacing-2xs",
+  "spacing-xs",
+  "spacing-s",
+  "spacing-m",
+  "spacing-l",
+  "spacing-xl",
+  "spacing-2xl",
   "text-sm",
   "text-base",
   "text-lg",
   "text-xl",
   "text-2xl",
-  "color-white",
-  "color-neutral-100",
-  "color-neutral-500",
-  "color-neutral-900",
-  "color-amber-300",
+  "text-3xl",
+  "text-4xl",
+  "text-5xl",
+  "text-6xl",
+  "text-7xl",
+  "font-sans",
+  "font-serif",
+  "color-surface",
+  "color-foreground",
+  "color-accent-surface",
+  "color-accent-foreground",
+  "color-accent-border",
+  "color-muted-surface",
+  "color-muted-foreground",
+  "color-muted-border",
+  "color-border",
   "radius-sm",
   "radius-md",
   "radius-lg",
@@ -74,12 +93,87 @@ const DEMO_PICK = new Set([
   "tracking-tight",
   "tracking-normal",
   "tracking-wide",
+  "container-content",
+  "container-wide",
+  "container-gutter",
 ]);
-const DEMO_THEME: PublrEditor.Theme = {
-  tokens: [
-    ...DEFAULT_THEME.tokens.filter((t) => DEMO_PICK.has(t.name)),
-    { name: "color-brand", value: "#3858e9" },
+
+const DEMO_TEMPLATE_STORAGE_KEY = "publr-editor.demo.templates.v1";
+const DEFAULT_DEMO_TEMPLATE =
+  '<div data-pb-block="template-part" data-pb-children data-publr-template-part="site-header"><script type="application/json" data-pb-settings>{"name":"site-header"}</script></div>' +
+  '<div data-pb-block="template-slot" data-publr-slot="content"><script type="application/json" data-pb-settings>{"name":"content"}</script><span>Content</span></div>' +
+  '<div data-pb-block="template-part" data-pb-children data-publr-template-part="site-footer"><script type="application/json" data-pb-settings>{"name":"site-footer"}</script></div>';
+const DEFAULT_DEMO_TEMPLATE_PARTS: Record<string, string> = {
+  "site-header":
+    '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="flex items-center justify-between border-b border-border px-8 py-5"><h2 data-pb-block="heading" data-pb-tag="level" data-pb-rich="text">Publr</h2><p data-pb-block="paragraph" data-pb-rich="body">Shared template header</p></div>',
+  "site-footer":
+    '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="border-t border-border px-8 py-5"><p data-pb-block="paragraph" data-pb-rich="body">Built with PublrEditor</p></div>',
+};
+type DemoTemplateState = {
+  template: string;
+  parts: Record<string, string>;
+};
+function loadDemoTemplateState(): DemoTemplateState {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(DEMO_TEMPLATE_STORAGE_KEY) ?? "null",
+    ) as Partial<DemoTemplateState> | null;
+    return {
+      template: typeof saved?.template === "string" ? saved.template : DEFAULT_DEMO_TEMPLATE,
+      parts: {
+        ...DEFAULT_DEMO_TEMPLATE_PARTS,
+        ...(saved?.parts && typeof saved.parts === "object" ? saved.parts : {}),
+      },
+    };
+  } catch {
+    return { template: DEFAULT_DEMO_TEMPLATE, parts: { ...DEFAULT_DEMO_TEMPLATE_PARTS } };
+  }
+}
+const demoTemplateState = loadDemoTemplateState();
+function persistDemoTemplateState(): void {
+  try {
+    localStorage.setItem(DEMO_TEMPLATE_STORAGE_KEY, JSON.stringify(demoTemplateState));
+  } catch {
+    // Storage can be unavailable in privacy modes; the in-memory registry
+    // still keeps templates working for the current session.
+  }
+}
+const demoTemplateTheme = () => ({
+  templates: [
+    {
+      name: "default",
+      label: "Default page",
+      description: "Shared header and footer around the document content.",
+      content: demoTemplateState.template,
+    },
   ],
+  templateParts: Object.entries(demoTemplateState.parts).map(([name, content]) => ({
+    name,
+    label: name === "site-header" ? "Site header" : "Site footer",
+    area: name === "site-header" ? ("header" as const) : ("footer" as const),
+    content,
+  })),
+});
+const DEMO_THEME: PublrEditor.Theme = {
+  tokens: HEARTH_THEME.tokens
+    .filter(
+      (token) =>
+        DEMO_PICK.has(token.name) ||
+        token.name.startsWith("color-brand-") ||
+        token.name.startsWith("color-inverse-"),
+    )
+    .map((token) =>
+      token.name === "font-serif"
+        ? { ...token, value: "Iowan Old Style, Palatino Linotype, Georgia, serif" }
+        : token,
+    ),
+  semanticColorRoles: HEARTH_THEME.semanticColorRoles?.map((role) => ({ ...role })),
+  colorContexts: HEARTH_THEME.colorContexts?.map((context) => ({ ...context })),
+  ...demoTemplateTheme(),
+};
+const DEFAULT_DEMO_THEME: PublrEditor.Theme = {
+  ...DEMO_THEME,
+  colorContexts: [{ key: "default", label: "Default" }],
 };
 
 // --- style backend switch (E2a) ----------------------------------------------
@@ -100,13 +194,12 @@ function refreshInlineThemeCss(): void {
 // the same public API a plugin would use. Patterns register second: their
 // fragments validate against the block registry.
 registerCoreBlocks();
-registerCorePatterns();
-// The Tailwind Plus homepage, sliced into per-section patterns (demo showcase
-// of Phase B patterns over real content — see poc-homepage fixture).
+// The demo theme owns a deliberate pattern vocabulary. Generic starter
+// recipes stay available through the library API but do not pollute this
+// site's governed pattern collection.
 registerHomepagePatterns();
 
-// The seed template rides index.html's own indentation — dedent so raw-html
-// passthroughs don't carry the page's formatting onto the wire.
+// Fixture fences ride Markdown indentation — normalize it before loading.
 const dedent = (html: string): string => {
   const lines = html.split("\n");
   const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^[ \t]*/)![0].length);
@@ -117,8 +210,24 @@ const dedent = (html: string): string => {
     .trim();
 };
 
-// --- ?media-adapter: a stand-in host media library ---------------------------
-// Exercises the MediaAdapter seam end-to-end without a CMS: upload() keeps
+function patternCompositionHtml(names: readonly string[]): string {
+  const documentRoot = document.createElement("div");
+  for (const name of names) {
+    const pattern = getPattern(name);
+    if (!pattern) throw new Error(`PublrEditor demo: fixture pattern "${name}" is not registered`);
+    const instance = document.createElement("div");
+    instance.setAttribute("data-pb-block", PATTERN_ROOT_TYPE);
+    instance.setAttribute("data-pb-pattern", name);
+    instance.setAttribute("data-pb-children", "");
+    instance.innerHTML = pattern.content;
+    documentRoot.appendChild(instance);
+  }
+  return documentRoot.innerHTML;
+}
+
+// --- stand-in host media library ---------------------------------------------
+// Exercises the MediaAdapter seam end-to-end in the plain editor, without a
+// CMS: upload() keeps
 // the file as an object URL (no service worker involved — the point is the
 // adapter path, not persistence), browse() opens a minimal picker overlay
 // with a few generated samples. Also the /verify harness's e2e hook.
@@ -189,17 +298,55 @@ function demoMediaAdapter(): PublrEditor.MediaAdapter {
 // would keep DOMContentLoaded from ever firing — a deadlock.
 void (async () => {
   const params = new URLSearchParams(location.search);
+  const fixtureId = params.get("fixture");
+  const fixtureMd =
+    fixtureId && /^[\w-]+(\/[\w-]+)+$/.test(fixtureId)
+      ? fixtureFiles[`../tests/manual/${fixtureId}.md`]
+      : undefined;
+  const templateWidth =
+    typeof fixtureMd === "string" && /^wide:\s*true\s*$/m.test(fixtureMd.split("```")[0])
+      ? "full"
+      : "content";
 
-  const shell = await createEditorShell({
+  let shell!: PublrEditor.EditorShell;
+  shell = await createEditorShell({
     container: document.getElementById("shell-mount")!,
-    theme: DEMO_THEME, // the demo SITE's curated theme (fixtures may override)
+    // Ordinary documents start with one semantic context. The commerce POC
+    // is itself a theme fixture and predefines the two additional contexts
+    // consumed by its patterns.
+    theme: fixtureId === "features/poc-homepage" ? DEMO_THEME : DEFAULT_DEMO_THEME,
+    templateWidth,
     styleBackend: INLINE_MODE ? inlineBackend : undefined, // ?inline (E2a)
     // Edit tracing in the console: ?debug in the URL, or `editor.debug = true`.
     debug: params.has("debug"),
-    wide: params.has("wide"),
-    // ?media-adapter: run the media surfaces through a stand-in host library.
-    media: params.has("media-adapter") ? demoMediaAdapter() : undefined,
+    // The plain editor owns a working stand-in library. A real host replaces
+    // this one adapter with its own upload()/browse() implementation; keeping
+    // it enabled here makes every media surface honest and testable by default.
+    media: demoMediaAdapter(),
+    // Document metadata is host-owned. The demo keeps it local, while the
+    // CMS maps the same callbacks to its title/featured-image fields and
+    // page actions.
+    document: {
+      title: fixtureId ? fixtureId.split("/").at(-1)!.replaceAll("-", " ") : "Hello, PublrEditor",
+      onFeaturedImageChange: (image) => console.info("[demo] featured image changed", image),
+      template: {
+        name: "default",
+        onSave: (_name, content) => {
+          demoTemplateState.template = content;
+          persistDemoTemplateState();
+        },
+        onSavePart: (name, content) => {
+          demoTemplateState.parts[name] = content;
+          persistDemoTemplateState();
+        },
+      },
+      actions: {
+        view: () => document.querySelector<HTMLButtonElement>("#preview")?.click(),
+        rename: (title) => console.info("[demo] document renamed", title),
+      },
+    },
     baseCss: preflightCss, // the Preview export's reset
+    siteCss, // the exact authored-content sheet used inside isolated previews
     engineLabel: INLINE_MODE ? "inline backend — no engine needed" : undefined,
     onThemeCss: refreshInlineThemeCss, // design-tab edits refresh the :root vars
   });
@@ -230,35 +377,38 @@ void (async () => {
   // the shell from tests/manual/<id>.md's ```html fence instead — the md
   // is inlined at build time (fixtureFiles), so a fixture URL is directly
   // shareable and works on the deployed static demo, not just `vp dev`.
-  const fixtureId = params.get("fixture");
   if (fixtureId && /^[\w-]+(\/[\w-]+)+$/.test(fixtureId)) {
-    const fixtureMd = fixtureFiles[`../tests/manual/${fixtureId}.md`];
     void (
       fixtureMd !== undefined ? Promise.resolve(fixtureMd) : Promise.reject(new Error("HTTP 404"))
     )
       .then((md) => {
         const fence = md.match(/^```html\r?\n([\s\S]*?)^```/m);
         if (!fence) throw new Error("no ```html fence");
-        // `wide: true` in the fixture frontmatter → full-bleed canvas
-        // (page-scale fixtures), without needing the ?wide URL param.
-        if (/^wide:\s*true\s*$/m.test(md.split("```")[0])) shell.setWide();
-        // Optional ```json fences configure the run: one with a `tokens`
-        // key is the SITE THEME (E1 — replaces the demo theme so a fixture
-        // can grow/shrink the control scales); any other is the editor
-        // POLICY — applied as config, never read off the fixture HTML
-        // (thoughts/010). JSON.parse tolerates the formatter's reflow;
-        // applied before load so the first render already carries both.
+        // Optional ```json fences configure the run: `tokens` replaces the
+        // site theme, `patterns` composes registered pattern definitions, and
+        // every other object is editor policy. JSON.parse tolerates the
+        // formatter's reflow; everything applies before the first render.
+        let fixturePatterns: string[] | undefined;
         for (const m of md.matchAll(/^```json\r?\n([\s\S]*?)^```/gm)) {
           try {
             const parsed: unknown = JSON.parse(m[1]);
             if (parsed && typeof parsed === "object" && "tokens" in parsed) {
-              // {"tokens": "default"} = the full vendored Tailwind default
-              // (fixtures carrying real-world templates need the whole
-              // palette, not the demo's curated subset).
-              const t = (parsed as { tokens: Record<string, string> | "default" }).tokens;
-              setActiveTheme(t === "default" ? DEFAULT_THEME : themeFromTokens(t));
-              refreshInlineThemeCss();
-              shell.syncDesignPanel();
+              // {"tokens": "tailwind"} explicitly enables the compatibility
+              // palette for fixtures carrying imported Tailwind templates.
+              const t = (parsed as { tokens: Record<string, string> | "default" | "tailwind" })
+                .tokens;
+              const nextTheme =
+                t === "tailwind"
+                  ? TAILWIND_COMPAT_THEME
+                  : t === "default"
+                    ? DEFAULT_THEME
+                    : themeFromTokens(t);
+              shell.applyTheme({ ...nextTheme, ...demoTemplateTheme() });
+            } else if (parsed && typeof parsed === "object" && "patterns" in parsed) {
+              const names = (parsed as { patterns: unknown }).patterns;
+              if (!Array.isArray(names) || names.some((name) => typeof name !== "string"))
+                throw new Error('"patterns" must be an array of registered pattern names');
+              fixturePatterns = names;
             } else {
               editor.setPolicy(parsed as PublrEditor.PolicyConfig);
             }
@@ -266,7 +416,9 @@ void (async () => {
             console.warn("[manual] ignoring invalid json fence:", e);
           }
         }
-        editor.loadHtml(dedent(fence[1]));
+        editor.loadHtml(
+          fixturePatterns ? patternCompositionHtml(fixturePatterns) : dedent(fence[1]),
+        );
         // Compile the loaded content NOW (belt-and-suspenders vs the
         // probe/load race): if the engine is already up, style it
         // immediately instead of waiting for the next edit.

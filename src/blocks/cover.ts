@@ -134,8 +134,8 @@ export const definition: BlockDefinition = {
     return (
       `<${tag} data-pb-block="cover" data-pb-tag="tag" class="pbe-cover relative isolate flex overflow-hidden p-4${height}${parallax ? " [clip-path:inset(0)]" : ""}">` +
       `<img data-pb-image="image" src="${escAttr(img.src ?? "")}" alt="${escAttr(img.alt ?? "")}"${dims} class="${parallax ? "fixed" : "absolute"} inset-0 -z-20 h-full w-full object-cover">` +
-      `<span class="absolute inset-0 -z-10 bg-black ${dim}" aria-hidden="true"></span>` +
-      `<div data-pb-children class="relative flex flex-1 flex-col gap-3 text-white ${pos}"></div></${tag}>`
+      `<span class="absolute inset-0 -z-10 bg-foreground ${dim}" aria-hidden="true"></span>` +
+      `<div data-pb-children class="relative flex flex-1 flex-col gap-3 text-surface ${pos}"></div></${tag}>`
     );
   },
 };

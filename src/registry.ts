@@ -20,8 +20,8 @@ import {
 } from "./carriers";
 import type { CarrierKind, FieldValue } from "./carriers";
 import { MARK_NAMES } from "./format";
-import { blockSupportsStyle } from "./style";
-import type { StyleSupports, StyleVariation } from "./style";
+import { STYLE_PROPS, blockSupportsStyle } from "./style";
+import type { StyleSupports, StyleVariant } from "./style";
 
 /** What a render receives: the block's fields, any of which may be absent. */
 export type Fields = Record<string, FieldValue | undefined>;
@@ -64,11 +64,13 @@ const TOOLBAR_GROUPS: readonly ToolbarGroup[] = ["parent", "block", "inline", "o
  * (a carrier declares that a field exists, not which values it may take).
  * Exactly one binding per setting:
  * - `field`: the control writes that field (editor.setField) — e.g. a
- *   heading's `level` tag carrier offering h1…h6. toggle-group and text
+ *   heading's `level` tag carrier offering h1…h6. toggle-group, select, and text
  *   (string-kinded fields — a link/text carrier's URL or label).
  * - `transform: true`: the options are block TYPES and picking one switches
  *   the whole block (editor.transformBlock) — e.g. group ⇄ row/stack/grid.
  *   toggle-group only.
+ * - `style`: the control writes a universal style property through the active
+ *   responsive breakpoint (for example Group's visual layout mode).
  * - `setting`: an ISLAND-bound value name (editor.setSetting) — the value
  *   lives in the block's data-pb-settings island, not in any DOM carrier.
  *   Legal on every control kind; REQUIRES a `default` typed per kind.
@@ -92,6 +94,7 @@ export interface SettingSpec {
   readonly field?: string;
   readonly transform?: boolean;
   readonly setting?: string;
+  readonly style?: string;
   /** The island value when the document carries none — required with `setting`. */
   readonly default?: unknown;
   readonly options?: readonly SettingOption[];
@@ -107,6 +110,7 @@ export interface SettingSpec {
   readonly when?: {
     readonly field?: string;
     readonly setting?: string;
+    readonly style?: string;
     readonly equals?: unknown;
     readonly notEquals?: unknown;
   };
@@ -143,6 +147,7 @@ export type ToolbarControl =
   | "setting-options"
   | "transform-options"
   | "toggle-setting"
+  | "toggle-style"
   | "add-child"
   | "copy"
   | "text"
@@ -160,6 +165,8 @@ export interface ToolbarSpec {
   readonly label: string;
   /** Icon NAME the chrome resolves against its icon set; icon-only trigger when set. */
   readonly icon?: string;
+  /** Alternate icon shown while a toggle control is active. */
+  readonly activeIcon?: string;
   /** Field carrier the control targets — "replace" (image) / "caption" (rich). */
   readonly field?: string;
   /** Island setting the control writes — "link" (href) / "caption" (visibility). */
@@ -176,6 +183,8 @@ export interface ToolbarSpec {
   readonly type?: string;
   /** Universal style property written by style-options. */
   readonly style?: string;
+  /** Style value toggled by toggle-style. */
+  readonly value?: string;
 }
 
 const TOOLBAR_CONTROLS: readonly ToolbarControl[] = [
@@ -187,6 +196,7 @@ const TOOLBAR_CONTROLS: readonly ToolbarControl[] = [
   "setting-options",
   "transform-options",
   "toggle-setting",
+  "toggle-style",
   "add-child",
   "copy",
   "text",
@@ -203,6 +213,7 @@ const TOOLBAR_KEYS: Record<ToolbarControl, readonly string[]> = {
   "setting-options": ["setting", "options"],
   "transform-options": ["options"],
   "toggle-setting": ["setting"],
+  "toggle-style": ["style", "value", "activeIcon"],
   "add-child": ["type"],
   copy: ["field"],
   text: ["field", "setting"],
@@ -210,11 +221,21 @@ const TOOLBAR_KEYS: Record<ToolbarControl, readonly string[]> = {
 };
 
 // Keys each control kind may carry beyond { control, label } — anything else
-// is rejected, including the field/transform bindings outside toggle-group.
+// is rejected, including transform bindings outside toggle-group.
 const SPEC_KEYS: Record<SettingControl, readonly string[]> = {
-  "toggle-group": ["field", "transform", "setting", "default", "options", "role", "help", "when"],
-  toggle: ["setting", "default", "role", "help", "when"],
-  select: ["setting", "default", "options", "role", "help", "when"],
+  "toggle-group": [
+    "field",
+    "transform",
+    "setting",
+    "style",
+    "default",
+    "options",
+    "role",
+    "help",
+    "when",
+  ],
+  toggle: ["setting", "style", "default", "role", "help", "when"],
+  select: ["field", "setting", "style", "default", "options", "role", "help", "when"],
   text: ["setting", "field", "default", "placeholder", "role", "help", "when"],
   number: ["setting", "default", "min", "max", "step", "role", "help", "when"],
   media: ["field", "role", "help", "when"],
@@ -264,6 +285,11 @@ export interface BlockDefinition {
    */
   internal?: boolean;
   /**
+   * Offered by inserters only while the full shell is editing a page
+   * template/template part. Unlike `internal`, authors may insert it there.
+   */
+  templateOnly?: boolean;
+  /**
    * A transparent wrapper: real in the editor (identity, options, a place
    * for chrome to hang off) but NO published output — the data pipeline
    * unwraps it, its children take its place. Requires a children slot.
@@ -292,10 +318,10 @@ export interface BlockDefinition {
    */
   supports?: StyleSupports;
   /**
-   * Named style VARIATIONS (Phase C / C6): the "Styles" panel — each a label +
-   * a class-set the user can pick (e.g. Display, Subtitle). Per block TYPE.
+   * Named visual variants: each is a label plus a structured style recipe.
+   * Values reference governed theme keys (e.g. `textColor: "foreground"`).
    */
-  variations?: StyleVariation[];
+  variants?: StyleVariant[];
   /**
    * A CSS selector (scoped to the block's own subtree) naming the element
    * authored classes attach to when the render ROOT is a wrapper. Default: the
@@ -333,14 +359,15 @@ export interface BlockType {
   readonly allowedChildren?: readonly string[];
   readonly childTemplate?: readonly string[];
   readonly internal?: boolean;
+  readonly templateOnly?: boolean;
   readonly phantom?: boolean;
   readonly noSplit?: readonly string[];
   /** Permitted inline marks (absent = all, `[]` = plain text) — see BlockDefinition. */
   readonly allowedFormats?: readonly string[];
   /** Style panels this block opts into (Phase C) — see BlockDefinition.supports. */
   readonly supports?: StyleSupports;
-  /** Named style variations (Phase C / C6) — see BlockDefinition.variations. */
-  readonly variations?: readonly StyleVariation[];
+  /** Named visual variants — see BlockDefinition.variants. */
+  readonly variants?: readonly StyleVariant[];
   /** Selector for the authored-class target when the root is a wrapper — see BlockDefinition.classTarget. */
   readonly classTarget?: string;
   readonly fields: readonly FieldSpec[];
@@ -382,11 +409,12 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
         "allowedChildren",
         "childTemplate",
         "internal",
+        "templateOnly",
         "phantom",
         "noSplit",
         "allowedFormats",
         "supports",
-        "variations",
+        "variants",
         "classTarget",
       ].includes(key)
     )
@@ -404,6 +432,8 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
     fail(ctx, "icon must be a non-empty string");
   if ("internal" in def && typeof def.internal !== "boolean")
     fail(ctx, "internal must be a boolean");
+  if ("templateOnly" in def && typeof def.templateOnly !== "boolean")
+    fail(ctx, "templateOnly must be a boolean");
   if ("phantom" in def && typeof def.phantom !== "boolean") fail(ctx, "phantom must be a boolean");
   const typeList = (key: "allowedChildren" | "childTemplate" | "noSplit") => {
     if (!(key in def)) return undefined;
@@ -444,6 +474,8 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
     color: ["text", "background"],
     spacing: [
       "padding",
+      "paddingInline",
+      "paddingBlock",
       "paddingTop",
       "paddingRight",
       "paddingBottom",
@@ -463,6 +495,10 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
       "alignItems",
       "flexWrap",
       "gridColumns",
+      "layoutMode",
+      "containerEnabled",
+      "containerWidth",
+      "containerBleed",
     ],
     border: ["width", "color", "radius", "style"],
   };
@@ -525,23 +561,35 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
     ) as StyleSupports;
   }
 
-  // variations (C6): named class-sets. Each { name (unique), label, class }.
-  let variations: readonly StyleVariation[] | undefined;
-  if ("variations" in def) {
-    if (!Array.isArray(def.variations) || !def.variations.length)
-      fail(ctx, "variations must be a non-empty array");
+  // Variants: named structured style recipes. Utilities are deliberately not
+  // accepted here—the style system owns their private serialized form.
+  let variants: readonly StyleVariant[] | undefined;
+  if ("variants" in def) {
+    if (!Array.isArray(def.variants) || !def.variants.length)
+      fail(ctx, "variants must be a non-empty array");
     const seen = new Set<string>();
-    variations = Object.freeze(
-      def.variations.map((v, i) => {
-        const vc = `variations[${i}]`;
+    variants = Object.freeze(
+      def.variants.map((v, i) => {
+        const vc = `variants[${i}]`;
         if (v === null || typeof v !== "object") fail(ctx, `${vc} must be an object`);
         if (typeof v.name !== "string" || !NAME.test(v.name))
           fail(ctx, `${vc}: name must be a lowercase name`);
         if (typeof v.label !== "string" || !v.label) fail(ctx, `${vc}: label is required`);
-        if (typeof v.class !== "string") fail(ctx, `${vc}: class must be a string`);
-        if (seen.has(v.name)) fail(ctx, `${vc}: duplicate variation "${v.name}"`);
+        if (v.styles === null || typeof v.styles !== "object" || Array.isArray(v.styles))
+          fail(ctx, `${vc}: styles must be an object`);
+        for (const [prop, value] of Object.entries(v.styles)) {
+          if (!(prop in STYLE_PROPS)) fail(ctx, `${vc}: unknown style "${prop}"`);
+          if (typeof value !== "string" || !value) {
+            fail(ctx, `${vc}: style "${prop}" must be a non-empty string`);
+          }
+        }
+        if (seen.has(v.name)) fail(ctx, `${vc}: duplicate variant "${v.name}"`);
         seen.add(v.name);
-        return Object.freeze({ name: v.name, label: v.label, class: v.class });
+        return Object.freeze({
+          name: v.name,
+          label: v.label,
+          styles: Object.freeze({ ...v.styles }),
+        });
       }),
     );
   }
@@ -661,22 +709,33 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
           if (typeof s.when !== "object" || Array.isArray(s.when))
             fail(ctx, `${sctx}: when must be an object`);
           for (const key of Object.keys(s.when))
-            if (!["field", "setting", "equals", "notEquals"].includes(key))
+            if (!["field", "setting", "style", "equals", "notEquals"].includes(key))
               fail(ctx, `${sctx}.when: unknown key "${key}"`);
-          if (Number(s.when.field != null) + Number(s.when.setting != null) !== 1)
-            fail(ctx, `${sctx}.when requires exactly one field or setting`);
+          if (
+            Number(s.when.field != null) +
+              Number(s.when.setting != null) +
+              Number(s.when.style != null) !==
+            1
+          )
+            fail(ctx, `${sctx}.when requires exactly one field, setting or style`);
           if (Number("equals" in s.when) + Number("notEquals" in s.when) !== 1)
             fail(ctx, `${sctx}.when requires exactly one equals or notEquals value`);
         }
 
-        // Exactly one binding. field/transform are toggle-group-only (their
-        // keys are rejected above elsewhere), so the other kinds reduce to
-        // "setting is required".
+        // Exactly one binding. Transform is toggle-group-only; fields are
+        // available to controls whose value has a direct carrier form.
         const bindsField = s.field != null;
         const bindsTransform = s.transform != null;
         const bindsIsland = s.setting != null;
-        if (Number(bindsField) + Number(bindsTransform) + Number(bindsIsland) !== 1)
-          fail(ctx, `${sctx}: exactly one of "field", "transform" or "setting" is required`);
+        const bindsStyle = s.style != null;
+        if (
+          Number(bindsField) + Number(bindsTransform) + Number(bindsIsland) + Number(bindsStyle) !==
+          1
+        )
+          fail(
+            ctx,
+            `${sctx}: exactly one of "field", "transform", "setting" or "style" is required`,
+          );
         if (bindsField) {
           const target = fields.find((f) => f.name === s.field);
           if (!target)
@@ -690,6 +749,14 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
             fail(ctx, `${sctx}: a "media" control requires an image-kinded field`);
         }
         if (bindsTransform && s.transform !== true) fail(ctx, `${sctx}: transform must be true`);
+        if (bindsStyle && (typeof s.style !== "string" || !blockSupportsStyle(supports, s.style)))
+          fail(ctx, `${sctx}: style "${String(s.style)}" is not supported by this block`);
+        if (bindsStyle && "default" in s) {
+          if (typeof s.default !== "string" || !s.default)
+            fail(ctx, `${sctx}: a style default must be a non-empty string`);
+          if (control === "toggle" && s.default !== "true" && s.default !== "false")
+            fail(ctx, `${sctx}: a style toggle default must be "true" or "false"`);
+        }
         if (bindsIsland) {
           if (typeof s.setting !== "string" || !s.setting)
             fail(ctx, `${sctx}: setting must be a non-empty string`);
@@ -724,8 +791,9 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
           );
         }
 
-        // Per-kind default typing (island bindings only — field/transform
-        // derive their current value from the block, never from a default).
+        // Per-kind default typing. Island values need defaults for their sparse
+        // settings carrier; style-bound controls may declare a presentation
+        // fallback used when no responsive class has been authored.
         if (bindsIsland) {
           const d = s.default;
           if (control === "toggle" && typeof d !== "boolean")
@@ -750,6 +818,13 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
               fail(ctx, `${sctx}: the default must sit within [min, max]`);
           }
         }
+        if (
+          bindsStyle &&
+          "default" in s &&
+          (control === "toggle-group" || control === "select") &&
+          !options!.some((option) => option.value === s.default)
+        )
+          fail(ctx, `${sctx}: the style default must be one of the option values`);
         if (control === "text" && "placeholder" in s && typeof s.placeholder !== "string")
           fail(ctx, `${sctx}: placeholder must be a string`);
 
@@ -759,6 +834,12 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
           ...(bindsField ? { field: s.field } : {}),
           ...(bindsTransform ? { transform: true as const } : {}),
           ...(bindsIsland ? { setting: s.setting, default: s.default } : {}),
+          ...(bindsStyle
+            ? {
+                style: s.style,
+                ...("default" in s ? { default: s.default } : {}),
+              }
+            : {}),
           ...(options ? { options } : {}),
           ...(control === "text" && s.placeholder != null ? { placeholder: s.placeholder } : {}),
           ...(control === "number" && s.min != null ? { min: s.min } : {}),
@@ -771,6 +852,7 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
                 when: Object.freeze({
                   ...(s.when.field != null ? { field: s.when.field } : {}),
                   ...(s.when.setting != null ? { setting: s.when.setting } : {}),
+                  ...(s.when.style != null ? { style: s.when.style } : {}),
                   ...("equals" in s.when ? { equals: s.when.equals } : {}),
                   ...("notEquals" in s.when ? { notEquals: s.when.notEquals } : {}),
                 }),
@@ -791,6 +873,8 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
         !settings.some((candidate) => candidate.setting === setting.when!.setting)
       )
         fail(ctx, `settings[${i}].when: setting "${setting.when.setting}" is not declared`);
+      if (setting.when.style && !blockSupportsStyle(supports, setting.when.style))
+        fail(ctx, `settings[${i}].when: style "${setting.when.style}" is not supported`);
     }
   }
 
@@ -833,6 +917,8 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
         if (typeof t.label !== "string" || !t.label) fail(ctx, `${tctx}: label is required`);
         if (t.icon != null && (typeof t.icon !== "string" || !t.icon))
           fail(ctx, `${tctx}: icon must be a non-empty string`);
+        if (t.activeIcon != null && (typeof t.activeIcon !== "string" || !t.activeIcon))
+          fail(ctx, `${tctx}: activeIcon must be a non-empty string`);
         if (t.group != null && !TOOLBAR_GROUPS.includes(t.group))
           fail(ctx, `${tctx}: unknown group "${String(t.group)}"`);
         if (t.role != null && !CONTROL_ROLES.includes(t.role))
@@ -937,33 +1023,44 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
           (typeof t.style !== "string" || !blockSupportsStyle(supports, t.style))
         )
           fail(ctx, `${tctx}: style "${String(t.style)}" is not supported by this block`);
+        if (
+          control === "toggle-style" &&
+          (typeof t.style !== "string" || !blockSupportsStyle(supports, t.style))
+        )
+          fail(ctx, `${tctx}: style "${String(t.style)}" is not supported by this block`);
+        if (control === "toggle-style" && (typeof t.value !== "string" || !t.value))
+          fail(ctx, `${tctx}: a "toggle-style" control requires a non-empty value`);
 
         const inferredRole: ControlRole =
           control === "text-align"
             ? "design"
             : control === "style-options"
               ? "design"
-              : control === "transform-options"
-                ? "structure"
-                : control === "add-child"
+              : control === "toggle-style"
+                ? "design"
+                : control === "transform-options"
                   ? "structure"
-                  : control === "field-options"
-                    ? fieldTarget?.type === "tag"
-                      ? "structure"
-                      : "content"
-                    : control === "setting-options" || control === "toggle-setting"
-                      ? islandRole(t.setting)
-                      : "content";
+                  : control === "add-child"
+                    ? "structure"
+                    : control === "field-options"
+                      ? fieldTarget?.type === "tag"
+                        ? "structure"
+                        : "content"
+                      : control === "setting-options" || control === "toggle-setting"
+                        ? islandRole(t.setting)
+                        : "content";
 
         return Object.freeze({
           control,
           label: t.label,
           ...(t.icon != null ? { icon: t.icon } : {}),
+          ...(t.activeIcon != null ? { activeIcon: t.activeIcon } : {}),
           ...(t.field != null ? { field: t.field } : {}),
           ...(t.setting != null ? { setting: t.setting } : {}),
           ...(t.targetSetting != null ? { targetSetting: t.targetSetting } : {}),
           ...(t.type != null ? { type: t.type } : {}),
           ...(t.style != null ? { style: t.style } : {}),
+          ...(t.value != null ? { value: t.value } : {}),
           ...(options ? { options } : {}),
           group: t.group ?? (control === "replace" ? "other" : "block"),
           role: t.role ?? inferredRole,
@@ -984,11 +1081,12 @@ export function registerBlock(type: string, def: BlockDefinition): BlockType {
     ...(allowedChildren ? { allowedChildren } : {}),
     ...(childTemplate ? { childTemplate } : {}),
     ...(def.internal ? { internal: true } : {}),
+    ...(def.templateOnly ? { templateOnly: true } : {}),
     ...(def.phantom ? { phantom: true } : {}),
     ...(noSplit ? { noSplit } : {}),
     ...(allowedFormats !== undefined ? { allowedFormats } : {}),
     ...(supports ? { supports } : {}),
-    ...(variations ? { variations } : {}),
+    ...(variants ? { variants } : {}),
     ...(classTarget ? { classTarget } : {}),
     fields: Object.freeze(fields),
     islandSettings,

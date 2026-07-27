@@ -124,8 +124,45 @@ function normalizeValue(value: FieldValue, kind: CarrierKind, carrier: Element):
   return tmp.innerHTML.trim();
 }
 
+/** Pre-responsive Group containers lived in the settings island and their
+ * semantic classes were normally supplied by render(). Pattern source can
+ * contain only that island, so lift the old values into the new responsive
+ * class carrier before the undeclared island keys are discarded. */
+function legacyGroupContainerClasses(el: Element, type: string | null): string[] {
+  if (type !== "group") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(scopedSettingsIsland(el)?.textContent ?? "{}");
+  } catch {
+    return [];
+  }
+  if (parsed === null || typeof parsed !== "object") return [];
+  const settings = parsed as Record<string, unknown>;
+  if (settings.isContainer !== true) return [];
+  const width = settings.containerWidth === "content" ? "content" : "wide";
+  const bleed =
+    settings.containerBleed === "left" ||
+    settings.containerBleed === "right" ||
+    settings.containerBleed === "both"
+      ? settings.containerBleed
+      : "none";
+  return [
+    "pbe-container--on",
+    `pbe-container--${width}`,
+    ...(bleed === "none" ? [] : [`pbe-container--bleed-${bleed}`]),
+  ];
+}
+
 function upcastElement(el: Element): Block {
-  const type = el.getAttribute("data-pb-block");
+  const sourceType = el.getAttribute("data-pb-block");
+  // Pre-unified container markup remains loadable, but immediately becomes
+  // the one Group model with its former type represented as layout classes.
+  const legacyLayout =
+    !getBlockType(sourceType ?? "") &&
+    (sourceType === "row" || sourceType === "stack" || sourceType === "grid")
+      ? sourceType
+      : null;
+  const type = legacyLayout ? "group" : sourceType;
   const def = type ? getBlockType(type) : null;
 
   if (!type || !def) {
@@ -183,9 +220,19 @@ function upcastElement(el: Element): Block {
   // <img class="h-11"> — the root matches the "img" target — or the inner img
   // of an already-rendered figure).
   const baseline = new Set(baselineClasses(def, block.fields, renderSettings(def, block.settings)));
-  block.classes = classList(classTargetEl(el, def).getAttribute("class"))
-    .filter((c) => !baseline.has(c))
-    .join(" ");
+  const authoredClasses = classList(classTargetEl(el, def).getAttribute("class")).filter(
+    (c) => c !== "[&>*]:flex-1" && c !== "pbe-grid--2",
+  );
+  for (const cls of legacyGroupContainerClasses(el, type))
+    if (!authoredClasses.includes(cls)) authoredClasses.push(cls);
+  if (legacyLayout === "row" && !authoredClasses.includes("flex")) authoredClasses.push("flex");
+  if (legacyLayout === "row" && !authoredClasses.includes("flex-row"))
+    authoredClasses.push("flex-row");
+  if (legacyLayout === "stack" && !authoredClasses.includes("flex")) authoredClasses.push("flex");
+  if (legacyLayout === "stack" && !authoredClasses.includes("flex-col"))
+    authoredClasses.push("flex-col");
+  if (legacyLayout === "grid" && !authoredClasses.includes("grid")) authoredClasses.push("grid");
+  block.classes = authoredClasses.filter((c) => !baseline.has(c)).join(" ");
   return block;
 }
 
@@ -194,9 +241,20 @@ export function upcast(rootEl: Element): Model {
   return { blocks: [...rootEl.children].map(upcastElement) };
 }
 
-/** Render one block to a detached element: render output + stamped identity. */
-export function blockToElement(block: Block): HTMLElement | null {
-  const tmp = document.createElement("div");
+/**
+ * Render one block to a detached element: render output + stamped identity.
+ *
+ * `ownerDocument` matters when the editor canvas lives in a same-origin
+ * iframe. Creating the roots in the parent document and then adopting them
+ * into the frame leaves their JavaScript wrappers in the parent realm. DOM
+ * events inside the frame then fail the frame's `Element` checks, so typing
+ * (including the `/` inserter trigger) never reaches the model.
+ */
+export function blockToElement(
+  block: Block,
+  ownerDocument: Document = document,
+): HTMLElement | null {
+  const tmp = ownerDocument.createElement("div");
 
   if (block.type === RAW_TYPE) {
     tmp.innerHTML = str(block.fields?.html);
@@ -224,7 +282,7 @@ export function blockToElement(block: Block): HTMLElement | null {
   // sparse convention on the wire. First child of the root (upcast tolerates
   // it anywhere scoped to the root; children append after, so it stays first).
   if (block.settings && Object.keys(block.settings).length) {
-    const island = document.createElement("script");
+    const island = ownerDocument.createElement("script");
     island.setAttribute("type", "application/json");
     island.setAttribute("data-pb-settings", "");
     island.textContent = escJsonScript(JSON.stringify(block.settings));
@@ -246,7 +304,7 @@ export function blockToElement(block: Block): HTMLElement | null {
     const slot = scopedChildrenSlot(root);
     if (slot) {
       for (const child of block.children) {
-        const childEl = blockToElement(child);
+        const childEl = blockToElement(child, ownerDocument);
         if (childEl) slot.appendChild(childEl);
       }
     } else if (block.children.length) {

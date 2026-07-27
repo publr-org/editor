@@ -96,7 +96,7 @@ export const definition: BlockDefinition = {
     const showCaption =
       settings === undefined || settings.showCaption === true || caption.trim() !== "";
     const figcaption = showCaption
-      ? `<figcaption data-pb-rich="caption" class="mt-1.5 text-center text-sm text-neutral-500">${caption}</figcaption>`
+      ? `<figcaption data-pb-rich="caption" class="mt-1.5 text-center text-sm text-muted-foreground">${caption}</figcaption>`
       : "";
     return `<figure data-pb-block="video"><video data-pb-image="video" src="${escAttr(v.src ?? "")}" alt="${escAttr(v.alt ?? "")}"${dims}${attrs}${poster} class="block w-full"></video>${figcaption}</figure>`;
   },

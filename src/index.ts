@@ -46,6 +46,25 @@ import {
   registerPattern,
   unregisterPattern,
 } from "./patterns";
+import {
+  TEMPLATE_PART_TYPE,
+  TEMPLATE_SLOT_TYPE,
+  TEMPLATE_SLOTS,
+  getTemplate,
+  getTemplatePart,
+  hydrateTemplateParts,
+  publishTemplate,
+  publishTemplatePart,
+  registerTemplate,
+  registerTemplatePart,
+  renderTemplate,
+  renderTemplateContent,
+  resolveTemplate,
+  templatePartTypes,
+  templateTypes,
+  unregisterTemplate,
+  unregisterTemplatePart,
+} from "./templates";
 import { blockTypes, getBlockType, registerBlock, unregisterBlock } from "./registry";
 import { CORE_PATTERNS, registerCoreBlocks, registerCorePatterns } from "./blocks";
 import { blockToElement, downcast, upcast } from "./cast";
@@ -56,6 +75,7 @@ import { DEFAULT_BLOCK_POLICY, resolveBlockPolicy, resolveRootPolicy } from "./p
 import { ICONS, iconRef, iconSvg, mountIconSprite } from "./icons";
 import {
   ALIGN_ITEMS,
+  BREAKPOINT_CONFIGURATION_TOKEN,
   BORDER_STYLES,
   DECORATIONS,
   FONT_STYLES,
@@ -64,33 +84,52 @@ import {
   JUSTIFY_CONTENT,
   LETTER_CASES,
   STYLE_PROPS,
+  STYLE_BREAKPOINTS,
   TEXT_ALIGNMENTS,
   blockSupportsStyle,
   patchStyleClasses,
   readStyleClass,
+  responsiveContainerCss,
+  styleBreakpoints,
   styleClasses,
   unresolvedUtilities,
+  variantClasses,
   variationClasses,
 } from "./style";
 import { classesBackend, inlineBackend } from "./style-backend";
 import { collectClasses, httpCssEngine, probeCssEngine, runtimeThemeCss } from "./css-engine";
 import {
   BORDER_WIDTH_STEPS,
+  CONTAINER_WIDTH_DEFAULTS,
   DEFAULT_THEME,
+  HEARTH_THEME,
+  SITE_TYPOGRAPHY_DEFAULTS,
+  TAILWIND_COMPAT_THEME,
+  DEFAULT_SPACING_TOKENS,
   SPACING_STEPS,
   activeTheme,
+  colorContexts,
   colors,
+  containerWidths,
+  semanticColorRoles,
+  semanticColors,
   fontSizes,
   hasToken,
+  isTailwindCompatibilityColor,
   leadings,
+  paletteTokens,
   radii,
   setActiveTheme,
   spacingBase,
+  spacings,
+  themeBaseCss,
   themeFromCssText,
   themeFromTokens,
   themeToCssText,
   tokenValue,
   trackings,
+  withHearthDefaults,
+  withTailwindCompatibility,
 } from "./theme";
 import { flattenBlocks, locateBlock, pathToBlock } from "./tree";
 import {
@@ -141,6 +180,25 @@ export {
   comparePatternVersions,
   bumpPatternVersion,
   diffPatternContent,
+  // Templates — shared page structure, shared template-part references, and
+  // document-value slots. Unlike patterns these are never stamped copies.
+  TEMPLATE_PART_TYPE,
+  TEMPLATE_SLOT_TYPE,
+  TEMPLATE_SLOTS,
+  registerTemplate,
+  unregisterTemplate,
+  getTemplate,
+  templateTypes,
+  publishTemplate,
+  resolveTemplate,
+  renderTemplate,
+  renderTemplateContent,
+  registerTemplatePart,
+  unregisterTemplatePart,
+  getTemplatePart,
+  templatePartTypes,
+  publishTemplatePart,
+  hydrateTemplateParts,
   blockToElement,
   downcast,
   upcast,
@@ -186,12 +244,17 @@ export {
   FLEX_WRAPS,
   JUSTIFY_CONTENT,
   ALIGN_ITEMS,
+  BREAKPOINT_CONFIGURATION_TOKEN,
   BORDER_STYLES,
   STYLE_PROPS,
+  STYLE_BREAKPOINTS,
+  responsiveContainerCss,
+  styleBreakpoints,
   // Lenses over the class carrier + the pluggable style backends (E2).
   readStyleClass,
   patchStyleClasses,
   unresolvedUtilities,
+  variantClasses,
   variationClasses,
   classesBackend,
   inlineBackend,
@@ -200,7 +263,11 @@ export {
   httpCssEngine,
   probeCssEngine,
   runtimeThemeCss,
+  CONTAINER_WIDTH_DEFAULTS,
+  SITE_TYPOGRAPHY_DEFAULTS,
   DEFAULT_THEME,
+  HEARTH_THEME,
+  TAILWIND_COMPAT_THEME,
   activeTheme,
   setActiveTheme,
   themeFromTokens,
@@ -208,28 +275,62 @@ export {
   themeToCssText,
   tokenValue,
   hasToken,
+  isTailwindCompatibilityColor,
+  paletteTokens,
   fontSizes,
   colors,
+  containerWidths,
+  colorContexts,
+  semanticColorRoles,
+  semanticColors,
   radii,
   leadings,
   trackings,
+  spacings,
   spacingBase,
+  themeBaseCss,
+  DEFAULT_SPACING_TOKENS,
   SPACING_STEPS,
   BORDER_WIDTH_STEPS,
+  withHearthDefaults,
+  withTailwindCompatibility,
 };
 
 export type { Block, CarrierKind, FieldValue, ImageValue, Model } from "./carriers";
 export type {
+  TemplateDefinition,
+  TemplatePartDefinition,
+  TemplatePartType,
+  TemplateSlotValues,
+  TemplateSlotName,
+  TemplateType,
+} from "./templates";
+export type {
   StyleCapability,
+  StyleBreakpoint,
+  StyleBreakpointDefinition,
   StyleSupport,
   StyleSupports,
   StyleValues,
+  StyleVariant,
   StyleVariation,
   UnresolvedUtility,
 } from "./style";
 export type { StyleBackend, StyleScope } from "./style-backend";
 export type { CssEngine, CssEngineResult } from "./css-engine";
-export type { ColorOption, ScaleOption, Theme, ThemeToken } from "./theme";
+export type {
+  ColorOption,
+  ColorContextDefinition,
+  ContainerWidths,
+  ScaleOption,
+  SemanticColorRoleDefinition,
+  SemanticColorOption,
+  Theme,
+  ThemeTemplateDefinition,
+  ThemeTemplatePartDefinition,
+  ThemePatternDefinition,
+  ThemeToken,
+} from "./theme";
 export type { DowncastPipeline } from "./cast";
 export type {
   BlockDefinition,
@@ -245,10 +346,19 @@ export type {
 } from "./registry";
 export type { EditingMode, Editor, EditorOptions } from "./editor";
 export type { MediaAdapter, MediaValue } from "./media-adapter";
-export type { EditorShell, EditorShellOptions, ShellAction, ShellPanel } from "./shell";
+export type {
+  EditorShell,
+  EditorShellOptions,
+  ShellAction,
+  ShellDocumentAction,
+  ShellDocumentActions,
+  ShellDocumentConfig,
+  ShellDocumentRenameAction,
+  ShellPanel,
+} from "./shell";
 export type { PatternDefinition, PatternType } from "./patterns";
 export type { BlockPolicy, EditorPolicy, PolicyConfig, RootPolicy } from "./policy";
-export type { InlineChromeOptions } from "./chrome-inline";
+export type { InlineChromeOptions, InlineInsertionPlacement } from "./chrome-inline";
 export type { HistoryFlags } from "./history";
 export type { SelectionState } from "./selection";
 export type { LocatedBlock, SiblingRun } from "./tree";
@@ -281,6 +391,23 @@ if (typeof window !== "undefined" && window.Publr) {
     patternTypes,
     isPatternContentBlock,
     patternContentBlocks,
+    TEMPLATE_PART_TYPE,
+    TEMPLATE_SLOT_TYPE,
+    TEMPLATE_SLOTS,
+    registerTemplate,
+    unregisterTemplate,
+    getTemplate,
+    templateTypes,
+    publishTemplate,
+    resolveTemplate,
+    renderTemplate,
+    renderTemplateContent,
+    registerTemplatePart,
+    unregisterTemplatePart,
+    getTemplatePart,
+    templatePartTypes,
+    publishTemplatePart,
+    hydrateTemplateParts,
     upcast,
     downcast,
     blockToElement,

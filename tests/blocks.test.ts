@@ -29,7 +29,7 @@ const ISLAND = (json: string) =>
 describe("the text-wave library: registration metadata", () => {
   test("every core block registers; the library is the inserter's vocabulary", () => {
     for (const [type] of coreBlocks) expect(getBlockType(type)).toBeDefined();
-    expect(coreBlocks).toHaveLength(37); // 36 content blocks + the phantom pattern root
+    expect(coreBlocks).toHaveLength(36); // includes template part + slot authoring blocks
   });
 
   test("every insertable core block declares its toolbar behavior explicitly", () => {
@@ -100,7 +100,11 @@ describe("the text-wave library: cast round trips", () => {
     expect(m.blocks[4].settings).toEqual({ fixedLayout: false });
     expect(m.blocks[5].settings).toEqual({ open: true, name: "faq" });
     expect(m.blocks[5].children!.map((b) => b.type)).toEqual(["paragraph"]);
-    expect(m.blocks[7].settings).toEqual({ reversed: true, start: 5, type: "A" });
+    expect(m.blocks[7].settings).toEqual({
+      reversed: true,
+      start: 5,
+      type: "A",
+    });
     expect(m.blocks[7].children!.map((b) => b.type)).toEqual(["list-item", "list-item"]);
     expect(m.blocks[7].fields.tag).toBe("ol");
 
@@ -139,7 +143,11 @@ describe("the text-wave library: editor semantics", () => {
   function setup(html = "") {
     canvas = document.createElement("main");
     document.body.appendChild(canvas);
-    editor = createEditor({ canvas, defaultBlock: "paragraph", groupBlock: "group" });
+    editor = createEditor({
+      canvas,
+      defaultBlock: "paragraph",
+      groupBlock: "group",
+    });
     editor.loadHtml(html);
     return editor;
   }
@@ -158,7 +166,11 @@ describe("the text-wave library: editor semantics", () => {
 
   const pressEnter = (el: HTMLElement) =>
     el.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
     );
 
   test("a fresh list seeds one list-item (childTemplate), not a paragraph", () => {
@@ -215,7 +227,11 @@ describe("the text-wave library: editor semantics", () => {
     sel.removeAllRanges();
     sel.addRange(range);
     el.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: "Backspace",
+        bubbles: true,
+        cancelable: true,
+      }),
     );
     expect(editor.getModel().blocks[0].children!.map((b) => b.id)).toEqual(["b_1"]);
     teardown();
@@ -312,7 +328,12 @@ describe("the media-wave library (story #337)", () => {
       ),
     );
     expect(m.blocks[0].type).toBe("image");
-    expect(m.blocks[0].fields.image).toEqual({ src: "/x.png", alt: "X", width: "", height: "" });
+    expect(m.blocks[0].fields.image).toEqual({
+      src: "/x.png",
+      alt: "X",
+      width: "",
+      height: "",
+    });
     const gen1 = downcast(m);
     expect(gen1).toContain("<figure");
     expect(upcast(parse(gen1))).toEqual(m);
@@ -364,27 +385,107 @@ describe("the design-wave library (story #338)", () => {
     expect(getBlockType("accordion")!.allowedChildren).toEqual(["accordion-item"]);
   });
 
-  test("the container family carries the group's tagName as a tag carrier (story #370)", () => {
-    for (const t of ["group", "row", "stack", "grid"]) {
-      const def = getBlockType(t)!;
-      expect(def.fields, t).toEqual([{ name: "tag", type: "tag", default: "div" }]);
-      const el = def.settings!.find((s) => s.field === "tag")!;
-      expect(el.control, t).toBe("toggle-group");
-      expect(el.options!.map((o) => o.value)).toEqual([
-        "div",
-        "header",
-        "main",
-        "section",
-        "article",
-        "aside",
-        "footer",
-        // Beyond the semantic basics: real-world layout containers (nav link rows, dl
-        // stat grids — the Tailwind Plus stress fixture uses three dl groups).
-        // Admission to the allowlist is what makes a tag's round-trip exact.
-        "nav",
-        "dl",
-      ]);
-    }
+  test("Group owns responsive Group / Row / Stack / Grid layouts and the tag carrier", () => {
+    const def = getBlockType("group")!;
+    expect(getBlockType("row")).toBeUndefined();
+    expect(getBlockType("stack")).toBeUndefined();
+    expect(getBlockType("grid")).toBeUndefined();
+    expect(def.fields).toEqual([{ name: "tag", type: "tag", default: "div" }]);
+    const layout = def.settings!.find((s) => s.style === "layoutMode")!;
+    expect(layout.options!.map((option) => option.value)).toEqual([
+      "group",
+      "row",
+      "stack",
+      "grid",
+    ]);
+    expect(def.settings!.find((s) => s.style === "containerEnabled")).toMatchObject({
+      control: "toggle",
+      default: "false",
+    });
+    const width = def.settings!.find((s) => s.style === "containerWidth")!;
+    expect(width.default).toBe("wide");
+    expect(width.when).toEqual({ style: "containerEnabled", equals: "true" });
+    expect(width.options!.map((option) => option.value)).toEqual(["content", "wide"]);
+    expect(width.options!.map((option) => option.icon)).toEqual([
+      "container-width",
+      "container-width",
+    ]);
+    const bleed = def.settings!.find((s) => s.style === "containerBleed")!;
+    expect(bleed.default).toBe("none");
+    expect(bleed.when).toEqual({ style: "containerEnabled", equals: "true" });
+    expect(bleed.options!.map((option) => option.value)).toEqual(["none", "left", "right", "both"]);
+    expect(bleed.options!.map((option) => option.icon)).toEqual([
+      "bleed-none",
+      "bleed-left",
+      "bleed-right",
+      "bleed-both",
+    ]);
+    const layoutToolbar = def.toolbar?.filter((control) =>
+      ["justifyContent", "alignItems", "flexWrap"].includes(control.style ?? ""),
+    );
+    expect(layoutToolbar?.map((control) => control.icon)).toEqual([
+      "justify-start",
+      "align-stretch",
+      "wrap-none",
+    ]);
+    expect(layoutToolbar?.[2]).toMatchObject({
+      control: "toggle-style",
+      activeIcon: "wrap",
+      style: "flexWrap",
+      value: "wrap",
+    });
+    const el = def.settings!.find((s) => s.field === "tag")!;
+    expect(el.control).toBe("select");
+    expect(el.options!.map((o) => o.value)).toEqual([
+      "div",
+      "header",
+      "main",
+      "section",
+      "article",
+      "aside",
+      "footer",
+      "nav",
+      "dl",
+    ]);
+  });
+
+  test("legacy Group container settings migrate to responsive semantic classes", () => {
+    const authored =
+      `<section data-pb-block="group" data-pb-id="outer" data-pb-tag="tag" data-pb-children>` +
+      `${ISLAND('{"isContainer":true,"containerWidth":"content","containerBleed":"right"}')}` +
+      `<p data-pb-block="paragraph" data-pb-id="copy" data-pb-rich="body">Copy</p>` +
+      `</section>`;
+    const model = upcast(parse(authored));
+    expect(model.blocks[0].settings).toBeUndefined();
+    expect(model.blocks[0].classes?.split(/\s+/)).toEqual([
+      "pbe-container--on",
+      "pbe-container--content",
+      "pbe-container--bleed-right",
+    ]);
+
+    const wire = downcast(model);
+    const root = parse(wire).querySelector<HTMLElement>('[data-pb-id="outer"]')!;
+    expect(root.classList).toContain("pbe-container--on");
+    expect(root.classList).toContain("pbe-container--content");
+    expect(root.classList).toContain("pbe-container--bleed-right");
+    expect(upcast(parse(wire))).toEqual(model);
+
+    const published = downcast(model, "data");
+    const publishedRoot = parse(published).querySelector<HTMLElement>("section")!;
+    expect(publishedRoot.classList).toContain("pbe-container--content");
+    expect(publishedRoot.classList).toContain("pbe-container--bleed-right");
+    expect(publishedRoot.querySelector("[data-pb-settings]")).toBeNull();
+  });
+
+  test("legacy container types load as Group layout values", () => {
+    const model = upcast(
+      parse(
+        '<div data-pb-block="row" data-pb-children class="flex flex-row [&>*]:flex-1"><p data-pb-block="paragraph" data-pb-rich="body">One</p></div>',
+      ),
+    );
+    expect(model.blocks[0].type).toBe("group");
+    expect(model.blocks[0].classes?.split(/\s+/)).toEqual(["flex", "flex-row"]);
+    expect(getBlockType("group")?.supports?.layout?.layoutMode).toBe(true);
   });
 
   test("the round-trip law holds for the design wave, settings included", () => {
@@ -514,7 +615,11 @@ describe("the media control kind (story #366)", () => {
       registerBlock("probe", { label: "P", settings, render } as any);
     // valid: image field
     const def = reg([{ control: "media", label: "Pic", field: "pic" }], () => IMG);
-    expect(def.settings![0]).toEqual({ control: "media", label: "Pic", field: "pic" });
+    expect(def.settings![0]).toEqual({
+      control: "media",
+      label: "Pic",
+      field: "pic",
+    });
     unregisterBlock("probe");
     // rejected: string-kinded field
     expect(() =>
@@ -531,7 +636,7 @@ describe("the media control kind (story #366)", () => {
     unregisterBlock("probe");
     // rejected: unbound
     expect(() => reg([{ control: "media", label: "P" }], () => IMG)).toThrow(
-      /exactly one of "field", "transform" or "setting"/,
+      /exactly one of "field", "transform", "setting" or "style"/,
     );
   });
 

@@ -25,16 +25,22 @@ describe("toolbar visual parity", () => {
     canvas = document.createElement("main");
     host.appendChild(canvas);
     document.body.appendChild(host);
-    editor = createEditor({ canvas, defaultBlock: "paragraph", groupBlock: "group" });
+    editor = createEditor({
+      canvas,
+      defaultBlock: "paragraph",
+      groupBlock: "group",
+    });
     editor.loadHtml(
       `<h2 data-pb-block="heading" data-pb-id="heading" data-pb-tag="level" data-pb-rich="text">Deploy with confidence</h2>` +
-        `<div data-pb-block="row" data-pb-id="row" data-pb-tag="tag" data-pb-children><p data-pb-block="paragraph" data-pb-rich="body">One</p><p data-pb-block="paragraph" data-pb-rich="body">Two</p></div>` +
+        `<div data-pb-block="group" data-pb-id="row" data-pb-tag="tag" class="flex flex-row" data-pb-children><p data-pb-block="paragraph" data-pb-rich="body">One</p><p data-pb-block="paragraph" data-pb-rich="body">Two</p></div>` +
         `<figure data-pb-block="image" data-pb-id="image"><img data-pb-image="image" src="/sample.jpg" alt="Sample"><figcaption data-pb-rich="caption">Caption</figcaption></figure>` +
         `<div data-pb-block="accordion" data-pb-id="accordion" data-pb-children><details data-pb-block="accordion-item"><summary data-pb-rich="title">Question</summary><div data-pb-children></div></details></div>`,
     );
     detach = attachInlineChrome(editor, { container: host });
 
-    const toolbar = host.querySelector<HTMLElement>(".pbe-toolbar")!;
+    const toolbar = host
+      .querySelector<HTMLElement>("[data-pbe-inline-chrome]")!
+      .shadowRoot!.querySelector<HTMLElement>(".pbe-toolbar")!;
     for (const [id, snapshot] of [
       ["heading", "toolbar-text"],
       ["row", "toolbar-layout"],
@@ -47,6 +53,13 @@ describe("toolbar visual parity", () => {
         comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
       });
     }
+
+    editor.selectBlock("row");
+    editor.setStyle("row", "flexWrap", "wrap");
+    await vi.waitFor(() => expect(toolbar.hidden).toBe(false));
+    await expect.element(page.elementLocator(toolbar)).toMatchScreenshot("toolbar-layout-wrapped", {
+      comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+    });
 
     host.style.width = "360px";
     editor.selectBlock("image");
@@ -74,23 +87,35 @@ describe("toolbar visual parity", () => {
       next.src = `/index.html?visual-inspector=${width}`;
       await loaded;
       const doc = next.contentDocument!;
+      const editorFrame = doc.querySelector<HTMLIFrameElement>("#editor-frame")!;
+      const canvasDoc = editorFrame.contentDocument!;
       const frameEvent = (name: string) => {
         const event = doc.createEvent("Event");
         event.initEvent(name, true, false);
         return event;
       };
-      await vi.waitFor(() => expect(doc.querySelector("#canvas [data-pb-id]")).toBeTruthy(), {
+      await vi.waitFor(() => expect(canvasDoc.querySelector("#canvas [data-pb-id]")).toBeTruthy(), {
         timeout: 10_000,
       });
-      const heading = doc.querySelector<HTMLElement>('[data-pb-block="heading"]')!;
+      const heading = canvasDoc.querySelector<HTMLElement>('[data-pb-block="heading"]')!;
+      const demoEditor = (next.contentWindow as unknown as { Publr: { editor: Editor } }).Publr
+        .editor;
+      expect(demoEditor.serialize()).toContain("Hello, PublrEditor");
+      expect(demoEditor.getModel().blocks.some((block) => block.pattern)).toBe(false);
+      expect(canvasDoc.querySelector("#canvas")?.getAttribute("data-pbe-template-width")).toBe(
+        "content",
+      );
       heading.focus();
-      const range = doc.createRange();
+      const range = canvasDoc.createRange();
       range.selectNodeContents(heading);
       range.collapse(false);
-      const selection = next.contentWindow!.getSelection()!;
+      const selection = editorFrame.contentWindow!.getSelection()!;
       selection.removeAllRanges();
       selection.addRange(range);
-      doc.dispatchEvent(new Event("selectionchange"));
+      const selectionEvent = canvasDoc.createEvent("Event");
+      selectionEvent.initEvent("selectionchange", true, false);
+      canvasDoc.dispatchEvent(selectionEvent);
+      demoEditor.selectBlock(heading.dataset.pbId!, { toggle: true });
       await vi.waitFor(() =>
         expect(doc.querySelector("#block-card-title")?.textContent).toBe("Heading"),
       );
@@ -104,7 +129,8 @@ describe("toolbar visual parity", () => {
       const marginTop = doc.querySelector<HTMLButtonElement>(
         '.pbe-box-model__value[data-kind="margin"][data-side="Top"]',
       )!;
-      const currentHeading = () => doc.querySelector<HTMLElement>('[data-pb-block="heading"]')!;
+      const currentHeading = () =>
+        canvasDoc.querySelector<HTMLElement>('[data-pb-block="heading"]')!;
       marginTop.click();
       await vi.waitFor(() =>
         expect(
@@ -115,6 +141,39 @@ describe("toolbar visual parity", () => {
             .getAttribute("aria-pressed"),
         ).toBe("true"),
       );
+      const spacingPane = () => doc.querySelector<HTMLElement>(".pbe-spacing-pane")!;
+      expect(spacingPane().classList.contains("hidden")).toBe(false);
+      marginTop.click();
+      await vi.waitFor(() => expect(spacingPane().classList.contains("hidden")).toBe(true));
+      marginTop.click();
+      await vi.waitFor(() => expect(spacingPane().classList.contains("hidden")).toBe(false));
+      doc.querySelector<HTMLButtonElement>('.pbe-spacing-pane__sync[data-mode="pair"]')!.click();
+      await vi.waitFor(() =>
+        expect(
+          doc
+            .querySelector<HTMLButtonElement>(
+              '.pbe-box-model__value[data-kind="margin"][data-side="Bottom"]',
+            )!
+            .getAttribute("aria-pressed"),
+        ).toBe("true"),
+      );
+      doc.querySelector<HTMLButtonElement>('.pbe-spacing-pane__sync[data-mode="pair"]')!.click();
+      doc
+        .querySelector<HTMLButtonElement>(
+          '.pbe-box-model__value[data-kind="margin"][data-side="Right"]',
+        )!
+        .dispatchEvent(
+          new doc.defaultView!.MouseEvent("click", {
+            bubbles: true,
+            shiftKey: true,
+          }),
+        );
+      await vi.waitFor(() =>
+        expect(doc.querySelector(".pbe-spacing-pane__header")?.textContent).toContain(
+          "Margin top, right",
+        ),
+      );
+      marginTop.click();
       const beforeSpacing = currentHeading().outerHTML;
       const boxScale = doc.querySelector<HTMLInputElement>(
         '.pbe-box-model__control input[type="range"]',
@@ -124,20 +183,33 @@ describe("toolbar visual parity", () => {
       boxScale.dispatchEvent(frameEvent("change"));
       await vi.waitFor(() => expect(currentHeading().outerHTML).not.toBe(beforeSpacing));
       const appliedSpacing = currentHeading().outerHTML;
-      const arbitraryInput = doc.querySelector<HTMLInputElement>(
-        ".pbe-box-model__control .pbe-scale__editor",
+      const customToggle = doc.querySelector<HTMLButtonElement>(
+        ".pbe-spacing-pane__custom-toggle",
       )!;
+      customToggle.click();
+      await vi.waitFor(() =>
+        expect(
+          doc.querySelector<HTMLElement>(".pbe-spacing-pane__custom")?.classList.contains("hidden"),
+        ).toBe(false),
+      );
+      const arbitraryInput = doc.querySelector<HTMLInputElement>(
+        '.pbe-spacing-pane__custom input[type="number"]',
+      )!;
+      const arbitraryUnit = doc.querySelector<HTMLSelectElement>(
+        ".pbe-spacing-pane__custom select",
+      )!;
+      arbitraryUnit.value = "px";
       arbitraryInput.focus();
-      arbitraryInput.value = "18px";
+      arbitraryInput.value = "18";
       arbitraryInput.dispatchEvent(frameEvent("change"));
       await vi.waitFor(() => expect(currentHeading().outerHTML).not.toBe(appliedSpacing));
       const arbitraryMargin = currentHeading().outerHTML;
+      expect(arbitraryInput.value).toBe("18");
+      customToggle.click();
       const resetArbitrary = doc.querySelector<HTMLInputElement>(
-        ".pbe-box-model__control .pbe-scale__editor",
+        '.pbe-spacing-pane__row:not(.pbe-spacing-pane__custom) input[type="range"]',
       )!;
-      expect(resetArbitrary.value).toBe("18px");
-      resetArbitrary.focus();
-      resetArbitrary.value = "";
+      resetArbitrary.value = "0";
       resetArbitrary.dispatchEvent(frameEvent("change"));
       await vi.waitFor(() => expect(currentHeading().outerHTML).not.toBe(arbitraryMargin));
 
@@ -160,12 +232,14 @@ describe("toolbar visual parity", () => {
 
       const liveHeading = currentHeading();
       liveHeading.focus();
-      const liveRange = doc.createRange();
+      const liveRange = canvasDoc.createRange();
       liveRange.selectNodeContents(liveHeading);
       liveRange.collapse(false);
       selection.removeAllRanges();
       selection.addRange(liveRange);
-      doc.dispatchEvent(frameEvent("selectionchange"));
+      const liveSelectionEvent = canvasDoc.createEvent("Event");
+      liveSelectionEvent.initEvent("selectionchange", true, false);
+      canvasDoc.dispatchEvent(liveSelectionEvent);
       await vi.waitFor(() =>
         expect(doc.querySelector("#block-card-title")?.textContent).toBe("Heading"),
       );
@@ -175,16 +249,12 @@ describe("toolbar visual parity", () => {
       await vi.waitFor(() =>
         expect(doc.querySelector<HTMLElement>("#block-styles")!.offsetParent).toBeTruthy(),
       );
-      expect(doc.querySelector<HTMLElement>("#block-dimensions")!.offsetParent).toBeTruthy();
-      expect(boxModel.offsetParent).toBeTruthy();
+      // Dense controls stay collapsed until requested; the default screenshot
+      // exercises the compact inspector rather than a scrolled box model.
+      expect(doc.querySelector<HTMLDetailsElement>("#block-dimensions")!.open).toBe(false);
       expect(doc.querySelector('.pbe-scale__input[data-prop="lineHeight"]')).toBeTruthy();
       const sidebar = doc.querySelector<HTMLElement>("#sidebar")!;
       sidebar.scrollTop = 0;
-      await new Promise<void>((resolve) =>
-        next.contentWindow!.requestAnimationFrame(() => resolve()),
-      );
-      sidebar.scrollTop =
-        boxModel.getBoundingClientRect().top - sidebar.getBoundingClientRect().top - 72;
       await new Promise<void>((resolve) =>
         next.contentWindow!.requestAnimationFrame(() => resolve()),
       );
@@ -201,6 +271,248 @@ describe("toolbar visual parity", () => {
       await page.viewport(600, 900);
       frame = await loadDemo(430);
       await expect.element(page.elementLocator(frame)).toMatchScreenshot("inspector-narrow", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+      });
+    } finally {
+      frame?.remove();
+    }
+  });
+
+  test("the homepage fixture alone boots from the registered pattern composition", async () => {
+    const frame = document.createElement("iframe");
+    frame.width = "1180";
+    frame.height = "760";
+    frame.style.cssText = "display:block;border:0";
+    document.body.appendChild(frame);
+    try {
+      const loaded = new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("demo iframe timed out")), 10_000);
+        frame.addEventListener("load", () => {
+          window.clearTimeout(timer);
+          resolve();
+        });
+      });
+      frame.src = "/index.html?fixture=features/poc-homepage";
+      await loaded;
+      const demoEditor = (frame.contentWindow as unknown as { Publr: { editor: Editor } }).Publr
+        .editor;
+      await vi.waitFor(
+        () =>
+          expect(demoEditor.getModel().blocks.map((block) => block.pattern)).toEqual([
+            "home-hero",
+            "home-giveaway",
+            "home-steps",
+            "home-community",
+            "home-categories",
+          ]),
+        { timeout: 10_000 },
+      );
+      expect(demoEditor.history.undoDepth).toBe(0);
+      expect(demoEditor.serialize()).not.toContain("Hello, PublrEditor");
+      expect(
+        frame.contentDocument
+          ?.querySelector<HTMLIFrameElement>("#editor-frame")
+          ?.contentDocument?.querySelector("#canvas")
+          ?.getAttribute("data-pbe-template-width"),
+      ).toBe("full");
+    } finally {
+      frame.remove();
+    }
+  });
+
+  test("site typography is edited against a representative long-form specimen", async () => {
+    const frame = document.createElement("iframe");
+    frame.width = "1400";
+    frame.height = "900";
+    frame.style.cssText = "display:block;border:0";
+    document.body.appendChild(frame);
+    try {
+      await page.viewport(1440, 940);
+      const loaded = new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("demo iframe timed out")), 10_000);
+        frame.addEventListener("load", () => {
+          window.clearTimeout(timer);
+          resolve();
+        });
+      });
+      frame.src = "/index.html?visual-typography";
+      await loaded;
+
+      const doc = frame.contentDocument!;
+      await vi.waitFor(
+        () =>
+          expect(
+            doc
+              .querySelector<HTMLIFrameElement>("#editor-frame")
+              ?.contentDocument?.querySelector("#canvas [data-pb-id]"),
+          ).toBeTruthy(),
+        { timeout: 10_000 },
+      );
+      doc.querySelector<HTMLButtonElement>("#design-system-toggle")!.click();
+      await vi.waitFor(() =>
+        expect(
+          doc.querySelector<HTMLElement>("[data-design-styles-panel]")!.offsetParent,
+        ).toBeTruthy(),
+      );
+      const stylesPanel = doc.querySelector<HTMLElement>("[data-design-styles-panel]")!;
+      expect(stylesPanel.textContent).toContain("Library");
+      expect(stylesPanel.textContent).toContain("Semantic layer");
+      expect(stylesPanel.textContent).toContain("Defaults");
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("theme-styles", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0 },
+      });
+
+      const shellRoot = doc.querySelector<HTMLElement>("#editor-shell")!;
+      shellRoot.classList.remove("dark");
+      await new Promise<void>((resolve) =>
+        frame.contentWindow!.requestAnimationFrame(() => resolve()),
+      );
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("theme-styles-light", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0 },
+      });
+
+      const lightTokensNav = doc.querySelector<HTMLButtonElement>('[data-page="advanced"]')!;
+      lightTokensNav.click();
+      await vi.waitFor(() => expect(lightTokensNav.getAttribute("aria-current")).toBe("true"));
+      await expect
+        .element(page.elementLocator(frame))
+        .toMatchScreenshot("theme-token-library-light", {
+          comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+        });
+      doc.querySelector<HTMLButtonElement>('[aria-label="Back to styles"]')!.click();
+      const lightAssetsNav = doc.querySelector<HTMLButtonElement>('[data-page="assets"]')!;
+      lightAssetsNav.click();
+      await vi.waitFor(() => expect(lightAssetsNav.getAttribute("aria-current")).toBe("true"));
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("theme-assets-light", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+      });
+      doc.querySelector<HTMLButtonElement>('[aria-label="Back to styles"]')!.click();
+
+      const lightContainersNav = doc.querySelector<HTMLButtonElement>('[data-page="containers"]')!;
+      lightContainersNav.click();
+      await vi.waitFor(() => expect(lightContainersNav.getAttribute("aria-current")).toBe("true"));
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("theme-containers-light", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0 },
+      });
+      doc.querySelector<HTMLButtonElement>('[aria-label="Back to styles"]')!.click();
+
+      const lightBreakpointsNav = doc.querySelector<HTMLButtonElement>(
+        '[data-page="breakpoints"]',
+      )!;
+      lightBreakpointsNav.click();
+      await vi.waitFor(() => expect(lightBreakpointsNav.getAttribute("aria-current")).toBe("true"));
+      await expect
+        .element(page.elementLocator(frame))
+        .toMatchScreenshot("theme-breakpoints-light", {
+          comparatorOptions: { allowedMismatchedPixelRatio: 0 },
+        });
+      doc.querySelector<HTMLButtonElement>('[aria-label="Back to styles"]')!.click();
+      shellRoot.classList.add("dark");
+
+      const typographyNav = doc.querySelector<HTMLButtonElement>('[data-page="typography"]')!;
+      typographyNav.click();
+      await vi.waitFor(() => {
+        expect(typographyNav.getAttribute("aria-current")).toBe("true");
+        expect(
+          doc.querySelector<HTMLElement>('[data-design-preview="typography"] article')!
+            .offsetParent,
+        ).toBeTruthy();
+        expect(
+          doc.querySelector<HTMLButtonElement>(
+            '[data-design-controls="typography"] [data-name="publr-body-font-size"][data-value="var(--text-lg)"]',
+          )!.offsetParent,
+        ).toBeTruthy();
+      });
+      await new Promise<void>((resolve) =>
+        frame.contentWindow!.requestAnimationFrame(() => resolve()),
+      );
+      expect(
+        getComputedStyle(
+          doc.querySelector<HTMLElement>('[data-design-preview="typography"] article')!,
+        ).backgroundColor,
+      ).toBe("rgb(255, 255, 255)");
+
+      await expect
+        .element(page.elementLocator(frame))
+        .toMatchScreenshot("theme-element-typography", {
+          comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+        });
+
+      doc.querySelector<HTMLButtonElement>('[aria-label="Back to styles"]')!.click();
+      const semanticNav = doc.querySelector<HTMLButtonElement>('[data-page="foundations"]')!;
+      semanticNav.click();
+      await vi.waitFor(() => expect(semanticNav.getAttribute("aria-current")).toBe("true"));
+      doc
+        .querySelector<HTMLButtonElement>(
+          '[data-design-controls="foundations"] [aria-expanded="false"]',
+        )!
+        .click();
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("theme-semantic-colors", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0 },
+      });
+
+      doc.querySelector<HTMLButtonElement>('[aria-label="Back to styles"]')!.click();
+      const tokensNav = doc.querySelector<HTMLButtonElement>('[data-page="advanced"]')!;
+      tokensNav.click();
+      await vi.waitFor(() => expect(tokensNav.getAttribute("aria-current")).toBe("true"));
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("theme-token-library", {
+        comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+      });
+    } finally {
+      frame.remove();
+    }
+  });
+
+  test("layout inspector choices stay icon-led at sidebar width", async () => {
+    let frame: HTMLIFrameElement | null = null;
+    try {
+      await page.viewport(1400, 1000);
+      frame = document.createElement("iframe");
+      frame.width = "1180";
+      frame.height = "960";
+      frame.style.cssText = "display:block;border:0";
+      document.body.appendChild(frame);
+      const loaded = new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("demo iframe timed out")), 10_000);
+        frame!.addEventListener("load", () => {
+          window.clearTimeout(timer);
+          resolve();
+        });
+      });
+      frame.src = "/index.html?visual-layout-icons";
+      await loaded;
+
+      const doc = frame.contentDocument!;
+      const editorFrame = doc.querySelector<HTMLIFrameElement>("#editor-frame")!;
+      await vi.waitFor(
+        () =>
+          expect(editorFrame.contentDocument?.querySelector("#canvas [data-pb-id]")).toBeTruthy(),
+        { timeout: 10_000 },
+      );
+      const demoEditor = (frame.contentWindow as unknown as { Publr: { editor: Editor } }).Publr
+        .editor;
+      demoEditor.loadHtml(
+        '<div data-pb-block="group" data-pb-id="layout-icons" data-pb-children class="flex flex-row"><p data-pb-block="paragraph" data-pb-rich="body">One</p><p data-pb-block="paragraph" data-pb-rich="body">Two</p></div>',
+      );
+      demoEditor.selectBlock("layout-icons", { toggle: true });
+
+      await vi.waitFor(() => {
+        expect(doc.querySelector("#block-card-title")?.textContent).toBe("Row");
+        expect(
+          doc.querySelector<HTMLElement>('.pbe-option-group[aria-label="Wrapping"]')!.offsetParent,
+        ).toBeTruthy();
+        expect(
+          doc.querySelector(
+            '.pbe-option-group[aria-label="Wrapping"] use[href="#pbe-i-wrap-reverse"]',
+          ),
+        ).toBeTruthy();
+      });
+      const sidebar = doc.querySelector<HTMLElement>("#sidebar")!;
+      sidebar.scrollTop = sidebar.scrollHeight;
+      await new Promise<void>((resolve) =>
+        frame!.contentWindow!.requestAnimationFrame(() => resolve()),
+      );
+      await expect.element(page.elementLocator(frame)).toMatchScreenshot("inspector-layout-icons", {
         comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
       });
     } finally {
