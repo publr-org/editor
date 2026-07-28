@@ -6,7 +6,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   DEFAULT_THEME,
-  HEARTH_THEME,
   collectClasses,
   createEditor,
   downcast,
@@ -18,6 +17,7 @@ import {
   themeBaseCss,
   upcast,
 } from "../src/index";
+import { HEARTH_THEME } from "../src/demo-theme";
 import type { Block, Model } from "../src/index";
 import { registerCoreBlocks } from "../src/blocks";
 import { registerHomepagePatterns } from "../src/blocks/homepage-patterns";

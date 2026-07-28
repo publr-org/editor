@@ -43,8 +43,6 @@ import * as accordion from "./accordion";
 import * as accordionItem from "./accordion-item";
 // widgets
 import * as embed from "./embed";
-import * as socialLinks from "./social-links";
-import * as socialLink from "./social-link";
 import * as html from "./html";
 // design (containers)
 import * as patternRoot from "./pattern-root";
@@ -83,8 +81,6 @@ export const coreBlocks: readonly (readonly [string, BlockDefinition])[] = [
   [accordion.type, accordion.definition],
   [accordionItem.type, accordionItem.definition],
   [embed.type, embed.definition],
-  [socialLinks.type, socialLinks.definition],
-  [socialLink.type, socialLink.definition],
   [html.type, html.definition],
   [columns.type, columns.definition],
   [column.type, column.definition],

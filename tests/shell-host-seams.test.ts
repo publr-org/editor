@@ -19,7 +19,6 @@ import {
 } from "../src/templates";
 import {
   DEFAULT_THEME,
-  HEARTH_THEME,
   TAILWIND_COMPAT_THEME,
   activeTheme,
   colorContexts,
@@ -27,6 +26,7 @@ import {
   tokenValue,
   type Theme,
 } from "../src/theme";
+import { HEARTH_THEME } from "../src/demo-theme";
 import preflightCss from "../vendor/jit/preflight.css?raw";
 import siteCss from "../src/styles.css?inline";
 import { wasmCssEngine } from "../src/wasm-engine";
@@ -1452,10 +1452,22 @@ describe("shell host seams", () => {
       content:
         '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="bg-[var(--color-brand-surface)] text-[var(--color-brand-foreground)]"><p data-pb-block="paragraph" data-pb-rich="body">Brand panel</p></div>',
       media: false,
-      // Contexts are theme data, not inferred product constants. Declaring
-      // Brand makes its complete role set available to controls.
+      // Contexts are theme data, not inferred product constants. A theme that
+      // declares Brand also VALUES it — the editor ships no opinionated theme
+      // to fill non-default contexts from (integration law).
       theme: {
-        tokens: [{ name: "font-sans", value: "system-ui" }],
+        tokens: [
+          { name: "font-sans", value: "system-ui" },
+          { name: "color-brand-surface", value: "#1f3a5f" },
+          { name: "color-brand-foreground", value: "#f4f7fb" },
+          { name: "color-brand-border", value: "#16293f" },
+          { name: "color-brand-accent-surface", value: "#f2c14e" },
+          { name: "color-brand-accent-foreground", value: "#1f2430" },
+          { name: "color-brand-accent-border", value: "#d9a93a" },
+          { name: "color-brand-muted-surface", value: "#2d4a70" },
+          { name: "color-brand-muted-foreground", value: "#dbe4ef" },
+          { name: "color-brand-muted-border", value: "#22385a" },
+        ],
         semanticColorRoles: DEFAULT_THEME.semanticColorRoles,
         colorContexts: [
           { key: "default", label: "Default" },

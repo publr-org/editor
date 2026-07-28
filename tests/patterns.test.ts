@@ -13,7 +13,6 @@ import {
   flattenBlocks,
   getPattern,
   getPatternContent,
-  HEARTH_THEME,
   patternTypes,
   publishPattern,
   registerBlock,
@@ -22,6 +21,7 @@ import {
   unregisterPattern,
   upcast,
 } from "../src/index";
+import { HEARTH_THEME } from "../src/demo-theme";
 import type { Editor } from "../src/index";
 import { CORE_PATTERNS, registerCoreBlocks, registerCorePatterns } from "../src/blocks";
 

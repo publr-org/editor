@@ -9,15 +9,15 @@ editor one confirmed feature at a time on the architecture settled in
 ## Current scope
 
 Canvas + contenteditable over a **block tree** (`data-pb-children` slots, not
-just a flat list). **36 core blocks** (`src/blocks/`, one file per block) —
+just a flat list). **34 core blocks** (`src/blocks/`, one file per block) —
 the full client-side core block set (epic #333): text (heading,
 paragraph, list + list-item, quote, pullquote, code, preformatted, verse,
 table, details, math), media (image, video, audio, cover, gallery, file,
 media-text, icon), design (button/s, separator, spacer, columns + column,
 accordion + accordion-item, group/row/stack/grid — the containers carry the
-group's tagName as a tag carrier), widgets (embed, social-links +
-social-link, custom html). The experimental form family is deliberately
-not shipped (story #370).
+group's tagName as a tag carrier), widgets (embed, custom html). The
+experimental form family is deliberately not shipped (story #370); social
+links live outside core as plugin-block territory.
 Five carrier kinds (text, rich, tag, image, link), island-carried settings
 (`data-pb-settings`) with sidebar controls (toggle-group, toggle, select,
 text, number), slot policies (allowedChildren + childTemplate, same-type
@@ -163,8 +163,7 @@ What the editor already proves:
   mirrored in the sidebar.
 - **Icons: shared Publr UI set** — canonical UI artwork comes from the pinned
   [`@publr/icons`](https://github.com/publr-org/publr-icons) repository.
-  `src/icons.ts` is only a compatibility adapter; social/brand artwork remains
-  separate in `src/blocks/social-icons.ts` and `assets/social-icons/`.
+  `src/icons.ts` is only a compatibility adapter.
   Definitions and setting options declare an icon NAME
   (`icon: "heading"`), chrome resolves it: imperative layers inline `iconSvg()`
   (toolbar indicator, slash picker, "+" inserter), the declarative shell

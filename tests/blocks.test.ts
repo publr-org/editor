@@ -29,7 +29,7 @@ const ISLAND = (json: string) =>
 describe("the text-wave library: registration metadata", () => {
   test("every core block registers; the library is the inserter's vocabulary", () => {
     for (const [type] of coreBlocks) expect(getBlockType(type)).toBeDefined();
-    expect(coreBlocks).toHaveLength(36); // includes template part + slot authoring blocks
+    expect(coreBlocks).toHaveLength(34); // includes template part + slot authoring blocks
   });
 
   test("every insertable core block declares its toolbar behavior explicitly", () => {
@@ -516,38 +516,32 @@ describe("the design-wave library (story #338)", () => {
 
 describe("the widgets-wave library (story #339)", () => {
   test("the widget blocks register; internals stay parent-scoped", () => {
-    for (const t of ["embed", "social-links", "social-link", "html"])
-      expect(getBlockType(t), t).toBeDefined();
+    for (const t of ["embed", "html"]) expect(getBlockType(t), t).toBeDefined();
     // The experimental form family is deliberately
-    // NOT shipped — story #370.
+    // NOT shipped — story #370. Social links moved out of core entirely —
+    // they belong to a plugin block.
     for (const t of ["form", "form-input", "form-submit-button", "form-submission-notification"])
       expect(getBlockType(t), t).toBeUndefined();
-    expect(getBlockType("social-links")!.allowedChildren).toEqual(["social-link"]);
-    expect(getBlockType("social-link")!.internal).toBe(true);
+    for (const t of ["social-links", "social-link"]) expect(getBlockType(t), t).toBeUndefined();
   });
 
   test("the round-trip law holds for the widgets wave, settings included", () => {
     const authored =
       `<figure data-pb-block="embed" data-pb-id="b_e">${ISLAND('{"responsive":false}')}<iframe data-pb-image="media" src="https://player.test/v/1" alt="" width="560" height="315"></iframe><figcaption data-pb-rich="caption">Talk</figcaption></figure>` +
-      `<div data-pb-block="social-links" data-pb-id="b_s" data-pb-children>` +
-      `<a data-pb-block="social-link" data-pb-id="b_s1" data-pb-link="url" href="https://github.com/x">${ISLAND('{"service":"github"}')}</a>` +
-      `<a data-pb-block="social-link" data-pb-id="b_s2" data-pb-link="url" href="mailto:hi@x.io">${ISLAND('{"service":"mail"}')}</a></div>` +
       `<div data-pb-block="html" data-pb-id="b_h" data-pb-rich="content"><marquee>retro</marquee></div>`;
 
     const m = upcast(parse(authored));
-    expect(m.blocks.map((b) => b.type)).toEqual(["embed", "social-links", "html"]);
+    expect(m.blocks.map((b) => b.type)).toEqual(["embed", "html"]);
     expect(m.blocks[0].fields.media).toEqual({
       src: "https://player.test/v/1",
       alt: "",
       width: "560",
       height: "315",
     });
-    expect(m.blocks[1].children!.map((b) => b.settings!.service)).toEqual(["github", "mail"]);
-    expect(m.blocks[2].fields.content).toBe("<marquee>retro</marquee>");
+    expect(m.blocks[1].fields.content).toBe("<marquee>retro</marquee>");
 
     const gen1 = downcast(m);
     expect(gen1).not.toContain("aspect-video"); // responsive:false drops the ratio classes
-    expect(gen1).toContain('aria-label="GitHub"'); // derived brand svg + accessible name
     expect(upcast(parse(gen1))).toEqual(m);
     expect(downcast(upcast(parse(gen1)))).toBe(gen1);
   });

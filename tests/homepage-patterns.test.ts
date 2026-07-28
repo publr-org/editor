@@ -4,7 +4,6 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  HEARTH_THEME,
   blockSupportsStyle,
   getBlockType,
   getPattern,
@@ -12,6 +11,7 @@ import {
   readStyleClass,
   upcast,
 } from "../src/index";
+import { HEARTH_THEME } from "../src/demo-theme";
 import type { Block, StyleBreakpoint } from "../src/index";
 import { registerCoreBlocks } from "../src/blocks";
 import { registerCorePatterns } from "../src/blocks/core-patterns";

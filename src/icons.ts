@@ -2,8 +2,7 @@
 //
 // Canonical artwork lives in @publr/icons. This thin wrapper preserves the
 // editor's established sprite ids (`#pbe-i-*`) so hosts and serialized chrome
-// do not change when the shared package is updated. Social/brand artwork is
-// intentionally separate in blocks/social-icons.ts.
+// do not change when the shared package is updated.
 
 import {
   ICONS as SHARED_ICONS,

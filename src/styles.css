@@ -237,13 +237,6 @@ body {
   .pbe-spacer--xl {
     height: 6rem;
   }
-  .pbe-social-label {
-    display: none;
-  }
-  .pbe-social-link--show-label .pbe-social-label,
-  .pbe-social-links--show-labels .pbe-social-label {
-    display: inline;
-  }
   .pbe-column--auto {
     flex: 1 1 0%;
   }

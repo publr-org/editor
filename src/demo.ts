@@ -22,6 +22,7 @@ import * as PublrEditor from "./index";
 import { probeWasmCssEngine } from "./wasm-engine";
 import preflightCss from "../vendor/jit/preflight.css?raw";
 import { registerCoreBlocks } from "./blocks";
+import { HEARTH_THEME } from "./demo-theme";
 import { HOMEPAGE_PATTERNS, registerHomepagePatterns } from "./blocks/homepage-patterns";
 import siteCss from "./styles.css?inline";
 import "./styles.css";
@@ -30,7 +31,6 @@ const {
   browserPersistence,
   createEditorShell,
   DEFAULT_THEME,
-  HEARTH_THEME,
   TAILWIND_COMPAT_THEME,
   inlineBackend,
   getPattern,

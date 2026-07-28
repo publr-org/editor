@@ -7,7 +7,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import {
   DEFAULT_BLOCK_POLICY,
   DEFAULT_THEME,
-  HEARTH_THEME,
   SITE_TYPOGRAPHY_DEFAULTS,
   TAILWIND_COMPAT_THEME,
   RAW_TYPE,
@@ -42,12 +41,13 @@ import {
   themeBaseCss,
   themeToCssText,
   unresolvedUtilities,
-  withHearthDefaults,
+  withThemeDefaults,
   withTailwindCompatibility,
   unregisterBlock,
   unregisterPattern,
   upcast,
 } from "../src/index";
+import { HEARTH_THEME } from "../src/demo-theme";
 import type { Editor, EditorOptions } from "../src/index";
 
 const HEADING_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6"];
@@ -3932,13 +3932,13 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
     expect(defaultsCss).toContain("var(--publr-paragraph-spacing, 1rem)");
   });
 
-  test("the Hearth workspace fills missing tokens without touching authored values", () => {
-    const filled = withHearthDefaults(DEFAULT_THEME);
+  test("withThemeDefaults fills missing tokens from DEFAULT_THEME without touching authored values", () => {
+    const filled = withThemeDefaults(DEFAULT_THEME);
     expect(filled.tokens.find((token) => token.name === "color-surface")?.value).toBe("#ffffff");
     expect(filled.tokens.find((token) => token.name === "color-inverse-surface")).toBeUndefined();
     expect(colorContexts(filled)).toEqual([{ key: "default", label: "Default" }]);
 
-    const customized = withHearthDefaults(
+    const customized = withThemeDefaults(
       themeFromTokens({
         "color-surface": "#123456",
         "color-foreground": "#abcdef",
@@ -3950,10 +3950,10 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
     expect(customized.tokens.find((token) => token.name === "color-brand-surface")).toBeUndefined();
     expect(colorContexts(customized)).toEqual([{ key: "default", label: "Default" }]);
 
-    const missing = withHearthDefaults(themeFromTokens({ "font-sans": "system-ui" }));
-    expect(missing.tokens.find((token) => token.name === "color-surface")?.value).toBe("#fbf8ef");
+    const missing = withThemeDefaults(themeFromTokens({ "font-sans": "system-ui" }));
+    expect(missing.tokens.find((token) => token.name === "color-surface")?.value).toBe("#ffffff");
     expect(missing.tokens.find((token) => token.name === "color-accent-surface")?.value).toBe(
-      "#294b45",
+      "#3858e9",
     );
     expect(missing.tokens.find((token) => token.name === "container-content")?.value).toBe("645px");
     expect(spacings(missing).map((option) => option.key)).toEqual([
@@ -3970,7 +3970,7 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
     );
     expect(
       spacings(
-        withHearthDefaults(themeFromTokens({ spacing: "0.25rem", "spacing-custom": "1.125rem" })),
+        withThemeDefaults(themeFromTokens({ spacing: "0.25rem", "spacing-custom": "1.125rem" })),
       ).map((option) => option.key),
     ).toEqual(["custom"]);
   });

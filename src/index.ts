@@ -103,7 +103,6 @@ import {
   BORDER_WIDTH_STEPS,
   CONTAINER_WIDTH_DEFAULTS,
   DEFAULT_THEME,
-  HEARTH_THEME,
   SITE_TYPOGRAPHY_DEFAULTS,
   TAILWIND_COMPAT_THEME,
   DEFAULT_SPACING_TOKENS,
@@ -129,7 +128,7 @@ import {
   themeToCssText,
   tokenValue,
   trackings,
-  withHearthDefaults,
+  withThemeDefaults,
   withTailwindCompatibility,
 } from "./theme";
 import { flattenBlocks, locateBlock, pathToBlock } from "./tree";
@@ -269,7 +268,6 @@ export {
   CONTAINER_WIDTH_DEFAULTS,
   SITE_TYPOGRAPHY_DEFAULTS,
   DEFAULT_THEME,
-  HEARTH_THEME,
   TAILWIND_COMPAT_THEME,
   activeTheme,
   setActiveTheme,
@@ -295,7 +293,7 @@ export {
   DEFAULT_SPACING_TOKENS,
   SPACING_STEPS,
   BORDER_WIDTH_STEPS,
-  withHearthDefaults,
+  withThemeDefaults,
   withTailwindCompatibility,
 };
 

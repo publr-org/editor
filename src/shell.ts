@@ -78,7 +78,7 @@ import {
   themeToCssText,
   tokenValue,
   trackings,
-  withHearthDefaults,
+  withThemeDefaults,
 } from "./theme";
 import type { SemanticColorRoleDefinition, Theme, ThemeToken } from "./theme";
 import { collectClasses } from "./css-engine";
@@ -10551,10 +10551,10 @@ Publr.store("chrome", () => {
         canvas: canvasEl,
         defaultBlock: opts.defaultBlock ?? "paragraph",
         groupBlock: opts.groupBlock ?? "group", // Cmd+G wraps the selection in one of these
-        // The full product shell starts from its visible Hearth system. A
-        // customized host theme wins; missing tokens fill from Hearth so
-        // registered patterns' contextual roles always resolve.
-        theme: withHearthDefaults(opts.theme),
+        // A host theme always wins; structural gaps fill from DEFAULT_THEME's
+        // generic values only (integration law: the editor ships no
+        // opinionated theme).
+        theme: withThemeDefaults(opts.theme),
         styleBackend: opts.styleBackend,
         policy: opts.policy,
         placeholder: opts.placeholder,
@@ -11173,7 +11173,7 @@ function renderHostUi(
 export async function createEditorShell(options: EditorShellOptions): Promise<EditorShell> {
   await autoHydrateDone;
 
-  const initialTheme = withHearthDefaults(options.theme);
+  const initialTheme = withThemeDefaults(options.theme);
   if (options.patternLibrary === "theme-only") {
     for (const pattern of patternTypes()) unregisterPattern(pattern.name);
   }

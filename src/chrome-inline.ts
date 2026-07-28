@@ -1195,8 +1195,8 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   // takes — a declared allowedChildren list verbatim (internal types
   // included: inside an accordion the item IS the offering), otherwise every
   // non-internal type. Mirrors the replaceBlock slot gate, so nothing listed
-  // ever no-ops, and parent-scoped types (list-item, column, accordion-item,
-  // social-link) never leak into a foreign context. Patterns are deliberately
+  // ever no-ops, and parent-scoped types (list-item, column,
+  // accordion-item) never leak into a foreign context. Patterns are deliberately
   // NOT offered here — they are compositions, not blocks, and live in the
   // host's Patterns surface (demo: the rail's Patterns tab + explorer).
   const parentIdOf = (id: string | null) =>

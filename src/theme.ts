@@ -345,77 +345,16 @@ export const DEFAULT_THEME: Theme = {
   colorContexts: DEFAULT_COLOR_CONTEXTS.map((context) => ({ ...context })),
 };
 
-/** The curated starting system used by the full Hearth theme-editor POC.
- * Bare editor instances retain DEFAULT_THEME; the product shell uses this
- * preset when a host has not supplied its own site theme yet. */
-const HEARTH_COLOR_VALUES: Record<string, string> = {
-  "color-palette-canvas": "#fbf8ef",
-  "color-palette-ink": "#29413d",
-  "color-palette-brand": "#294b45",
-  "color-palette-on-brand": "#fffaf0",
-  "color-palette-soft": "#e2e9e1",
-  "color-palette-subtle": "#66736e",
-  "color-palette-line": "#d8d2c5",
-  "color-palette-slate": "#607f99",
-  "color-palette-slate-soft": "#6f8da5",
-  "color-palette-clay": "#a45332",
-  "color-palette-clay-soft": "#bd6a45",
-  "color-palette-clay-subtle": "#f7ddca",
-  "color-palette-amber": "#f7dda4",
-  "color-palette-umber": "#3b332b",
-  "color-palette-warm-white": "#fff7e9",
-  "color-surface": "#fbf8ef",
-  "color-foreground": "#29413d",
-  "color-border": "#d8d2c5",
-  "color-accent-surface": "#294b45",
-  "color-accent-foreground": "#fffaf0",
-  "color-accent-border": "#1f3934",
-  "color-muted-surface": "#e2e9e1",
-  "color-muted-foreground": "#29413d",
-  "color-muted-border": "#cbd5cc",
-};
-
-export const HEARTH_THEME: Theme = {
-  tokens: [
-    ...DEFAULT_THEME.tokens.map((token) =>
-      HEARTH_COLOR_VALUES[token.name]
-        ? { ...token, value: HEARTH_COLOR_VALUES[token.name] }
-        : token,
-    ),
-    { name: "color-brand-surface", value: "#607f99" },
-    { name: "color-brand-foreground", value: "#fffaf0" },
-    { name: "color-brand-border", value: "rgb(255 250 240 / 24%)" },
-    { name: "color-brand-accent-surface", value: "#f7dda4" },
-    { name: "color-brand-accent-foreground", value: "#29413d" },
-    { name: "color-brand-accent-border", value: "#d9bb78" },
-    { name: "color-brand-muted-surface", value: "#6f8da5" },
-    { name: "color-brand-muted-foreground", value: "#e7eef1" },
-    { name: "color-brand-muted-border", value: "rgb(255 250 240 / 18%)" },
-    { name: "color-inverse-surface", value: "#a45332" },
-    { name: "color-inverse-foreground", value: "#fff7e9" },
-    { name: "color-inverse-border", value: "rgb(255 247 233 / 24%)" },
-    { name: "color-inverse-accent-surface", value: "#f7dda4" },
-    { name: "color-inverse-accent-foreground", value: "#3b332b" },
-    { name: "color-inverse-accent-border", value: "#d9b86f" },
-    { name: "color-inverse-muted-surface", value: "#bd6a45" },
-    { name: "color-inverse-muted-foreground", value: "#f7ddca" },
-    { name: "color-inverse-muted-border", value: "rgb(255 247 233 / 18%)" },
-  ],
-  semanticColorRoles: SEMANTIC_COLOR_ROLES.map((role) => ({ ...role })),
-  colorContexts: [
-    { key: "default", label: "Default" },
-    { key: "inverse", label: "Terracotta" },
-    { key: "brand", label: "Slate blue" },
-  ],
-};
-
-/** Prepare a host-supplied theme for the Hearth workspace: fill missing
- * tokens only for the roles and contexts the theme actually declares.
+/** Prepare a host-supplied theme for the style workspace: fill missing
+ * tokens — only for the roles and contexts the theme actually declares —
+ * from DEFAULT_THEME's generic values. The editor ships no opinionated
+ * theme (see CLAUDE.md); integrators author complete themes, this fills
+ * structural gaps so a partial theme still drives every control.
  * Customized values and customized semantic vocabularies always win. */
-export function withHearthDefaults(theme: Theme = HEARTH_THEME): Theme {
+export function withThemeDefaults(theme: Theme = DEFAULT_THEME): Theme {
   const declaredRoles = semanticColorRoles(theme);
   const declaredContexts = colorContexts(theme);
-  const hearth = new Map(HEARTH_THEME.tokens.map((token) => [token.name, token.value]));
+  const defaults = new Map(DEFAULT_THEME.tokens.map((token) => [token.name, token.value]));
   const tokens = theme.tokens.map((token) => ({ ...token }));
   const names = new Set(tokens.map((token) => token.name));
   const hasNamedSpacing = tokens.some((token) => token.name.startsWith("spacing-"));
@@ -426,7 +365,7 @@ export function withHearthDefaults(theme: Theme = HEARTH_THEME): Theme {
       ),
     ),
   );
-  for (const [name, value] of hearth) {
+  for (const [name, value] of defaults) {
     if (
       (governedColorNames.has(name) ||
         name.startsWith("color-palette-") ||

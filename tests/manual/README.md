@@ -38,7 +38,7 @@ opaque `raw-html` block by design.
 ## Groups
 
 - `blocks/` — one test per non-internal block. Internal, parent-scoped blocks
-  (`list-item`, `column`, `social-link`, `accordion-item`) are covered by their
+  (`list-item`, `column`, `accordion-item`) are covered by their
   parent's test.
 - `features/` — cross-block behaviors: selection, history, grouping, casting…
 - `issues/` — one test per reported issue, named after the Shortcut story
