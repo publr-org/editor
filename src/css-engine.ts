@@ -10,7 +10,7 @@
 // generation at all. Chrome should capability-gate on the engine's presence,
 // never half-work.
 
-import { styleBreakpoints, unresolvedUtilities } from "./style";
+import { unresolvedUtilities } from "./style";
 import { activeTheme } from "./theme";
 import type { Theme } from "./theme";
 
@@ -45,56 +45,12 @@ export function collectClasses(html: string): string[] {
   return [...out];
 }
 
-const cssSelector = (className: string): string =>
-  `.${className.replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char.codePointAt(0)!.toString(16)} `)}`;
-
-/** CSS for active-theme utilities the fixed-theme JIT may not know. */
-export function runtimeThemeCss(classes: readonly string[], theme: Theme = activeTheme()): string {
-  const tokens = new Map(theme.tokens.map((token) => [token.name, token.value]));
-  const rules = new Map<string, string>();
-  const add = (className: string, declaration: string, viewport?: string) => {
-    const rule = `${cssSelector(className)}{${declaration}}`;
-    rules.set(className, viewport ? `@media (min-width:${viewport}){${rule}}` : rule);
-  };
-  for (const className of classes) {
-    // The fixed-theme JIT may not know document-defined semantic tokens, so
-    // this fallback must understand the same mobile-first prefixes the style
-    // lens writes. State/interaction variants remain the JIT's domain.
-    const responsive = styleBreakpoints(theme).find(
-      ({ key }) => key !== "base" && className.startsWith(`${key}:`),
-    );
-    const utility = responsive ? className.slice(responsive.key.length + 1) : className;
-    if (utility.includes(":")) continue;
-    const viewport = responsive?.viewport;
-    if (utility.startsWith("text-")) {
-      const key = utility.slice(5);
-      if (tokens.has(`text-${key}`))
-        add(className, `font-size:${tokens.get(`text-${key}`)}`, viewport);
-      else if (tokens.has(`color-${key}`))
-        add(className, `color:${tokens.get(`color-${key}`)}`, viewport);
-    } else if (utility.startsWith("bg-") && tokens.has(`color-${utility.slice(3)}`)) {
-      add(className, `background-color:${tokens.get(`color-${utility.slice(3)}`)}`, viewport);
-    } else if (utility.startsWith("border-") && tokens.has(`color-${utility.slice(7)}`)) {
-      add(className, `border-color:${tokens.get(`color-${utility.slice(7)}`)}`, viewport);
-    } else if (utility.startsWith("rounded-") && tokens.has(`radius-${utility.slice(8)}`)) {
-      add(className, `border-radius:${tokens.get(`radius-${utility.slice(8)}`)}`, viewport);
-    } else if (utility.startsWith("leading-") && tokens.has(`leading-${utility.slice(8)}`)) {
-      add(className, `line-height:${tokens.get(`leading-${utility.slice(8)}`)}`, viewport);
-    } else if (utility.startsWith("tracking-") && tokens.has(`tracking-${utility.slice(9)}`)) {
-      add(className, `letter-spacing:${tokens.get(`tracking-${utility.slice(9)}`)}`, viewport);
-    }
-  }
-  return [...rules.values()].join("\n");
-}
-
 /**
  * An engine speaking the POC transport: POST classes plus the portable theme,
  * get text/css back (dev: the Vite JIT bridge at /__jit). Breakpoint tokens
  * must reach the compiler because CSS forbids var() inside media conditions.
  *
- * The JIT still compiles against its fixed theme; runtimeThemeCss appends the
- * active document's token utilities. Diagnostics remain editor-derived until
- * the engine reports its own drop list.
+ * Diagnostics remain editor-derived until the engine reports its own drop list.
  */
 export function httpCssEngine(endpoint: string): CssEngine {
   return {
@@ -105,7 +61,7 @@ export function httpCssEngine(endpoint: string): CssEngine {
         body: JSON.stringify({ classes, tokens: theme.tokens }),
       });
       if (!res.ok) throw new Error(`css engine: HTTP ${res.status} ${await res.text()}`);
-      const css = `${await res.text()}\n${runtimeThemeCss(classes, theme)}`;
+      const css = await res.text();
       return { css, unresolved: unresolvedUtilities(classes, theme).map((u) => u.cls) };
     },
   };

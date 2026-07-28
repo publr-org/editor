@@ -1999,7 +1999,11 @@
                   <div class="pbe-control-row">
                     <div class="pbe-control-row__header">
                       <span data-p-text="row.label"></span>
-                      <span class="pbe-current-value" data-p-bind="data-inherited:row.inherited">
+                      <span
+                        class="pbe-current-value"
+                        data-p-show="not row.isRange"
+                        data-p-bind="data-inherited:row.inherited"
+                      >
                         <strong data-p-text="row.valueLabel"></strong>
                         <small data-p-show="row.inherited" data-p-text="row.inheritedLabel"></small>
                       </span>
@@ -2030,31 +2034,7 @@
                         </button>
                       </template>
                     </div>
-                    <div
-                      class="pbe-scale pbe-scale--editable"
-                      data-p-bind="data-inherited:row.inherited;data-responsive:row.responsive"
-                      data-p-show="row.isRange"
-                    >
-                      <div class="pbe-scale__track" aria-hidden="true">
-                        <template data-p-for="opt of row.options" data-p-key="opt.key"
-                          ><span></span
-                        ></template>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        step="1"
-                        class="pbe-scale__input"
-                        data-p-bind="data-prop:row.prop;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
-                        data-p-on="change:applyStyleRange"
-                      />
-                      <input
-                        type="text"
-                        class="pbe-scale__editor"
-                        data-p-bind="data-prop:row.prop;value:row.value;placeholder:row.emptyLabel;data-inherited:row.inherited;disabled:$styleDisabled;aria-label:row.label"
-                        data-p-on="change:applyStyleInput"
-                      />
-                    </div>
+                    <div data-p-show="row.isRange"><!-- pbe-token-scale --></div>
                     <select
                       class="pbe-value-select h-10 w-full cursor-pointer px-3 text-[13px]"
                       data-p-show="row.isSelect"
@@ -2269,7 +2249,11 @@
                   <div class="pbe-control-row">
                     <div class="pbe-control-row__header">
                       <span data-p-text="row.label"></span>
-                      <span class="pbe-current-value" data-p-bind="data-inherited:row.inherited">
+                      <span
+                        class="pbe-current-value"
+                        data-p-show="not row.isRange"
+                        data-p-bind="data-inherited:row.inherited"
+                      >
                         <strong data-p-text="row.valueLabel"></strong>
                         <small data-p-show="row.inherited" data-p-text="row.inheritedLabel"></small>
                       </span>
@@ -2290,32 +2274,7 @@
                         ></button>
                       </template>
                     </div>
-                    <div
-                      class="pbe-scale pbe-scale--editable"
-                      data-p-bind="data-inherited:row.inherited;data-responsive:row.responsive"
-                      data-p-show="row.isRange"
-                    >
-                      <div class="pbe-scale__track" aria-hidden="true">
-                        <template data-p-for="opt of row.options" data-p-key="opt.key"
-                          ><span></span
-                        ></template>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        step="1"
-                        class="pbe-scale__input"
-                        data-p-bind="data-prop:row.prop;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
-                        data-p-on="change:applyStyleRange"
-                      />
-                      <input
-                        type="text"
-                        class="pbe-scale__editor"
-                        placeholder="Default"
-                        data-p-bind="data-prop:row.prop;value:row.value;data-inherited:row.inherited;disabled:$styleDisabled;aria-label:row.label"
-                        data-p-on="change:applyStyleInput"
-                      />
-                    </div>
+                    <div data-p-show="row.isRange"><!-- pbe-token-scale --></div>
                     <select
                       class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px] font-medium text-neutral-700 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40"
                       data-p-show="row.isSelect"
@@ -2568,20 +2527,12 @@
                   </button>
                 </div>
                 <div class="pbe-box-model mb-5" data-p-show="$spacingBoxShown">
-                  <div class="pbe-box-model__layer pbe-box-model__margin">
+                  <div
+                    class="pbe-box-model__layer pbe-box-model__margin"
+                    data-kind="margin"
+                    data-p-on="pointerover:previewBoxLayer;pointerout:clearBoxLayerPreview"
+                  >
                     <span class="pbe-box-model__label">Margin</span>
-                    <button
-                      type="button"
-                      data-kind="margin"
-                      class="pbe-box-model__link"
-                      data-p-show="$boxMarginShown"
-                      data-p-bind="disabled:$styleDisabled;aria-label:marginSidesLabel;title:marginSidesLabel;aria-pressed:boxTargetMarginAll"
-                      data-p-on="mousedown.prevent:swallow;click:openSpacingSync"
-                    >
-                      <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
-                        <use href="#pbe-i-spacing-sides-all"></use>
-                      </svg>
-                    </button>
                     <button
                       type="button"
                       class="pbe-box-model__value"
@@ -2630,69 +2581,180 @@
                       data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
                       data-p-text="$boxMarginLeft"
                     ></button>
-                    <div class="pbe-box-model__layer pbe-box-model__padding">
-                      <span class="pbe-box-model__label">Padding</span>
+                    <div
+                      class="pbe-box-model__layer pbe-box-model__border"
+                      data-kind="border"
+                      data-p-on="pointerover:previewBoxLayer;pointerout:clearBoxLayerPreview"
+                    >
+                      <span class="pbe-box-model__label">Border</span>
                       <button
                         type="button"
-                        data-kind="padding"
-                        class="pbe-box-model__link"
-                        data-p-show="$boxPaddingShown"
-                        data-p-bind="disabled:$styleDisabled;aria-label:paddingSidesLabel;title:paddingSidesLabel;aria-pressed:boxTargetPaddingAll"
-                        data-p-on="mousedown.prevent:swallow;click:openSpacingSync"
+                        data-corner="borderTopLeftRadius"
+                        data-position="TopLeft"
+                        class="pbe-box-model__radius-corner"
+                        data-p-show="$boxBorderRadiusShown"
+                        data-p-bind="disabled:$styleDisabled;aria-pressed:boxTargetRadiusTopLeft;data-radius:boxBorderRadiusTopLeft"
+                        aria-label="Edit top-left border radius"
+                        title="Top-left radius"
+                        data-p-on="mousedown.prevent:swallow;click:selectBorderRadiusCorner"
                       >
                         <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
-                          <use href="#pbe-i-spacing-sides-all"></use>
+                          <use href="#pbe-i-border-radius-corner"></use>
                         </svg>
+                        <span data-p-text="$boxBorderRadiusTopLeft"></span>
+                      </button>
+                      <button
+                        type="button"
+                        data-corner="borderTopRightRadius"
+                        data-position="TopRight"
+                        class="pbe-box-model__radius-corner"
+                        data-p-show="$boxBorderRadiusShown"
+                        data-p-bind="disabled:$styleDisabled;aria-pressed:boxTargetRadiusTopRight;data-radius:boxBorderRadiusTopRight"
+                        aria-label="Edit top-right border radius"
+                        title="Top-right radius"
+                        data-p-on="mousedown.prevent:swallow;click:selectBorderRadiusCorner"
+                      >
+                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
+                          <use href="#pbe-i-border-radius-corner"></use>
+                        </svg>
+                        <span data-p-text="$boxBorderRadiusTopRight"></span>
+                      </button>
+                      <button
+                        type="button"
+                        data-corner="borderBottomRightRadius"
+                        data-position="BottomRight"
+                        class="pbe-box-model__radius-corner"
+                        data-p-show="$boxBorderRadiusShown"
+                        data-p-bind="disabled:$styleDisabled;aria-pressed:boxTargetRadiusBottomRight;data-radius:boxBorderRadiusBottomRight"
+                        aria-label="Edit bottom-right border radius"
+                        title="Bottom-right radius"
+                        data-p-on="mousedown.prevent:swallow;click:selectBorderRadiusCorner"
+                      >
+                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
+                          <use href="#pbe-i-border-radius-corner"></use>
+                        </svg>
+                        <span data-p-text="$boxBorderRadiusBottomRight"></span>
+                      </button>
+                      <button
+                        type="button"
+                        data-corner="borderBottomLeftRadius"
+                        data-position="BottomLeft"
+                        class="pbe-box-model__radius-corner"
+                        data-p-show="$boxBorderRadiusShown"
+                        data-p-bind="disabled:$styleDisabled;aria-pressed:boxTargetRadiusBottomLeft;data-radius:boxBorderRadiusBottomLeft"
+                        aria-label="Edit bottom-left border radius"
+                        title="Bottom-left radius"
+                        data-p-on="mousedown.prevent:swallow;click:selectBorderRadiusCorner"
+                      >
+                        <svg aria-hidden="true" class="h-4 w-4" viewBox="0 0 24 24">
+                          <use href="#pbe-i-border-radius-corner"></use>
+                        </svg>
+                        <span data-p-text="$boxBorderRadiusBottomLeft"></span>
                       </button>
                       <button
                         type="button"
                         class="pbe-box-model__value"
-                        data-kind="padding"
+                        data-kind="border"
                         data-side="Top"
                         data-position="Top"
-                        aria-label="Edit padding top"
-                        data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:$boxTargetPaddingTop;disabled:$styleDisabled"
+                        aria-label="Edit border top"
+                        data-p-show="$boxBorderShown"
+                        data-p-bind="aria-pressed:$boxTargetBorderTop;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
-                        data-p-text="$boxPaddingTop"
+                        data-p-text="$boxBorderTop"
                       ></button>
                       <button
                         type="button"
                         class="pbe-box-model__value"
-                        data-kind="padding"
+                        data-kind="border"
                         data-side="Right"
                         data-position="Right"
-                        aria-label="Edit padding right"
-                        data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:$boxTargetPaddingRight;disabled:$styleDisabled"
+                        aria-label="Edit border right"
+                        data-p-show="$boxBorderShown"
+                        data-p-bind="aria-pressed:$boxTargetBorderRight;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
-                        data-p-text="$boxPaddingRight"
+                        data-p-text="$boxBorderRight"
                       ></button>
                       <button
                         type="button"
                         class="pbe-box-model__value"
-                        data-kind="padding"
+                        data-kind="border"
                         data-side="Bottom"
                         data-position="Bottom"
-                        aria-label="Edit padding bottom"
-                        data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:$boxTargetPaddingBottom;disabled:$styleDisabled"
+                        aria-label="Edit border bottom"
+                        data-p-show="$boxBorderShown"
+                        data-p-bind="aria-pressed:$boxTargetBorderBottom;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
-                        data-p-text="$boxPaddingBottom"
+                        data-p-text="$boxBorderBottom"
                       ></button>
                       <button
                         type="button"
                         class="pbe-box-model__value"
-                        data-kind="padding"
+                        data-kind="border"
                         data-side="Left"
                         data-position="Left"
-                        aria-label="Edit padding left"
-                        data-p-show="$boxPaddingShown"
-                        data-p-bind="aria-pressed:$boxTargetPaddingLeft;disabled:$styleDisabled"
+                        aria-label="Edit border left"
+                        data-p-show="$boxBorderShown"
+                        data-p-bind="aria-pressed:$boxTargetBorderLeft;disabled:$styleDisabled"
                         data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
-                        data-p-text="$boxPaddingLeft"
+                        data-p-text="$boxBorderLeft"
                       ></button>
-                      <div class="pbe-box-model__content">Content</div>
+                      <div
+                        class="pbe-box-model__layer pbe-box-model__padding"
+                        data-kind="padding"
+                        data-p-on="pointerover:previewBoxLayer;pointerout:clearBoxLayerPreview"
+                      >
+                        <span class="pbe-box-model__label">Padding</span>
+                        <button
+                          type="button"
+                          class="pbe-box-model__value"
+                          data-kind="padding"
+                          data-side="Top"
+                          data-position="Top"
+                          aria-label="Edit padding top"
+                          data-p-show="$boxPaddingShown"
+                          data-p-bind="aria-pressed:$boxTargetPaddingTop;disabled:$styleDisabled"
+                          data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                          data-p-text="$boxPaddingTop"
+                        ></button>
+                        <button
+                          type="button"
+                          class="pbe-box-model__value"
+                          data-kind="padding"
+                          data-side="Right"
+                          data-position="Right"
+                          aria-label="Edit padding right"
+                          data-p-show="$boxPaddingShown"
+                          data-p-bind="aria-pressed:$boxTargetPaddingRight;disabled:$styleDisabled"
+                          data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                          data-p-text="$boxPaddingRight"
+                        ></button>
+                        <button
+                          type="button"
+                          class="pbe-box-model__value"
+                          data-kind="padding"
+                          data-side="Bottom"
+                          data-position="Bottom"
+                          aria-label="Edit padding bottom"
+                          data-p-show="$boxPaddingShown"
+                          data-p-bind="aria-pressed:$boxTargetPaddingBottom;disabled:$styleDisabled"
+                          data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                          data-p-text="$boxPaddingBottom"
+                        ></button>
+                        <button
+                          type="button"
+                          class="pbe-box-model__value"
+                          data-kind="padding"
+                          data-side="Left"
+                          data-position="Left"
+                          aria-label="Edit padding left"
+                          data-p-show="$boxPaddingShown"
+                          data-p-bind="aria-pressed:$boxTargetPaddingLeft;disabled:$styleDisabled"
+                          data-p-on="mousedown.prevent:swallow;click:selectBoxSide"
+                          data-p-text="$boxPaddingLeft"
+                        ></button>
+                        <div class="pbe-box-model__content">Content</div>
+                      </div>
                     </div>
                   </div>
                   <section
@@ -2706,13 +2768,17 @@
                     <header class="pbe-spacing-pane__header">
                       <span>
                         <strong class="block text-[11px]" data-p-text="$boxEditorTitle"></strong>
-                        <small class="block text-[9px] text-muted-foreground">Design spacing</small>
+                        <small
+                          class="block text-[9px] text-muted-foreground"
+                          data-p-text="$boxEditorSourceLabel"
+                        ></small>
                       </span>
                       <span class="pbe-spacing-pane__actions">
                         <button
                           type="button"
                           data-mode="pair"
                           class="pbe-spacing-pane__sync"
+                          data-p-show="$boxEditorSyncShown"
                           data-p-bind="aria-label:boxEditorPairLabel;title:boxEditorPairLabel;aria-pressed:boxEditorPairPressed;disabled:$styleDisabled"
                           data-p-on="mousedown.prevent:swallow;click:setSpacingSync"
                         >
@@ -2723,14 +2789,34 @@
                         <button
                           type="button"
                           data-mode="all"
-                          class="pbe-spacing-pane__sync"
+                          class="pbe-spacing-pane__sync pbe-spacing-pane__sync--sides"
+                          data-p-show="$boxEditorSyncShown"
                           aria-label="Sync all sides"
                           title="Sync all sides"
                           data-p-bind="aria-pressed:boxEditorAllPressed;disabled:$styleDisabled"
                           data-p-on="mousedown.prevent:swallow;click:setSpacingSync"
                         >
                           <svg aria-hidden="true" viewBox="0 0 24 24">
-                            <use href="#pbe-i-spacing-sides-all"></use>
+                            <use href="#pbe-i-spacing-sides-top"></use>
+                            <use href="#pbe-i-spacing-sides-right"></use>
+                            <use href="#pbe-i-spacing-sides-bottom"></use>
+                            <use href="#pbe-i-spacing-sides-left"></use>
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="pbe-spacing-pane__sync pbe-spacing-pane__sync--corners"
+                          data-p-show="$boxEditorRadiusSyncShown"
+                          aria-label="Select all corners"
+                          title="Select all corners"
+                          data-p-bind="aria-pressed:boxEditorRadiusAllPressed;disabled:$styleDisabled"
+                          data-p-on="mousedown.prevent:swallow;click:setBorderRadiusAll"
+                        >
+                          <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <use href="#pbe-i-border-radius-top-left"></use>
+                            <use href="#pbe-i-border-radius-top-right"></use>
+                            <use href="#pbe-i-border-radius-bottom-right"></use>
+                            <use href="#pbe-i-border-radius-bottom-left"></use>
                           </svg>
                         </button>
                         <button
@@ -2745,120 +2831,123 @@
                       </span>
                     </header>
                     <div class="pbe-spacing-pane__rows">
-                      <template data-p-for="row of $boxEditorRows" data-p-key="row.side">
-                        <div class="pbe-spacing-pane__row-set">
-                          <div class="pbe-spacing-pane__row" data-p-show="not $boxEditorCustomOpen">
-                            <span class="pbe-spacing-side" aria-hidden="true">
-                              <svg viewBox="0 0 24 24">
-                                <use data-p-bind="href:boxEditorSelectionIcon"></use>
-                              </svg>
-                            </span>
-                            <div class="pbe-spacing-pane__rail">
-                              <span
-                                class="pbe-spacing-pane__tooltip"
-                                data-p-style="left->row.thumbPosition"
-                                data-p-show="row.snapped"
-                                data-p-text="row.valueLabel"
-                              ></span>
-                              <div class="pbe-spacing-pane__track" aria-hidden="true">
-                                <template data-p-for="opt of row.options" data-p-key="opt.key">
-                                  <span data-p-bind="data-active:opt.active"></span>
-                                </template>
-                              </div>
-                              <span
-                                class="pbe-spacing-pane__thumb"
-                                aria-hidden="true"
-                                data-p-style="left->row.thumbPosition"
-                                data-p-show="row.snapped"
-                              ></span>
-                              <input
-                                type="range"
-                                min="0"
-                                step="1"
-                                class="pbe-spacing-pane__range"
-                                data-p-bind="data-kind:boxActiveKind;data-side:row.side;max:boxActiveRangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
-                                data-p-on="input:applyBoxScale;change:applyBoxScale"
-                              />
-                            </div>
-                            <output
-                              class="pbe-spacing-pane__value pbe-scale__editor"
-                              data-p-text="row.valueLabel"
-                            ></output>
-                            <button
-                              type="button"
-                              class="pbe-spacing-pane__custom-toggle"
-                              aria-label="Set custom value"
-                              title="Set custom value"
-                              data-p-bind="aria-pressed:boxEditorCustomOpen;disabled:$styleDisabled"
-                              data-p-on="mousedown.prevent:swallow;click:toggleBoxSpacingCustom"
-                            >
-                              <svg aria-hidden="true" viewBox="0 0 24 24">
-                                <use href="#pbe-i-settings"></use>
-                              </svg>
-                            </button>
-                          </div>
-                          <div
-                            class="pbe-spacing-pane__row pbe-spacing-pane__custom"
-                            data-p-show="$boxEditorCustomOpen"
-                          >
-                            <span class="pbe-spacing-side" aria-hidden="true">
-                              <svg viewBox="0 0 24 24">
-                                <use data-p-bind="href:boxEditorSelectionIcon"></use>
-                              </svg>
-                            </span>
-                            <label class="pbe-spacing-pane__custom-field">
-                              <span class="sr-only" data-p-text="row.label"></span>
-                              <input
-                                type="number"
-                                inputmode="decimal"
-                                data-p-bind="min:boxEditorCustomMin;max:boxEditorCustomMax;step:boxEditorCustomStep;value:boxEditorCustomNumber;disabled:$styleDisabled;aria-label:row.label"
-                                data-p-on="change:applyBoxSpacingCustom"
-                              />
-                              <select
-                                aria-label="Spacing unit"
-                                data-p-bind="value:boxEditorCustomUnit;disabled:$styleDisabled"
-                                data-p-on="change:applyBoxSpacingCustom"
-                              >
-                                <option value="px">px</option>
-                                <option value="%">%</option>
-                                <option value="em">em</option>
-                                <option value="rem">rem</option>
-                                <option value="vw">vw</option>
-                                <option value="vh">vh</option>
-                              </select>
-                            </label>
-                            <div class="pbe-spacing-pane__custom-rail">
-                              <span class="pbe-spacing-pane__custom-track" aria-hidden="true">
-                                <i data-p-style="width->boxEditorCustomTrackFill"></i>
-                              </span>
-                              <span
-                                class="pbe-spacing-pane__thumb"
-                                aria-hidden="true"
-                                data-p-style="left->boxEditorCustomThumbPosition"
-                              ></span>
-                              <input
-                                type="range"
-                                class="pbe-spacing-pane__range"
-                                data-p-bind="min:boxEditorCustomMin;max:boxEditorCustomMax;step:boxEditorCustomStep;value:boxEditorCustomRangeValue;disabled:$styleDisabled;aria-label:row.label"
-                                data-p-on="input:applyBoxSpacingCustomRange;change:applyBoxSpacingCustomRange"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              class="pbe-spacing-pane__custom-toggle"
-                              aria-label="Use design spacing"
-                              title="Use design spacing"
-                              aria-pressed="true"
-                              data-p-bind="disabled:$styleDisabled"
-                              data-p-on="mousedown.prevent:swallow;click:toggleBoxSpacingCustom"
-                            >
-                              <svg aria-hidden="true" viewBox="0 0 24 24">
-                                <use href="#pbe-i-settings"></use>
-                              </svg>
-                            </button>
-                          </div>
+                      <template data-p-for="row of $boxEditorRows" data-p-key="row.label">
+                        <div class="pbe-spacing-pane__field">
+                          <span
+                            class="pbe-spacing-pane__field-label"
+                            data-p-show="$boxEditorMultipleRows"
+                            data-p-text="row.label"
+                          ></span>
+                          <div><!-- pbe-token-scale --></div>
                         </div>
                       </template>
+                      <div class="pbe-spacing-pane__field" data-p-show="$boxEditorBorderColorShown">
+                        <span class="pbe-spacing-pane__field-label">Color</span>
+                        <div class="pbe-spacing-pane__color-tabs" role="group" aria-label="Colors">
+                          <button
+                            type="button"
+                            data-tier="recommended"
+                            data-p-bind="aria-pressed:$borderColorTierRecommended"
+                            data-p-on="mousedown.prevent:swallow;click:setBorderColorTier"
+                          >
+                            Border
+                          </button>
+                          <button
+                            type="button"
+                            data-tier="semantic"
+                            data-p-bind="aria-pressed:$borderColorTierSemantic"
+                            data-p-on="mousedown.prevent:swallow;click:setBorderColorTier"
+                          >
+                            Semantic
+                          </button>
+                          <button
+                            type="button"
+                            data-tier="tokens"
+                            data-p-bind="aria-pressed:$borderColorTierTokens"
+                            data-p-on="mousedown.prevent:swallow;click:setBorderColorTier"
+                          >
+                            Tokens
+                          </button>
+                          <button
+                            type="button"
+                            data-tier="custom"
+                            data-p-bind="aria-pressed:$borderColorTierCustom"
+                            data-p-on="mousedown.prevent:swallow;click:setBorderColorTier"
+                          >
+                            Custom
+                          </button>
+                        </div>
+                        <div data-p-show="$borderColorChoicesShown">
+                          <div
+                            class="pbe-spacing-pane__colors"
+                            role="group"
+                            aria-label="Border color"
+                            data-p-show="not $borderColorGrid"
+                          >
+                            <template data-p-for="sw of $borderColorSwatches" data-p-key="sw.key">
+                              <button
+                                type="button"
+                                class="pbe-spacing-pane__color"
+                                data-p-style="background-color->sw.css"
+                                data-p-bind="data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
+                                data-p-on="mousedown.prevent:swallow;click:applyBoxBorderColor"
+                              ></button>
+                            </template>
+                          </div>
+                          <div
+                            class="pbe-spacing-pane__color-families"
+                            role="group"
+                            aria-label="Border color"
+                            data-p-show="$borderColorGrid"
+                          >
+                            <template
+                              data-p-for="fam of $borderColorFamilies"
+                              data-p-key="fam.family"
+                            >
+                              <div>
+                                <span data-p-text="fam.family"></span>
+                                <div class="pbe-spacing-pane__colors">
+                                  <template data-p-for="sw of fam.swatches" data-p-key="sw.key">
+                                    <button
+                                      type="button"
+                                      class="pbe-spacing-pane__color"
+                                      data-p-style="background-color->sw.css"
+                                      data-p-bind="data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
+                                      data-p-on="mousedown.prevent:swallow;click:applyBoxBorderColor"
+                                    ></button>
+                                  </template>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                        <div
+                          class="pbe-spacing-pane__custom-color"
+                          data-p-show="$borderColorTierCustom"
+                        >
+                          <input
+                            type="color"
+                            aria-label="Choose custom border color"
+                            data-p-bind="value:$borderColorCustomValue;disabled:$styleDisabled"
+                            data-p-on="change:applyBoxBorderCustomColor"
+                          />
+                          <input
+                            type="text"
+                            placeholder="#000000 or CSS color"
+                            aria-label="Custom border color"
+                            data-p-bind="value:$borderColorCustomText;disabled:$styleDisabled"
+                            data-p-on="change:applyBoxBorderCustomColor"
+                          />
+                        </div>
+                      </div>
+                      <div
+                        class="pbe-spacing-pane__field pbe-spacing-pane__radius"
+                        data-p-show="$boxEditorRadiusShown"
+                      >
+                        <template data-p-for="row of $boxEditorRadiusRows" data-p-key="row.prop">
+                          <div><!-- pbe-token-scale --></div>
+                        </template>
+                      </div>
                     </div>
                   </section>
                 </div>
@@ -2866,7 +2955,11 @@
                   <div class="pbe-control-row">
                     <div class="pbe-control-row__header">
                       <span data-p-text="row.label"></span>
-                      <span class="pbe-current-value" data-p-bind="data-inherited:row.inherited">
+                      <span
+                        class="pbe-current-value"
+                        data-p-show="not row.isRange"
+                        data-p-bind="data-inherited:row.inherited"
+                      >
                         <strong data-p-text="row.valueLabel"></strong>
                         <small data-p-show="row.inherited" data-p-text="row.inheritedLabel"></small>
                       </span>
@@ -2887,32 +2980,7 @@
                         ></button>
                       </template>
                     </div>
-                    <div
-                      class="pbe-scale pbe-scale--editable"
-                      data-p-bind="data-inherited:row.inherited;data-responsive:row.responsive"
-                      data-p-show="row.isRange"
-                    >
-                      <div class="pbe-scale__track" aria-hidden="true">
-                        <template data-p-for="opt of row.options" data-p-key="opt.key"
-                          ><span></span
-                        ></template>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        step="1"
-                        class="pbe-scale__input"
-                        data-p-bind="data-prop:row.prop;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
-                        data-p-on="change:applyStyleRange"
-                      />
-                      <input
-                        type="text"
-                        class="pbe-scale__editor"
-                        placeholder="Default"
-                        data-p-bind="data-prop:row.prop;value:row.value;data-inherited:row.inherited;disabled:$styleDisabled;aria-label:row.label"
-                        data-p-on="change:applyStyleInput"
-                      />
-                    </div>
+                    <div data-p-show="row.isRange"><!-- pbe-token-scale --></div>
                     <select
                       class="h-10 w-full cursor-pointer rounded-xs border border-neutral-300 bg-white px-2 text-[13px] focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
                       data-p-show="row.isSelect"
@@ -3032,139 +3100,6 @@
                         data-p-text="opt.label"
                       ></button>
                     </template>
-                  </div>
-                </div>
-                <div data-p-show="$borderWidthOptions.length">
-                  <span class="mb-1.5 block text-[12px] text-neutral-500">Width</span>
-                  <div class="pbe-scale pbe-scale--editable">
-                    <div class="pbe-scale__track" aria-hidden="true">
-                      <template data-p-for="opt of $borderWidthOptions" data-p-key="opt.key"
-                        ><span></span
-                      ></template>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      step="1"
-                      class="pbe-scale__input"
-                      data-prop="borderWidth"
-                      aria-label="Border width"
-                      data-p-bind="max:borderWidthRangeMax;value:borderWidthRangeIndex;disabled:$styleDisabled"
-                      data-p-on="change:applyBorderRange"
-                    />
-                    <input
-                      type="text"
-                      class="pbe-scale__editor"
-                      placeholder="Default"
-                      data-prop="borderWidth"
-                      aria-label="Border width"
-                      data-p-bind="value:$borderWidthValue;disabled:$styleDisabled"
-                      data-p-on="change:applyStyleInput"
-                    />
-                  </div>
-                </div>
-                <div class="mt-4" data-p-show="$borderColorShown">
-                  <span class="mb-1.5 block text-[12px] text-neutral-500">Color</span>
-                  <div
-                    class="flex flex-wrap gap-2"
-                    role="group"
-                    aria-label="Border color"
-                    data-p-show="not $borderColorGrid"
-                  >
-                    <template data-p-for="sw of $borderColorSwatches" data-p-key="sw.key">
-                      <button
-                        type="button"
-                        class="h-7 w-7 cursor-pointer rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] transition-transform hover:scale-110 focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_#fff,0_0_0_4px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40 aria-pressed:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_#fff,0_0_0_4px_var(--color-accent)]"
-                        data-prop="borderColor"
-                        data-p-style="background-color->sw.css"
-                        data-p-bind="data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
-                        data-p-on="mousedown.prevent:swallow;click:applyColor"
-                      >
-                        <svg
-                          class="mx-auto h-3.5 w-3.5 text-white mix-blend-difference"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2.25"
-                          aria-hidden="true"
-                          data-p-show="sw.pressed"
-                        >
-                          <path d="m3 8 3 3 7-7" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                      </button>
-                    </template>
-                  </div>
-                  <div
-                    class="flex flex-col gap-1"
-                    role="group"
-                    aria-label="Border color"
-                    data-p-show="$borderColorGrid"
-                  >
-                    <template data-p-for="fam of $borderColorFamilies" data-p-key="fam.family">
-                      <div class="flex items-center gap-2">
-                        <span
-                          class="w-14 shrink-0 truncate text-[9px] font-medium text-neutral-500"
-                          data-p-text="fam.family"
-                        ></span>
-                        <div class="flex flex-wrap items-center gap-1">
-                          <template data-p-for="sw of fam.swatches" data-p-key="sw.key">
-                            <button
-                              type="button"
-                              class="h-5 w-5 cursor-pointer rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] transition-transform hover:scale-110 focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_2px_var(--color-accent)] focus-visible:outline-none disabled:cursor-default disabled:opacity-40 aria-pressed:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15),0_0_0_1.5px_#fff,0_0_0_3px_var(--color-accent)]"
-                              data-prop="borderColor"
-                              data-p-style="background-color->sw.css"
-                              data-p-bind="data-value:sw.key;aria-pressed:sw.pressed;disabled:$styleDisabled;aria-label:sw.label;title:sw.label"
-                              data-p-on="mousedown.prevent:swallow;click:applyColor"
-                            >
-                              <svg
-                                class="mx-auto h-3 w-3 text-white mix-blend-difference"
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2.25"
-                                aria-hidden="true"
-                                data-p-show="sw.pressed"
-                              >
-                                <path
-                                  d="m3 8 3 3 7-7"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                />
-                              </svg>
-                            </button>
-                          </template>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-                <div class="mt-4" data-p-show="$borderRadiusOptions.length">
-                  <span class="mb-1.5 block text-[12px] text-neutral-500">Radius</span>
-                  <div class="pbe-scale pbe-scale--editable">
-                    <div class="pbe-scale__track" aria-hidden="true">
-                      <template data-p-for="opt of $borderRadiusOptions" data-p-key="opt.key"
-                        ><span></span
-                      ></template>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      step="1"
-                      class="pbe-scale__input"
-                      data-prop="borderRadius"
-                      aria-label="Border radius"
-                      data-p-bind="max:borderRadiusRangeMax;value:borderRadiusRangeIndex;disabled:$styleDisabled"
-                      data-p-on="change:applyBorderRange"
-                    />
-                    <input
-                      type="text"
-                      class="pbe-scale__editor"
-                      placeholder="Default"
-                      data-prop="borderRadius"
-                      aria-label="Border radius"
-                      data-p-bind="value:$borderRadiusValue;disabled:$styleDisabled"
-                      data-p-on="change:applyStyleInput"
-                    />
                   </div>
                 </div>
               </details>

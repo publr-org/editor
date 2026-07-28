@@ -7,7 +7,6 @@
 // wasm + worker never weigh down the embeddable library build; hosts that want
 // a batteries-included browser engine can promote it later.
 
-import { runtimeThemeCss } from "./css-engine";
 import type { CssEngine, CssEngineResult } from "./css-engine";
 import { unresolvedUtilities } from "./style";
 import { activeTheme } from "./theme";
@@ -40,12 +39,12 @@ export function wasmCssEngine(): CssEngine {
       const css = new Promise<string>((resolve, reject) => {
         const id = nextId++;
         pending.set(id, { resolve, reject });
-        worker.postMessage({ id, classes: [...classes] });
+        worker.postMessage({ id, classes: [...classes], theme: { tokens: theme.tokens } });
       });
       // Diagnostics come from the editor-side shape detector, exactly as
       // httpCssEngine does (the jit doesn't report its drop list yet — #432).
       return css.then((text) => ({
-        css: `${text}\n${runtimeThemeCss(classes, theme)}`,
+        css: text,
         unresolved: unresolvedUtilities(classes, theme).map((u) => u.cls),
       }));
     },

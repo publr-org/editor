@@ -28,7 +28,6 @@ import {
   registerPattern,
   semanticColorRoles,
   semanticColors,
-  runtimeThemeCss,
   collectClasses,
   inlineBackend,
   paletteTokens,
@@ -3340,10 +3339,31 @@ describe("style: border — width/color/radius (C4)", () => {
   test("width/radius scales + arbitrary; border color", () => {
     expect(styleClasses({ borderWidth: "1" })).toEqual(["border"]); // 1px = the bare utility
     expect(styleClasses({ borderWidth: "2" })).toEqual(["border-2"]);
+    expect(styleClasses({ borderWidth: "var(--edge)" })).toEqual(["border-[length:var(--edge)]"]);
     expect(styleClasses({ borderRadius: "lg" })).toEqual(["rounded-lg"]); // radius-lg token
     expect(styleClasses({ borderRadius: "5px" })).toEqual(["rounded-[5px]"]);
     expect(styleClasses({ borderColor: "border" })).toEqual(["border-border"]); // semantic token
-    expect(styleClasses({ borderColor: "#111111" })).toEqual(["border-[#111111]"]);
+    expect(styleClasses({ borderColor: "#111111" })).toEqual(["border-[color:#111111]"]);
+    expect(
+      styleClasses({
+        borderTopWidth: "2.75rem",
+        borderRightColor: "#abcdef",
+        borderBottomLeftRadius: "lg",
+      }),
+    ).toEqual(["border-t-[length:2.75rem]", "border-r-[color:#abcdef]", "rounded-bl-lg"]);
+  });
+
+  test("independent border edges and corners round-trip", () => {
+    const editor = mount();
+    editor.loadHtml(BP("P"));
+    editor.setStyle("P", "borderTopWidth", "2");
+    editor.setStyle("P", "borderRightColor", "#111111");
+    editor.setStyle("P", "borderBottomLeftRadius", "lg");
+    expect(editor.getStyle("P", "borderTopWidth")).toBe("2");
+    expect(editor.getStyle("P", "borderRightColor")).toBe("#111111");
+    expect(editor.getStyle("P", "borderBottomLeftRadius")).toBe("lg");
+    const model = editor.getModel();
+    expect(upcast(parse(downcast(model)))).toEqual(model);
   });
 
   test("all three border props apply together and round-trip", () => {
@@ -3360,7 +3380,7 @@ describe("style: border — width/color/radius (C4)", () => {
     const data = editor.serialize({ pipeline: "data" });
     expect(data).toContain("border-2");
     expect(data).toContain("rounded-lg");
-    expect(data).toContain("border-[#111111]");
+    expect(data).toContain("border-[color:#111111]");
   });
 
   test("registerBlock validates the border panel shape", () => {
@@ -4037,7 +4057,6 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
       xl: "1280px",
       "2xl": "1536px",
     });
-    expect(runtimeThemeCss(["lg:text-accent"], theme)).toContain("@media (min-width:1232px)");
     const containerCss = responsiveContainerCss(theme);
     expect(containerCss).toContain("@media (min-width:1232px)");
     expect(containerCss).toContain(".lg\\:pbe-container--on");
@@ -4080,41 +4099,6 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
     }
     expect(styleClasses({ fontSize: "huge" })).toEqual(["text-[huge]"]);
   });
-
-  test("runtime theme CSS materializes custom-token utilities missing from the fixed JIT", () => {
-    const theme = themeFromTokens({
-      "text-hero": "4.5rem",
-      "color-brand": "#123456",
-      "radius-card": "1.25rem",
-      "breakpoint-sm": "640px",
-    });
-    const css = runtimeThemeCss(
-      ["text-hero", "text-brand", "bg-brand", "border-brand", "rounded-card", "sm:text-brand"],
-      theme,
-    );
-    expect(css).toContain(".text-hero{font-size:4.5rem}");
-    expect(css).toContain(".text-brand{color:#123456}");
-    expect(css).toContain(".bg-brand{background-color:#123456}");
-    expect(css).toContain(".border-brand{border-color:#123456}");
-    expect(css).toContain(".rounded-card{border-radius:1.25rem}");
-    expect(css).toContain("@media (min-width:640px){.sm\\3a text-brand{color:#123456}}");
-
-    const frame = document.createElement("iframe");
-    frame.style.width = "640px";
-    document.body.appendChild(frame);
-    const doc = frame.contentDocument!;
-    const tag = doc.createElement("style");
-    const sample = doc.createElement("p");
-    tag.textContent = `.text-white{color:#fff}${css}`;
-    sample.className = "text-white sm:text-brand";
-    doc.head.appendChild(tag);
-    doc.body.appendChild(sample);
-    try {
-      expect(doc.defaultView!.getComputedStyle(sample).color).toBe("rgb(18, 52, 86)");
-    } finally {
-      frame.remove();
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -4128,7 +4112,7 @@ describe("style backends: the inline carrier + unresolved utilities (E2)", () =>
           typography: { fontSize: true },
           color: { text: true },
           spacing: { padding: true },
-          border: { width: true, color: true },
+          border: { width: true, color: true, radius: true },
         },
         render: (f) => `<p data-pb-block="ib-p" data-pb-rich="body">${str(f.body)}</p>`,
       });
@@ -4186,6 +4170,18 @@ describe("style backends: the inline carrier + unresolved utilities (E2)", () =>
     expect(editor.getBlock("P")!.css).toContain("border-style: solid");
     editor.setStyle("P", "borderWidth", "");
     expect(editor.getBlock("P")!.css).toBeUndefined(); // companion leaves with it
+  });
+
+  test("inline backend carries independent border edges and corners", () => {
+    const editor = mount({ styleBackend: inlineBackend });
+    editor.loadHtml(IP("P"));
+    editor.setStyle("P", "borderTopWidth", "2");
+    editor.setStyle("P", "borderRightColor", "#111111");
+    editor.setStyle("P", "borderBottomLeftRadius", "lg");
+    expect(editor.getBlock("P")!.css).toContain("border-top-width: 2px");
+    expect(editor.getBlock("P")!.css).toContain("border-style: solid");
+    expect(editor.getBlock("P")!.css).toContain("border-right-color: #111111");
+    expect(editor.getBlock("P")!.css).toContain("border-bottom-left-radius: var(--radius-lg)");
   });
 
   test("inline backend leaves pasted Tailwind classes opaque (the honest boundary)", () => {

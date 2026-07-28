@@ -97,7 +97,7 @@ import {
   variationClasses,
 } from "./style";
 import { classesBackend, inlineBackend } from "./style-backend";
-import { collectClasses, httpCssEngine, probeCssEngine, runtimeThemeCss } from "./css-engine";
+import { collectClasses, httpCssEngine, probeCssEngine } from "./css-engine";
 import {
   BORDER_WIDTH_STEPS,
   CONTAINER_WIDTH_DEFAULTS,
@@ -262,7 +262,6 @@ export {
   collectClasses,
   httpCssEngine,
   probeCssEngine,
-  runtimeThemeCss,
   CONTAINER_WIDTH_DEFAULTS,
   SITE_TYPOGRAPHY_DEFAULTS,
   DEFAULT_THEME,

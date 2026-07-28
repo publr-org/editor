@@ -123,29 +123,17 @@ const spacingSidesIcon = (selected: readonly SpacingEdge[]): string => {
   const base = Object.values(SPACING_EDGE_PATHS).join("");
   const active = selected.map((side) => SPACING_EDGE_PATHS[side]).join("");
   return (
-    `<path d="${base}" stroke="currentColor" stroke-width="2" stroke-linecap="square" opacity=".28"/>` +
+    `<path d="${base}" stroke="#666666" stroke-width="2" stroke-linecap="square"/>` +
     (active
       ? `<path d="${active}" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>`
       : "")
   );
 };
 const SPACING_SIDE_SELECTIONS: Record<string, readonly SpacingEdge[]> = {
-  "spacing-sides-none": [],
   "spacing-sides-top": ["top"],
   "spacing-sides-right": ["right"],
   "spacing-sides-bottom": ["bottom"],
   "spacing-sides-left": ["left"],
-  "spacing-sides-top-right": ["top", "right"],
-  "spacing-sides-top-bottom": ["top", "bottom"],
-  "spacing-sides-top-left": ["top", "left"],
-  "spacing-sides-right-bottom": ["right", "bottom"],
-  "spacing-sides-left-right": ["left", "right"],
-  "spacing-sides-bottom-left": ["bottom", "left"],
-  "spacing-sides-top-right-bottom": ["top", "right", "bottom"],
-  "spacing-sides-top-right-left": ["top", "right", "left"],
-  "spacing-sides-top-bottom-left": ["top", "bottom", "left"],
-  "spacing-sides-right-bottom-left": ["right", "bottom", "left"],
-  "spacing-sides-all": ["top", "right", "bottom", "left"],
 };
 const SPACING_CONTROL_ICONS = {
   ...Object.fromEntries(
@@ -155,6 +143,16 @@ const SPACING_CONTROL_ICONS = {
     '<path d="M7.5 3.5H16.5M7.5 20.5H16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 7V17M9.5 9.5L12 7L14.5 9.5M9.5 14.5L12 17L14.5 14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   "spacing-sync-left-right":
     '<path d="M3.5 7.5V16.5M20.5 7.5V16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M7 12H17M9.5 9.5L7 12L9.5 14.5M14.5 9.5L17 12L14.5 14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  "border-radius-corner":
+    '<path d="M4 16V11C4 7.13401 7.13401 4 11 4H16" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>',
+  "border-radius-top-left":
+    '<path d="M4 10V8C4 5.79086 5.79086 4 8 4H10M14 4H16C18.2091 4 20 5.79086 20 8V10M20 14V16C20 18.2091 18.2091 20 16 20H14M10 20H8C5.79086 20 4 18.2091 4 16V14" stroke="#666666" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 10V8C4 5.79086 5.79086 4 8 4H10" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>',
+  "border-radius-top-right":
+    '<path d="M4 10V8C4 5.79086 5.79086 4 8 4H10M14 4H16C18.2091 4 20 5.79086 20 8V10M20 14V16C20 18.2091 18.2091 20 16 20H14M10 20H8C5.79086 20 4 18.2091 4 16V14" stroke="#666666" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 4H16C18.2091 4 20 5.79086 20 8V10" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>',
+  "border-radius-bottom-right":
+    '<path d="M4 10V8C4 5.79086 5.79086 4 8 4H10M14 4H16C18.2091 4 20 5.79086 20 8V10M20 14V16C20 18.2091 18.2091 20 16 20H14M10 20H8C5.79086 20 4 18.2091 4 16V14" stroke="#666666" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 14V16C20 18.2091 18.2091 20 16 20H14" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>',
+  "border-radius-bottom-left":
+    '<path d="M4 10V8C4 5.79086 5.79086 4 8 4H10M14 4H16C18.2091 4 20 5.79086 20 8V10M20 14V16C20 18.2091 18.2091 20 16 20H14M10 20H8C5.79086 20 4 18.2091 4 16V14" stroke="#666666" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 20H8C5.79086 20 4 18.2091 4 16V14" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>',
 } as const;
 
 const BRIDGED_ICONS = {

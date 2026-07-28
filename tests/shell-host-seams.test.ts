@@ -28,6 +28,7 @@ import {
 } from "../src/theme";
 import preflightCss from "../vendor/jit/preflight.css?raw";
 import siteCss from "../src/styles.css?inline";
+import { wasmCssEngine } from "../src/wasm-engine";
 
 if (!getBlockType("paragraph")) registerCoreBlocks();
 if (!getPattern("hero")) registerCorePatterns();
@@ -270,7 +271,7 @@ describe("shell host seams", () => {
     });
     shell.refreshCss();
     const tag = canvasQuery<HTMLStyleElement>("#pbe-engine-css")!;
-    await vi.waitFor(() => expect(tag.textContent).toContain("@scope (#canvas)"));
+    await vi.waitFor(() => expect(tag.textContent).toContain("rgb(255 0 255)"));
 
     host.querySelector<HTMLButtonElement>("#design-system-toggle")!.click();
     const chromeHeader = host.querySelector<HTMLElement>("#design-workspace > header")!;
@@ -1075,51 +1076,502 @@ describe("shell host seams", () => {
     expect(host.querySelector('[data-context="inverse"]')?.getAttribute("aria-pressed")).toBe(
       "true",
     );
+    const boxPadding = (side: string): HTMLButtonElement =>
+      host.querySelector<HTMLButtonElement>(
+        `.pbe-box-model__value[data-kind="padding"][data-side="${side}"]`,
+      )!;
+    expect(boxPadding("Left").textContent).toBe("8");
+    expect(boxPadding("Right").textContent).toBe("8");
+    expect(boxPadding("Top").textContent).toBe("10");
+    expect(boxPadding("Bottom").textContent).toBe("10");
     expect(
-      host.querySelector<HTMLInputElement>('.pbe-scale__editor[data-prop="paddingInline"]')!.value,
-    ).toBe("8");
-    expect(
-      host.querySelector<HTMLInputElement>('.pbe-scale__editor[data-prop="paddingBlock"]')!.value,
-    ).toBe("10");
-    const paddingInlineRow = host
-      .querySelector<HTMLInputElement>('.pbe-scale__editor[data-prop="paddingInline"]')!
-      .closest(".pbe-control-row")!;
-    const paddingIndicator = paddingInlineRow.querySelector<HTMLDetailsElement>(
-      ".pbe-responsive-field:not(.hidden)",
-    )!;
-    expect(paddingIndicator).toBeTruthy();
-    expect(paddingInlineRow.querySelector(".pbe-scale")?.hasAttribute("data-responsive")).toBe(
-      true,
-    );
-    paddingIndicator.open = true;
-    expect(
-      [...paddingIndicator.querySelectorAll<HTMLElement>(".pbe-responsive-field__point span")].map(
-        (point) => point.textContent,
-      ),
-    ).toEqual(["390px", "640px", "768px", "1024px", "1280px", "1536px"]);
+      host.querySelector('[data-publr-component="token-scale"] [data-prop="paddingInline"]'),
+    ).toBeNull();
+    const tokenScale = (prop: string): HTMLElement =>
+      host
+        .querySelector<HTMLElement>(`[data-publr-component="token-scale"] [data-prop="${prop}"]`)!
+        .closest<HTMLElement>('[data-publr-component="token-scale"]')!;
+    const tokenScaleValue = (prop: string): string =>
+      tokenScale(prop).querySelector<HTMLInputElement>('input[type="text"]')?.value ??
+      tokenScale(prop).querySelector<HTMLInputElement>('input[type="range"]')!.value;
     host.querySelector<HTMLButtonElement>('[data-itab="settings"]')!.click();
-    await vi.waitFor(() =>
-      expect(
-        host.querySelector<HTMLInputElement>('.pbe-scale__editor[data-prop="gridColumns"]')!.value,
-      ).toBe("1"),
-    );
+    await vi.waitFor(() => expect(tokenScaleValue("gridColumns")).toBe("1"));
 
     await selectViewportBreakpoint("md", "tablet");
     await vi.waitFor(() =>
       expect(host.querySelector<HTMLElement>(".pbe-canvas-viewport")!.style.width).toBe("768px"),
     );
-    expect(
-      host.querySelector<HTMLInputElement>('.pbe-scale__editor[data-prop="gridColumns"]')!.value,
-    ).toBe("1fr auto 1fr");
+    expect(tokenScaleValue("gridColumns")).toBe("1fr auto 1fr");
 
     await selectViewportBreakpoint("lg", "desktop");
     await vi.waitFor(() =>
       expect(host.querySelector<HTMLElement>(".pbe-canvas-viewport")!.style.width).toBe("1024px"),
     );
     host.querySelector<HTMLButtonElement>('[data-itab="styles"]')!.click();
+    expect(boxPadding("Left").textContent).toBe("20");
+    expect(boxPadding("Right").textContent).toBe("20");
+  });
+
+  test("the unified box model edits Border width and previews its layers", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const shell = await createEditorShell({
+      container: host,
+      content: '<p data-pb-id="P" data-pb-block="paragraph" data-pb-rich="body">Border</p>',
+      media: false,
+      theme: DEFAULT_THEME,
+      cssEngine: wasmCssEngine(),
+    });
+    destroyShell = shell.destroy;
+    shell.editor.selectBlock("P", { toggle: true });
+    host.querySelector<HTMLButtonElement>('[data-itab="styles"]')!.click();
+
     expect(
-      host.querySelector<HTMLInputElement>('.pbe-scale__editor[data-prop="paddingInline"]')!.value,
-    ).toBe("20");
+      host.querySelector(
+        '#block-border [data-publr-component="token-scale"] input[data-prop="borderWidth"]',
+      ),
+    ).toBeNull();
+    expect(host.querySelector(".pbe-box-model__link")).toBeNull();
+    expect(host.querySelectorAll(".pbe-box-model__radius-corner")).toHaveLength(4);
+    for (const use of host.querySelectorAll(".pbe-box-model__radius-corner use"))
+      expect(use.getAttribute("href")).toBe("#pbe-i-border-radius-corner");
+    const borderTop = host.querySelector<HTMLButtonElement>(
+      '.pbe-box-model__value[data-kind="border"][data-side="Top"]',
+    )!;
+    borderTop.click();
+
+    let component!: HTMLElement;
+    await vi.waitFor(() => {
+      component = host
+        .querySelector<HTMLInputElement>(
+          '.pbe-box-model__control [data-publr-component="token-scale"] input[data-kind="border"][data-prop="borderWidth"]',
+        )!
+        .closest<HTMLElement>('[data-publr-component="token-scale"]')!;
+      expect(component).toBeTruthy();
+    });
+    expect(host.querySelector(".pbe-spacing-pane__header strong")?.textContent).toBe("Border");
+    expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("Top");
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__value[data-kind="border"][data-side="Right"]',
+      )!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    await vi.waitFor(() =>
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("Top, Right"),
+    );
+    expect(
+      host
+        .querySelector('.pbe-box-model__control input[data-prop="borderWidth"]')
+        ?.closest('[data-publr-component="token-scale"]')
+        ?.querySelectorAll(".pbe-spacing-side svg"),
+    ).toHaveLength(2);
+    host.querySelector<HTMLButtonElement>('.pbe-spacing-pane__sync[data-mode="all"]')!.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector(".pbe-spacing-pane__header strong")?.textContent).toBe("Border"),
+    );
+    expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("All sides");
+    expect(
+      host
+        .querySelector('.pbe-box-model__control input[data-prop="borderWidth"]')
+        ?.closest('[data-publr-component="token-scale"]')
+        ?.querySelectorAll(".pbe-spacing-side svg"),
+    ).toHaveLength(4);
+    expect(
+      host
+        .querySelector<HTMLButtonElement>('.pbe-spacing-pane__sync[data-mode="pair"]')
+        ?.classList.contains("hidden"),
+    ).toBe(false);
+    expect(
+      host.querySelector(
+        '.pbe-box-model__control input[data-kind="border"][data-prop="borderRadius"]',
+      ),
+    ).toBeNull();
+    const borderColorField = host
+      .querySelector(".pbe-box-model__control .pbe-spacing-pane__color")
+      ?.closest<HTMLElement>(".pbe-spacing-pane__field");
+    expect(borderColorField?.classList.contains("hidden")).toBe(true);
+    expect(
+      [
+        ...host.querySelectorAll<HTMLElement>(
+          ".pbe-box-model__control .pbe-spacing-pane__field-label",
+        ),
+      ]
+        .filter(
+          (label) =>
+            !label.classList.contains("hidden") &&
+            !label.closest<HTMLElement>(".pbe-spacing-pane__field")?.classList.contains("hidden"),
+        )
+        .map((label) => label.textContent?.trim()),
+    ).toEqual([]);
+
+    const range = host.querySelector<HTMLInputElement>(
+      '.pbe-box-model__control input[type="range"][data-prop="borderWidth"]',
+    )!;
+    range.value = "1";
+    range.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(shell.editor.getStyle("P", "borderWidth")).toBe("1");
+      expect(borderColorField?.classList.contains("hidden")).toBe(false);
+    });
+    const recommendedColors = host.querySelectorAll(
+      ".pbe-box-model__control .pbe-spacing-pane__color",
+    ).length;
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-spacing-pane__color-tabs button[data-tier="semantic"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        host.querySelectorAll(".pbe-box-model__control .pbe-spacing-pane__color").length,
+      ).toBeGreaterThan(recommendedColors),
+    );
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-spacing-pane__color-tabs button[data-tier="recommended"]',
+      )!
+      .click();
+    const initialColor = host.querySelector<HTMLButtonElement>(
+      ".pbe-box-model__control .pbe-spacing-pane__color",
+    )!;
+    const selectedBlock = canvasQuery<HTMLElement>('[data-pb-id="P"]')!;
+    const canvasView = selectedBlock.ownerDocument.defaultView!;
+    const previousBorderColor = canvasView.getComputedStyle(selectedBlock).borderTopColor;
+    initialColor.click();
+    await vi.waitFor(() => expect(shell.editor.getStyle("P", "borderColor")).not.toBe(""));
+    const initialBorderColor = shell.editor.getStyle("P", "borderColor");
+    expect(shell.editor.getStyle("P", "borderWidth")).toBe("1");
+    expect(shell.editor.getStyle("P", "borderStyle")).toBe("solid");
+    await vi.waitFor(() =>
+      expect(canvasView.getComputedStyle(selectedBlock).borderTopColor).not.toBe(
+        previousBorderColor,
+      ),
+    );
+
+    range.value = "2";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+    range.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(shell.editor.getStyle("P", "borderWidth")).toBe("2"));
+
+    component.querySelector<HTMLButtonElement>('[aria-label="Set custom value"]')!.click();
+    await vi.waitFor(() =>
+      expect(component.querySelector<HTMLInputElement>('input[type="number"]')).toBeTruthy(),
+    );
+    const number = component.querySelector<HTMLInputElement>('input[type="number"]')!;
+    number.value = "3";
+    number.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(shell.editor.getStyle("P", "borderWidth")).toBe("3px"));
+
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__value[data-kind="border"][data-side="Top"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("Top"),
+    );
+    const topWidth = host.querySelector<HTMLInputElement>(
+      '.pbe-box-model__control input[type="number"][data-prop="borderWidth"]',
+    )!;
+    topWidth.value = "4";
+    topWidth.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(shell.editor.getStyle("P", "borderTopWidth")).toBe("4px"));
+    expect(shell.editor.getStyle("P", "borderRightWidth")).toBe("3px");
+    expect(shell.editor.getStyle("P", "borderWidth")).toBe("");
+
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__radius-corner[data-corner="borderTopLeftRadius"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(host.querySelector(".pbe-spacing-pane__header strong")?.textContent).toBe(
+        "Border Radius",
+      ),
+    );
+    expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("Top Left");
+    expect(
+      getComputedStyle(
+        host.querySelector<HTMLElement>(".pbe-box-model__border > .pbe-box-model__label")!,
+      ).opacity,
+    ).toBe("0");
+    expect(host.querySelector('.pbe-box-model__control input[data-prop="borderWidth"]')).toBeNull();
+    expect(borderColorField?.classList.contains("hidden")).toBe(true);
+    const radiusField = host.querySelector<HTMLElement>(".pbe-spacing-pane__radius")!;
+    expect(getComputedStyle(radiusField).borderTopWidth).toBe("0px");
+    expect(
+      host.querySelectorAll('.pbe-spacing-pane__radius [data-publr-component="token-scale"]'),
+    ).toHaveLength(1);
+    const allCorners = host.querySelector<HTMLButtonElement>(".pbe-spacing-pane__sync--corners")!;
+    expect(allCorners.classList.contains("hidden")).toBe(false);
+    expect(allCorners.querySelectorAll("use")).toHaveLength(4);
+    allCorners.click();
+    await vi.waitFor(() => {
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe(
+        "All corners",
+      );
+      expect(
+        host.querySelectorAll('.pbe-box-model__radius-corner[aria-pressed="true"]'),
+      ).toHaveLength(4);
+    });
+    allCorners.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("Top Left"),
+    );
+    expect(
+      host
+        .querySelector('[data-prop="borderTopLeftRadius"]')!
+        .closest('[data-publr-component="token-scale"]')
+        ?.querySelector("use")
+        ?.getAttribute("href"),
+    ).toBe("#pbe-i-border-radius-top-left");
+    const topLeftRadius = host.querySelector<HTMLInputElement>(
+      '.pbe-spacing-pane__radius input[type="range"][data-prop="borderTopLeftRadius"]',
+    )!;
+    topLeftRadius.value = "1";
+    topLeftRadius.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(shell.editor.getStyle("P", "borderTopLeftRadius")).not.toBe("");
+      expect(
+        host.querySelector(
+          '.pbe-box-model__radius-corner[data-corner="borderTopLeftRadius"] > span',
+        )?.textContent,
+      ).toBe(shell.editor.getStyle("P", "borderTopLeftRadius"));
+    });
+    const topLeftRadiusButton = host.querySelector<HTMLElement>(
+      '.pbe-box-model__radius-corner[data-corner="borderTopLeftRadius"]',
+    )!;
+    const topLeftRadiusValue = topLeftRadiusButton.querySelector<HTMLElement>("span")!;
+    expect(getComputedStyle(topLeftRadiusValue).color).toBe("rgb(255, 255, 255)");
+    expect(getComputedStyle(topLeftRadiusValue).fontSize).toBe("10px");
+    expect(getComputedStyle(topLeftRadiusValue).left).toBe("12px");
+    expect(getComputedStyle(topLeftRadiusValue).top).toBe("10px");
+    expect(getComputedStyle(topLeftRadiusButton.querySelector("svg")!).opacity).toBe("0.5");
+    const topRightRadiusValue = host.querySelector<HTMLElement>(
+      '.pbe-box-model__radius-corner[data-corner="borderTopRightRadius"] > span',
+    )!;
+    expect(getComputedStyle(topRightRadiusValue).right).toBe("12px");
+    expect(getComputedStyle(topRightRadiusValue).top).toBe("10px");
+    const bottomRightRadiusValue = host.querySelector<HTMLElement>(
+      '.pbe-box-model__radius-corner[data-corner="borderBottomRightRadius"] > span',
+    )!;
+    expect(getComputedStyle(bottomRightRadiusValue).right).toBe("12px");
+    expect(getComputedStyle(bottomRightRadiusValue).bottom).toBe("10px");
+    const bottomLeftRadiusValue = host.querySelector<HTMLElement>(
+      '.pbe-box-model__radius-corner[data-corner="borderBottomLeftRadius"] > span',
+    )!;
+    expect(getComputedStyle(bottomLeftRadiusValue).left).toBe("12px");
+    expect(getComputedStyle(bottomLeftRadiusValue).bottom).toBe("10px");
+    expect(
+      host.querySelector('.pbe-box-model__radius-corner[data-corner="borderTopRightRadius"] > span')
+        ?.textContent,
+    ).toBe("");
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__radius-corner[data-corner="borderBottomRightRadius"]',
+      )!
+      .click();
+    await vi.waitFor(() => {
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe(
+        "Bottom Right",
+      );
+      expect(topLeftRadiusButton.getAttribute("aria-pressed")).toBe("false");
+    });
+    expect(
+      getComputedStyle(
+        host.querySelector<HTMLElement>(".pbe-box-model__border > .pbe-box-model__label")!,
+      ).opacity,
+    ).toBe("0");
+    expect(getComputedStyle(topLeftRadiusButton).opacity).toBe("1");
+    topLeftRadiusButton.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe("Top Left"),
+    );
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__radius-corner[data-corner="borderBottomRightRadius"]',
+      )!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    await vi.waitFor(() => {
+      expect(host.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe(
+        "Top Left, Bottom Right",
+      );
+      expect(
+        host.querySelectorAll('.pbe-spacing-pane__radius [data-publr-component="token-scale"]'),
+      ).toHaveLength(1);
+      const iconLayers = host.querySelectorAll<SVGElement>(
+        ".pbe-spacing-pane__radius .pbe-spacing-side svg",
+      );
+      expect(iconLayers).toHaveLength(2);
+    });
+    const combinedRadius = host.querySelector<HTMLInputElement>(
+      '.pbe-spacing-pane__radius .pbe-token-scale:not(.pbe-token-scale--custom) input[type="range"]',
+    )!;
+    combinedRadius.value = "2";
+    combinedRadius.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(shell.editor.getStyle("P", "borderBottomRightRadius")).not.toBe("");
+      expect(shell.editor.getStyle("P", "borderBottomRightRadius")).toBe(
+        shell.editor.getStyle("P", "borderTopLeftRadius"),
+      );
+      expect(
+        host.querySelector(
+          '.pbe-box-model__radius-corner[data-corner="borderBottomRightRadius"] > span',
+        )?.textContent,
+      ).toBe(shell.editor.getStyle("P", "borderBottomRightRadius"));
+    });
+    expect(shell.editor.getStyle("P", "borderRadius")).toBe("");
+    expect(shell.editor.getStyle("P", "borderTopLeftRadius")).not.toBe("");
+    expect(selectedBlock.classList.contains("pbe-selected")).toBe(true);
+    expect(canvasView.getComputedStyle(selectedBlock).borderTopLeftRadius).not.toBe("2px");
+
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__value[data-kind="border"][data-side="Top"]',
+      )!
+      .click();
+    const color = host.querySelector<HTMLButtonElement>(
+      ".pbe-box-model__control .pbe-spacing-pane__color",
+    )!;
+    color.click();
+    await vi.waitFor(() => expect(shell.editor.getStyle("P", "borderTopColor")).not.toBe(""));
+    expect(shell.editor.getStyle("P", "borderRightColor")).toBe(initialBorderColor);
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__value[data-kind="border"][data-side="Right"]',
+      )!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector<HTMLButtonElement>(
+            '.pbe-box-model__value[data-kind="border"][data-side="Right"]',
+          )
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    const colors = host.querySelectorAll<HTMLButtonElement>(
+      ".pbe-box-model__control .pbe-spacing-pane__color",
+    );
+    colors[colors.length - 1]!.click();
+    await vi.waitFor(() =>
+      expect(shell.editor.getStyle("P", "borderRightColor")).toBe(
+        shell.editor.getStyle("P", "borderTopColor"),
+      ),
+    );
+    host
+      .querySelector<HTMLButtonElement>('.pbe-spacing-pane__color-tabs button[data-tier="custom"]')!
+      .click();
+    const customColor = host.querySelector<HTMLInputElement>(
+      '.pbe-spacing-pane__custom-color input[type="text"]',
+    )!;
+    customColor.value = "#123456";
+    customColor.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(shell.editor.getStyle("P", "borderTopColor")).toBe("#123456"));
+    expect(shell.editor.getStyle("P", "borderRightColor")).toBe("#123456");
+
+    const frame = host.querySelector<HTMLIFrameElement>("#editor-frame")!;
+    const canvasDoc = frame.contentDocument!;
+    const paddingLayer = host.querySelector<HTMLElement>(".pbe-box-model__padding")!;
+    const marginLayer = host.querySelector<HTMLElement>(".pbe-box-model__margin")!;
+    const borderLayer = host.querySelector<HTMLElement>(".pbe-box-model__border")!;
+    const previewedBlock = canvasDoc.querySelector<HTMLElement>('[data-pb-id="P"]')!;
+
+    for (const side of ["top", "right", "bottom", "left"]) {
+      previewedBlock.style.setProperty(`border-${side}-width`, "0px", "important");
+    }
+    previewedBlock.style.setProperty("padding", "0px", "important");
+    previewedBlock.style.setProperty("margin", "0px", "important");
+    borderLayer.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    expect(canvasDoc.querySelector("[data-pbe-box-layer-preview]")).toBeNull();
+    borderLayer.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+    paddingLayer.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    expect(canvasDoc.querySelector("[data-pbe-box-layer-preview]")).toBeNull();
+    paddingLayer.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+    marginLayer.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    expect(canvasDoc.querySelector("[data-pbe-box-layer-preview]")).toBeNull();
+    marginLayer.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+
+    previewedBlock.style.setProperty("padding", "8px", "important");
+    previewedBlock.style.setProperty("margin", "6px", "important");
+    paddingLayer.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(canvasDoc.querySelector('[data-pbe-box-layer-preview="padding"]')).toBeTruthy(),
+    );
+    expect(canvasDoc.querySelectorAll(".pbe-box-layer-preview__part")).toHaveLength(4);
+    const paddingPreviewPart = canvasDoc.querySelector<HTMLElement>(
+      ".pbe-box-layer-preview__part",
+    )!;
+    const paddingPreviewStyle = getComputedStyle(paddingPreviewPart);
+    expect(paddingPreviewStyle.zIndex).toBe("20");
+    expect(paddingPreviewStyle.backgroundColor).toContain("147, 196, 125");
+    expect(paddingPreviewStyle.backgroundImage).not.toContain("124, 58, 237");
+    paddingLayer.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(canvasDoc.querySelector("[data-pbe-box-layer-preview]")).toBeNull(),
+    );
+
+    marginLayer.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(canvasDoc.querySelector('[data-pbe-box-layer-preview="margin"]')).toBeTruthy(),
+    );
+    const marginPreviewStyle = getComputedStyle(
+      canvasDoc.querySelector<HTMLElement>(".pbe-box-layer-preview__part")!,
+    );
+    expect(marginPreviewStyle.backgroundImage).toContain("repeating-linear-gradient");
+    expect(marginPreviewStyle.backgroundImage).toContain("230, 142, 68");
+    marginLayer.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(canvasDoc.querySelector("[data-pbe-box-layer-preview]")).toBeNull(),
+    );
+  });
+
+  test("token border colors render visibly on Groups", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const shell = await createEditorShell({
+      container: host,
+      content:
+        '<div data-pb-id="G" data-pb-block="group" data-pb-children><p data-pb-block="paragraph" data-pb-rich="body">Group</p></div>',
+      media: false,
+      theme: HEARTH_THEME,
+      cssEngine: wasmCssEngine(),
+    });
+    destroyShell = shell.destroy;
+    shell.editor.setStyle("G", "borderWidth", "16px");
+    shell.editor.selectBlock("G", { toggle: true });
+    host.querySelector<HTMLButtonElement>('[data-itab="styles"]')!.click();
+    host
+      .querySelector<HTMLButtonElement>(
+        '.pbe-box-model__value[data-kind="border"][data-side="Top"]',
+      )!
+      .click();
+    host.querySelector<HTMLButtonElement>('.pbe-spacing-pane__sync[data-mode="all"]')!.click();
+    host
+      .querySelector<HTMLButtonElement>('.pbe-spacing-pane__color-tabs button[data-tier="tokens"]')!
+      .click();
+
+    let swatch!: HTMLButtonElement;
+    await vi.waitFor(() => {
+      swatch = host.querySelector<HTMLButtonElement>(
+        '.pbe-spacing-pane__color[data-value="palette-clay"]',
+      )!;
+      expect(swatch).toBeTruthy();
+    });
+    const initialBlock = canvasQuery<HTMLElement>('[data-pb-id="G"]')!;
+    const canvasView = initialBlock.ownerDocument.defaultView!;
+    const previousColor = canvasView.getComputedStyle(initialBlock).borderTopColor;
+    swatch.click();
+
+    await vi.waitFor(() => {
+      expect(shell.editor.getStyle("G", "borderColor")).toBe("palette-clay");
+      expect(shell.editor.getStyle("G", "borderStyle")).toBe("solid");
+      const block = canvasQuery<HTMLElement>('[data-pb-id="G"]')!;
+      const computed = canvasView.getComputedStyle(block);
+      expect(computed.borderTopStyle).toBe("solid");
+      expect(computed.borderTopWidth).toBe("16px");
+      expect(computed.borderTopColor).not.toBe(previousColor);
+    });
   });
 
   test("Group layout identity follows the effective responsive style without transforming", async () => {

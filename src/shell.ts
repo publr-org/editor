@@ -26,6 +26,7 @@
 // not supported — embed multiple bare editors (attachInlineChrome) instead.
 
 import shellHtml from "./shell.html?raw";
+import tokenScaleHtml from "./components/token-scale.html?raw";
 import previewCss from "./chrome.css?inline";
 import { createEditor } from "./editor";
 import { attachInlineChrome } from "./chrome-inline";
@@ -842,13 +843,26 @@ interface ColorRow {
  * scale outgrows segments (the Tailwind default has 13 font sizes). */
 interface ScaleRow {
   prop: string;
+  kind: "";
+  side: "";
   label: string;
-  options: { key: string; label: string; icon?: string; pressed: boolean }[];
+  options: {
+    key: string;
+    label: string;
+    value?: string;
+    icon?: string;
+    pressed: boolean;
+    active: boolean;
+  }[];
   isSelect: boolean;
   isRange: boolean;
   isSegmented: boolean;
   rangeIndex: number;
   rangeMax: number;
+  thumbPosition: string;
+  scaleIcon: string;
+  scaleIcons: string[];
+  hasScaleIcon: boolean;
   value: string; // effective value; "" = unset
   explicitValue: string;
   valueLabel: string;
@@ -857,6 +871,16 @@ interface ScaleRow {
   inheritedLabel: string;
   allowCustom: boolean;
   showCustomDisclosure: boolean;
+  customOpen: boolean;
+  customParsed: boolean;
+  customNumber: string;
+  customUnit: BoxSpacingUnit;
+  customMin: number;
+  customMax: number;
+  customStep: number;
+  customRangeValue: number;
+  customTrackFill: string;
+  customThumbPosition: string;
   responsive: boolean;
   responsiveSummary: string;
   responsiveChanges: string;
@@ -865,18 +889,42 @@ interface ScaleRow {
 }
 
 type BoxSpacingSide = "Top" | "Right" | "Bottom" | "Left";
-type BoxSpacingKind = "padding" | "margin";
+type BoxSpacingKind = "padding" | "margin" | "border";
 type BoxSpacingUnit = "px" | "%" | "em" | "rem" | "vw" | "vh";
+type BorderRadiusCornerProp =
+  | "borderTopLeftRadius"
+  | "borderTopRightRadius"
+  | "borderBottomRightRadius"
+  | "borderBottomLeftRadius";
+type BorderColorTier = "recommended" | "semantic" | "tokens" | "custom";
 
 interface BoxSpacingRow {
+  prop: string;
+  kind: BoxSpacingKind;
   side: BoxSpacingSide;
   label: string;
   value: string;
   valueLabel: string;
   rangeIndex: number;
+  rangeMax: number;
   snapped: boolean;
   thumbPosition: string;
-  options: { key: string; active: boolean }[];
+  scaleIcon: string;
+  scaleIcons: string[];
+  hasScaleIcon: boolean;
+  inherited: false;
+  responsive: false;
+  customOpen: boolean;
+  customParsed: boolean;
+  customNumber: string;
+  customUnit: BoxSpacingUnit;
+  customMin: number;
+  customMax: number;
+  customStep: number;
+  customRangeValue: number;
+  customTrackFill: string;
+  customThumbPosition: string;
+  options: { key: string; label: string; active: boolean }[];
 }
 
 interface OptionalStyleControl {
@@ -1585,6 +1633,7 @@ Publr.store("chrome", () => {
     textSpacingResetShown: false,
     boxPaddingShown: false,
     boxMarginShown: false,
+    boxBorderShown: false,
     boxPaddingTop: "",
     boxPaddingRight: "",
     boxPaddingBottom: "",
@@ -1593,18 +1642,33 @@ Publr.store("chrome", () => {
     boxMarginRight: "",
     boxMarginBottom: "",
     boxMarginLeft: "",
+    boxBorderTop: "",
+    boxBorderRight: "",
+    boxBorderBottom: "",
+    boxBorderLeft: "",
+    boxBorderRadiusTopLeft: "",
+    boxBorderRadiusTopRight: "",
+    boxBorderRadiusBottomRight: "",
+    boxBorderRadiusBottomLeft: "",
     boxSpacingOptions: [] as { key: string; label: string; value: string }[],
     boxEditorOpen: false,
     boxEditorTargetId: "",
     boxEditorPopoverTop: "0px",
     boxEditorPopoverLeft: "0px",
     boxEditorTitle: "Padding",
+    boxEditorSourceLabel: "Top",
+    boxEditorSyncShown: true,
+    boxEditorRadiusSyncShown: false,
+    boxEditorMultipleRows: false,
+    boxEditorBorderColorShown: false,
     boxEditorSelectedSides: ["Top"] as BoxSpacingSide[],
     boxEditorSelectionIcon: iconRef("spacing-sides-top"),
+    boxEditorSelectionIcons: [iconRef("spacing-sides-top")],
     boxEditorPairLabel: "Sync top and bottom",
     boxEditorPairIcon: iconRef("spacing-sync-top-bottom"),
     boxEditorPairPressed: false,
     boxEditorAllPressed: false,
+    boxEditorRadiusAllPressed: false,
     boxEditorCustomOpen: false,
     boxEditorCustomNumber: "0",
     boxEditorCustomUnit: "px" as BoxSpacingUnit,
@@ -1612,9 +1676,12 @@ Publr.store("chrome", () => {
     boxEditorCustomMax: 300,
     boxEditorCustomStep: 1,
     boxEditorCustomRangeValue: 0,
-    boxEditorCustomThumbPosition: "8px",
     boxEditorCustomTrackFill: "0%",
     boxEditorRows: [] as BoxSpacingRow[],
+    boxEditorRadiusRows: [] as BoxSpacingRow[],
+    boxEditorRadiusShown: false,
+    boxEditorRadiusOnly: false,
+    boxEditorSelectedCorners: ["borderTopLeftRadius"] as BorderRadiusCornerProp[],
     boxTargetPaddingTop: false,
     boxTargetPaddingRight: false,
     boxTargetPaddingBottom: false,
@@ -1625,45 +1692,48 @@ Publr.store("chrome", () => {
     boxTargetMarginBottom: false,
     boxTargetMarginLeft: false,
     boxTargetMarginAll: false,
+    boxTargetBorderTop: false,
+    boxTargetBorderRight: false,
+    boxTargetBorderBottom: false,
+    boxTargetBorderLeft: false,
+    boxTargetBorderAll: false,
+    boxTargetRadiusTopLeft: false,
+    boxTargetRadiusTopRight: false,
+    boxTargetRadiusBottomRight: false,
+    boxTargetRadiusBottomLeft: false,
+    boxBorderRadiusShown: false,
     boxActiveKind: "padding",
     boxActiveSide: "Top",
     boxActiveKey: "padding-Top",
     boxActiveLabel: "Padding top",
     boxActiveValue: "",
-    boxActiveRangeIndex: 0,
-    boxActiveRangeMax: SPACING_STEPS.length,
     paddingLinkAvailable: false,
     paddingSidesLinked: true,
     paddingSidesLabel: "Separate sides",
     marginLinkAvailable: false,
     marginSidesLinked: true,
     marginSidesLabel: "Separate sides",
+    borderSidesLabel: "Edit border properties",
     layoutRows: [] as ScaleRow[],
+    tokenScaleCustom: {} as Record<string, boolean>,
     // Border (C4): width + radius scale rows + a border-color swatch row.
     borderShown: false,
-    borderWidthOptions: [] as {
-      key: string;
-      label: string;
-      pressed: boolean;
-    }[],
-    borderWidthRangeIndex: 0,
-    borderWidthRangeMax: 0,
-    borderWidthValue: "",
-    borderRadiusOptions: [] as {
-      key: string;
-      label: string;
-      pressed: boolean;
-    }[],
-    borderRadiusIsSelect: false,
-    borderRadiusValue: "",
-    borderRadiusRangeIndex: 0,
-    borderRadiusRangeMax: 0,
+    borderWidthRows: [] as ScaleRow[],
+    borderRadiusRows: [] as ScaleRow[],
     borderStyleOptions: [] as {
       key: string;
       label: string;
       pressed: boolean;
     }[],
     borderColorShown: false,
+    borderColorTier: "recommended" as BorderColorTier,
+    borderColorTierRecommended: true,
+    borderColorTierSemantic: false,
+    borderColorTierTokens: false,
+    borderColorTierCustom: false,
+    borderColorChoicesShown: true,
+    borderColorCustomValue: "#000000",
+    borderColorCustomText: "",
     borderColorGrid: false,
     borderColorValue: "",
     borderColorSwatches: [] as Swatch[],
@@ -1914,18 +1984,127 @@ Publr.store("chrome", () => {
   let inserterAnchorId: string | null = null;
   let inserterPlacement: InlineInsertionPlacement | null = null;
   let primitiveType: string | null = null;
+  let boxLayerPreview: HTMLElement | null = null;
   const primitiveDrafts = new Map<string, string>(
     Object.entries(shellOptions?.theme?.blockDefaults ?? {}),
   );
   let primitiveToastTimer: ReturnType<typeof setTimeout> | null = null;
   let returnToDesignWorkspace: "components" | "patterns" | null = null;
   let variationPreview: HTMLElement | null = null;
+  let shellRootEl: HTMLElement | null = null;
+  let boxEditorAnchorTop = 12;
+  let boxEditorAnchorLeft = 12;
+  let boxEditorPositionFrame = 0;
   const viewportDeviceSelections: Partial<Record<ViewportDevice, StyleBreakpoint>> = {};
 
   const clearVariationPreview = (): void => {
     if (!variationPreview) return;
     variationPreview.remove();
     variationPreview = null;
+  };
+
+  const clearBoxLayerPreview = (): void => {
+    boxLayerPreview?.remove();
+    boxLayerPreview = null;
+  };
+
+  const showBoxLayerPreview = (kind: BoxSpacingKind): void => {
+    clearBoxLayerPreview();
+    const id = panelTarget();
+    const target = id
+      ? canvasDocument?.querySelector<HTMLElement>(`[data-pb-id="${CSS.escape(id)}"]`)
+      : null;
+    const view = canvasDocument?.defaultView;
+    if (!target || !view) return;
+
+    const rect = target.getBoundingClientRect();
+    const style = view.getComputedStyle(target);
+    const px = (value: string): number => Math.max(0, Number.parseFloat(value) || 0);
+    const border = {
+      top: px(style.borderTopWidth),
+      right: px(style.borderRightWidth),
+      bottom: px(style.borderBottomWidth),
+      left: px(style.borderLeftWidth),
+    };
+    const padding = {
+      top: px(style.paddingTop),
+      right: px(style.paddingRight),
+      bottom: px(style.paddingBottom),
+      left: px(style.paddingLeft),
+    };
+    const margin = {
+      top: px(style.marginTop),
+      right: px(style.marginRight),
+      bottom: px(style.marginBottom),
+      left: px(style.marginLeft),
+    };
+    const layerSizes = kind === "margin" ? margin : kind === "padding" ? padding : border;
+    if (Object.values(layerSizes).every((value) => value <= 0)) return;
+
+    const outer =
+      kind === "margin"
+        ? {
+            top: rect.top - margin.top,
+            right: rect.right + margin.right,
+            bottom: rect.bottom + margin.bottom,
+            left: rect.left - margin.left,
+          }
+        : kind === "padding"
+          ? {
+              top: rect.top + border.top,
+              right: rect.right - border.right,
+              bottom: rect.bottom - border.bottom,
+              left: rect.left + border.left,
+            }
+          : { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+    const inner =
+      kind === "margin"
+        ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
+        : kind === "padding"
+          ? {
+              top: outer.top + padding.top,
+              right: outer.right - padding.right,
+              bottom: outer.bottom - padding.bottom,
+              left: outer.left + padding.left,
+            }
+          : {
+              top: outer.top + border.top,
+              right: outer.right - border.right,
+              bottom: outer.bottom - border.bottom,
+              left: outer.left + border.left,
+            };
+
+    const root = canvasDocument.createElement("div");
+    root.className = "pbe-box-layer-preview";
+    root.dataset.pbeBoxLayerPreview = kind;
+    root.setAttribute("aria-hidden", "true");
+    const place = (
+      side: BoxSpacingSide,
+      left: number,
+      top: number,
+      width: number,
+      height: number,
+    ): void => {
+      if (width <= 0 || height <= 0) return;
+      const part = canvasDocument.createElement("span");
+      part.className = "pbe-box-layer-preview__part";
+      part.dataset.side = side.toLowerCase();
+      part.style.left = `${left}px`;
+      part.style.top = `${top}px`;
+      part.style.width = `${width}px`;
+      part.style.height = `${height}px`;
+      root.appendChild(part);
+    };
+    const topSize = Math.max(0, inner.top - outer.top);
+    const rightSize = Math.max(0, outer.right - inner.right);
+    const bottomSize = Math.max(0, outer.bottom - inner.bottom);
+    const leftSize = Math.max(0, inner.left - outer.left);
+    place("Top", outer.left, outer.top, outer.right - outer.left, topSize);
+    place("Right", outer.right - rightSize, outer.top, rightSize, outer.bottom - outer.top);
+    place("Bottom", outer.left, outer.bottom - bottomSize, outer.right - outer.left, bottomSize);
+    place("Left", outer.left, outer.top, leftSize, outer.bottom - outer.top);
+    canvasDocument.body.appendChild(root);
+    boxLayerPreview = root;
   };
 
   const syncIsolationCanvasHeight = () => {
@@ -2453,28 +2632,109 @@ Publr.store("chrome", () => {
       orderedLeft.every((side, index) => side === orderedRight[index])
     );
   };
-  const spacingSelectionIcon = (sides: readonly BoxSpacingSide[]): string => {
+  const spacingSelectionIcons = (sides: readonly BoxSpacingSide[]): string[] => {
     const selected = new Set(sides);
-    if (!selected.size) return iconRef("spacing-sides-none");
-    if (selected.size === spacingSides.length) return iconRef("spacing-sides-all");
-    if (sameSpacingSides(sides, ["Left", "Right"])) return iconRef("spacing-sides-left-right");
-    const suffix = spacingSides
+    return spacingSides
       .filter((side) => selected.has(side))
-      .map((side) => side.toLowerCase())
-      .join("-");
-    return iconRef(`spacing-sides-${suffix}`);
+      .map((side) => iconRef(`spacing-sides-${side.toLowerCase()}`));
   };
-  const spacingSelectionTitle = (
-    kind: BoxSpacingKind,
-    sides: readonly BoxSpacingSide[],
-  ): string => {
-    const label = kind === "padding" ? "Padding" : "Margin";
+  const spacingKindLabel = (kind: BoxSpacingKind): string =>
+    kind === "padding" ? "Padding" : kind === "margin" ? "Margin" : "Border";
+  const spacingSelectionLabel = (sides: readonly BoxSpacingSide[]): string => {
     const ordered = sameSpacingSides(sides, ["Left", "Right"])
       ? (["Left", "Right"] as BoxSpacingSide[])
       : orderedSpacingSides(sides);
-    return ordered.length === spacingSides.length
-      ? label
-      : `${label} ${ordered.map((side) => side.toLowerCase()).join(", ")}`;
+    return ordered.length === spacingSides.length ? "All sides" : ordered.join(", ");
+  };
+  const boxScaleChoices = (
+    kind: BoxSpacingKind,
+    spacingChoices: readonly { key: string; value: string; label: string }[],
+  ): { key: string; value: string; label: string }[] =>
+    kind === "border"
+      ? BORDER_WIDTH_STEPS.map((key) => ({ key, value: `${key}px`, label: `${key} px` }))
+      : [...spacingChoices];
+  const borderEdgeProp = (prop: "borderWidth" | "borderColor", side: BoxSpacingSide): string =>
+    `border${side}${prop === "borderWidth" ? "Width" : "Color"}`;
+  const borderRadiusCorners: readonly {
+    prop: BorderRadiusCornerProp;
+    label: string;
+    icon: string;
+  }[] = [
+    {
+      prop: "borderTopLeftRadius",
+      label: "Top-left radius",
+      icon: "border-radius-top-left",
+    },
+    {
+      prop: "borderTopRightRadius",
+      label: "Top-right radius",
+      icon: "border-radius-top-right",
+    },
+    {
+      prop: "borderBottomRightRadius",
+      label: "Bottom-right radius",
+      icon: "border-radius-bottom-right",
+    },
+    {
+      prop: "borderBottomLeftRadius",
+      label: "Bottom-left radius",
+      icon: "border-radius-bottom-left",
+    },
+  ];
+  const borderCornerProps = (sides: readonly BoxSpacingSide[]): BorderRadiusCornerProp[] => {
+    const selected = new Set(sides);
+    const corners = new Set<BorderRadiusCornerProp>();
+    if (selected.has("Top")) {
+      corners.add("borderTopLeftRadius");
+      corners.add("borderTopRightRadius");
+    }
+    if (selected.has("Right")) {
+      corners.add("borderTopRightRadius");
+      corners.add("borderBottomRightRadius");
+    }
+    if (selected.has("Bottom")) {
+      corners.add("borderBottomRightRadius");
+      corners.add("borderBottomLeftRadius");
+    }
+    if (selected.has("Left")) {
+      corners.add("borderBottomLeftRadius");
+      corners.add("borderTopLeftRadius");
+    }
+    return [...corners];
+  };
+  const borderRadiusCornerValue = (id: string, prop: BorderRadiusCornerProp): string =>
+    effectiveStyle(id, prop).value || effectiveStyle(id, "borderRadius").value;
+  const borderRadiusCornerTitle = (prop: BorderRadiusCornerProp): string =>
+    borderRadiusCorners
+      .find(({ prop: candidate }) => candidate === prop)!
+      .label.replace("-", " ")
+      .replace(" radius", "")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  const orderedBorderRadiusCorners = (
+    corners: readonly BorderRadiusCornerProp[],
+  ): BorderRadiusCornerProp[] =>
+    borderRadiusCorners.map(({ prop }) => prop).filter((prop) => corners.includes(prop));
+  const borderRadiusSelectionLabel = (corners: readonly BorderRadiusCornerProp[]): string => {
+    const ordered = orderedBorderRadiusCorners(corners);
+    return ordered.length === borderRadiusCorners.length
+      ? "All corners"
+      : ordered.map(borderRadiusCornerTitle).join(", ");
+  };
+  const hasBorderWidth = (value: string): boolean =>
+    !!value.trim() && !/^0(?:\.0+)?(?:[a-z%]+)?$/i.test(value.trim());
+  const borderRadiusValue = (id: string): string => {
+    const values = borderRadiusCorners.map(({ prop }) => borderRadiusCornerValue(id, prop));
+    return values.every((value) => value === values[0]) ? (values[0] ?? "") : "";
+  };
+  const borderValueForSide = (
+    id: string,
+    prop: "borderWidth" | "borderColor" | "borderRadius",
+    side: BoxSpacingSide,
+  ): string => {
+    const base = effectiveStyle(id, prop).value;
+    if (prop !== "borderRadius")
+      return effectiveStyle(id, borderEdgeProp(prop, side)).value || base;
+    return borderRadiusValue(id);
   };
   const spacingCustomUnits: readonly BoxSpacingUnit[] = ["px", "%", "em", "rem", "vw", "vh"];
   const spacingCustomScale = (unit: BoxSpacingUnit): { min: number; max: number; step: number } =>
@@ -2495,14 +2755,95 @@ Publr.store("chrome", () => {
       unit: spacingCustomUnits.includes(unit as BoxSpacingUnit) ? (unit as BoxSpacingUnit) : "px",
     };
   };
-  const spacingValueForSide = (id: string, kind: BoxSpacingKind, side: BoxSpacingSide): string =>
-    effectiveStyle(id, `${kind}${side}`).value || effectiveStyle(id, kind).value;
+  const spacingValueForSide = (id: string, kind: BoxSpacingKind, side: BoxSpacingSide): string => {
+    if (kind === "border") return borderValueForSide(id, "borderWidth", side);
+    const sideValue = effectiveStyle(id, `${kind}${side}`).value;
+    if (sideValue) return sideValue;
+    if (kind === "padding") {
+      const axis = side === "Left" || side === "Right" ? "paddingInline" : "paddingBlock";
+      const axisValue = effectiveStyle(id, axis).value;
+      if (axisValue) return axisValue;
+    }
+    return effectiveStyle(id, kind).value;
+  };
   const setSpacingCustomMode = (id: string, kind: BoxSpacingKind, side: BoxSpacingSide): void => {
     const value = spacingValueForSide(id, kind, side);
-    state.boxEditorCustomOpen =
-      !!value && !spacings(activeTheme()).some((option) => option.key === value);
+    const choices = boxScaleChoices(
+      kind,
+      spacings(activeTheme()).map(({ key, value }) => ({ key, value, label: key })),
+    );
+    state.boxEditorCustomOpen = !!value && !choices.some((option) => option.key === value);
   };
-  const writeBoxSpacing = (id: string, kind: BoxSpacingKind, value: string): void => {
+  const writeBoxBorderProperty = (
+    id: string,
+    prop: "borderWidth" | "borderColor" | "borderRadius",
+    value: string,
+    selectedSides: readonly BoxSpacingSide[] = state.boxEditorSelectedSides,
+  ): void => {
+    const targets = orderedSpacingSides(selectedSides);
+    if (!targets.length) return;
+    const sideProps =
+      prop === "borderRadius"
+        ? borderCornerProps(spacingSides)
+        : spacingSides.map((side) => borderEdgeProp(prop, side));
+    const targetProps =
+      prop === "borderRadius"
+        ? borderCornerProps(targets)
+        : targets.map((side) => borderEdgeProp(prop, side));
+    const values: Record<string, string> = {};
+    if (targets.length === spacingSides.length) {
+      values[prop] = value;
+      for (const sideProp of sideProps) values[sideProp] = "";
+    } else {
+      const hasSpecific = sideProps.some((sideProp) => !!readStyle(id, sideProp));
+      if (!hasSpecific) {
+        const base = effectiveStyle(id, prop).value;
+        values[prop] = "";
+        for (const sideProp of sideProps) values[sideProp] = base;
+      }
+      for (const targetProp of targetProps) values[targetProp] = value;
+    }
+    writeStyles(id, values);
+  };
+  const writeBoxBorderRadiusCorners = (
+    id: string,
+    props: readonly BorderRadiusCornerProp[],
+    value: string,
+  ): void => {
+    const targets = orderedBorderRadiusCorners(props);
+    if (!targets.length) return;
+    const hasSpecific = borderRadiusCorners.some(
+      ({ prop: candidate }) => !!readStyle(id, candidate),
+    );
+    if (hasSpecific) {
+      writeStyles(id, Object.fromEntries(targets.map((prop) => [prop, value])));
+      return;
+    }
+    const inherited = effectiveStyle(id, "borderRadius").value;
+    const values: Record<string, string> = { borderRadius: "" };
+    for (const { prop: candidate } of borderRadiusCorners) values[candidate] = inherited;
+    for (const prop of targets) values[prop] = value;
+    writeStyles(id, values);
+  };
+  const writeBoxSpacing = (id: string, kind: BoxSpacingKind, value: string, prop = ""): void => {
+    if (kind === "border") {
+      const corner = borderRadiusCorners.find(({ prop: candidate }) => candidate === prop)?.prop;
+      if (corner) {
+        writeBoxBorderRadiusCorners(
+          id,
+          state.boxEditorRadiusOnly ? state.boxEditorSelectedCorners : [corner],
+          value,
+        );
+        return;
+      }
+      writeBoxBorderProperty(
+        id,
+        prop === "borderRadius" || prop === "borderColor" ? prop : "borderWidth",
+        value,
+        prop === "borderRadius" ? spacingSides : state.boxEditorSelectedSides,
+      );
+      return;
+    }
     const stateKey = `${id}:${kind}`;
     const wasLinked = state.styleSidesLinked[stateKey] !== false;
     const targets = orderedSpacingSides(state.boxEditorSelectedSides);
@@ -2511,29 +2852,93 @@ Publr.store("chrome", () => {
     if (targets.length === spacingSides.length) {
       values[kind] = value;
       for (const candidate of spacingSides) values[`${kind}${candidate}`] = "";
+      if (kind === "padding") {
+        values.paddingInline = "";
+        values.paddingBlock = "";
+      }
       state.styleSidesLinked[stateKey] = true;
     } else {
       if (wasLinked) {
-        const inherited = readStyle(id, kind) ?? "";
+        const inherited = Object.fromEntries(
+          spacingSides.map((candidate) => [candidate, spacingValueForSide(id, kind, candidate)]),
+        ) as Record<BoxSpacingSide, string>;
         values[kind] = "";
-        for (const candidate of spacingSides) values[`${kind}${candidate}`] = inherited;
+        if (kind === "padding") {
+          values.paddingInline = "";
+          values.paddingBlock = "";
+        }
+        for (const candidate of spacingSides) values[`${kind}${candidate}`] = inherited[candidate];
       }
       for (const candidate of targets) values[`${kind}${candidate}`] = value;
       state.styleSidesLinked[stateKey] = false;
     }
     writeStyles(id, values);
   };
+  const applyBoxBorderColorValue = (id: string, value: string): void => {
+    const targets = orderedSpacingSides(state.boxEditorSelectedSides);
+    if (value && ["", "none"].includes(effectiveStyle(id, "borderStyle").value))
+      writeStyle(id, "borderStyle", "solid");
+    writeBoxBorderProperty(id, "borderColor", value, targets);
+  };
+  const tokenScaleRow = (d: Dataset): ScaleRow | BoxSpacingRow | undefined =>
+    d.kind === "padding" || d.kind === "margin" || d.kind === "border"
+      ? (state.boxEditorRows.find((row) => row.prop === (d.prop ?? "")) ??
+        state.boxEditorRadiusRows.find((row) => row.prop === (d.prop ?? "")) ??
+        state.boxEditorRows[0] ??
+        state.boxEditorRadiusRows[0])
+      : [
+          ...state.dimensionRows,
+          ...state.layoutRows,
+          ...state.typographyRows,
+          ...state.borderWidthRows,
+          ...state.borderRadiusRows,
+        ].find((row) => row.prop === d.prop);
+  const clampBoxEditorPosition = (): void => {
+    boxEditorPositionFrame = 0;
+    if (!state.boxEditorOpen || !shellRootEl) return;
+    const pane = shellRootEl.querySelector<HTMLElement>(".pbe-box-model__control");
+    if (!pane || pane.classList.contains("hidden")) return;
+    const shellView = shellRootEl.ownerDocument.defaultView ?? window;
+    const viewport = shellView.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportWidth = viewport?.width ?? shellView.innerWidth;
+    const viewportHeight = viewport?.height ?? shellView.innerHeight;
+    const rect = pane.getBoundingClientRect();
+    const gutter = 12;
+    const left = Math.max(
+      viewportLeft + gutter,
+      Math.min(boxEditorAnchorLeft, viewportLeft + viewportWidth - rect.width - gutter),
+    );
+    const top = Math.max(
+      viewportTop + gutter,
+      Math.min(boxEditorAnchorTop, viewportTop + viewportHeight - rect.height - gutter),
+    );
+    const nextLeft = `${Math.round(left)}px`;
+    const nextTop = `${Math.round(top)}px`;
+    if (state.boxEditorPopoverLeft !== nextLeft) state.boxEditorPopoverLeft = nextLeft;
+    if (state.boxEditorPopoverTop !== nextTop) state.boxEditorPopoverTop = nextTop;
+  };
+  const scheduleBoxEditorPosition = (): void => {
+    if (boxEditorPositionFrame || !shellRootEl) return;
+    const shellView = shellRootEl.ownerDocument.defaultView ?? window;
+    boxEditorPositionFrame = shellView.requestAnimationFrame(clampBoxEditorPosition);
+  };
   const positionBoxEditor = (element: HTMLElement): void => {
     const rect =
       element.closest<HTMLElement>(".pbe-box-model")?.getBoundingClientRect() ??
       element.getBoundingClientRect();
+    const shellView = element.ownerDocument.defaultView ?? window;
     const width = 286;
     const left =
       rect.left >= width + 20
         ? rect.left - width - 12
-        : Math.min(window.innerWidth - width - 12, rect.right + 12);
-    state.boxEditorPopoverLeft = `${Math.max(12, left)}px`;
-    state.boxEditorPopoverTop = `${Math.max(12, Math.min(rect.top, window.innerHeight - 110))}px`;
+        : Math.min(shellView.innerWidth - width - 12, rect.right + 12);
+    boxEditorAnchorLeft = Math.max(12, left);
+    boxEditorAnchorTop = Math.max(12, rect.top);
+    state.boxEditorPopoverLeft = `${boxEditorAnchorLeft}px`;
+    state.boxEditorPopoverTop = `${boxEditorAnchorTop}px`;
+    scheduleBoxEditorPosition();
   };
 
   const iconOf = (type: string) =>
@@ -4935,7 +5340,7 @@ Publr.store("chrome", () => {
       const scaleRow = (
         prop: string,
         label: string,
-        opts: { key: string; label: string; icon?: string }[],
+        opts: { key: string; label: string; value?: string; icon?: string }[],
         none?: boolean,
         allowCustom = true,
       ): ScaleRow => {
@@ -4944,7 +5349,12 @@ Publr.store("chrome", () => {
         const emptyLabel =
           prop.startsWith("padding") || prop.startsWith("margin") ? "None" : "Default";
         const responsiveValues = responsiveValueRanges(id!, prop, "");
-        const options = opts.map((o) => ({ ...o, pressed: o.key === cur }));
+        const rangeIndex = opts.findIndex((option) => option.key === cur) + 1;
+        const options = opts.map((o, index) => ({
+          ...o,
+          pressed: o.key === cur,
+          active: rangeIndex > 0 && index < rangeIndex,
+        }));
         const rangeProps = new Set([
           "padding",
           "paddingInline",
@@ -4969,6 +5379,8 @@ Publr.store("chrome", () => {
           "gridColumns",
           "lineHeight",
           "letterSpacing",
+          "borderWidth",
+          "borderRadius",
         ]);
         const isRange = rangeProps.has(prop) && options.length > 1;
         // Keyword groups get a leading reset segment: an explicit clear beats
@@ -4979,10 +5391,29 @@ Publr.store("chrome", () => {
             label: "Default",
             icon: iconRef("reset"),
             pressed: !cur,
+            active: false,
           });
-        const rangeIndex = options.findIndex((option) => option.key === cur) + 1;
+        const customSource = opts.find((option) => option.key === cur)?.value ?? cur;
+        const customMatch = /^(-?(?:\d+|\d*\.\d+))(px|%|em|rem|vw|vh)$/i.exec(customSource.trim());
+        const customUnit = spacingCustomUnits.includes(
+          customMatch?.[2]?.toLowerCase() as BoxSpacingUnit,
+        )
+          ? (customMatch![2].toLowerCase() as BoxSpacingUnit)
+          : "px";
+        const customNumber = customMatch?.[1] ?? (cur ? "" : "0");
+        const customRange = spacingCustomScale(customUnit);
+        const customNumeric = Number(customNumber);
+        const customRangeValue = Math.min(
+          customRange.max,
+          Math.max(
+            customRange.min,
+            Number.isFinite(customNumeric) ? customNumeric : customRange.min,
+          ),
+        );
         return {
           prop,
+          kind: "",
+          side: "",
           label,
           options,
           isSelect: !isRange && options.length > SEG_MAX,
@@ -4990,14 +5421,38 @@ Publr.store("chrome", () => {
           isSegmented: !isRange && options.length <= SEG_MAX,
           rangeIndex,
           rangeMax: options.length,
+          thumbPosition: `calc(8px + (100% - 16px) * ${rangeIndex / Math.max(1, options.length)})`,
+          scaleIcon: "",
+          scaleIcons: [],
+          hasScaleIcon: false,
           value: cur,
           explicitValue: resolved.explicitValue,
-          valueLabel: cur || emptyLabel,
+          valueLabel:
+            options.find((option) => option.key === cur)?.label ?? (cur ? "Custom" : emptyLabel),
           emptyLabel,
           inherited: resolved.inherited,
           inheritedLabel: resolved.inherited ? `From ${inheritedLabel(resolved.source)}` : "",
           allowCustom,
           showCustomDisclosure: allowCustom && !isRange,
+          customOpen:
+            state.tokenScaleCustom[prop] ??
+            (isRange && !!cur && !options.some((option) => option.key === cur)),
+          customParsed: !!customMatch || !cur,
+          customNumber,
+          customUnit,
+          customMin: customRange.min,
+          customMax: customRange.max,
+          customStep: customRange.step,
+          customRangeValue,
+          customTrackFill: `${
+            ((customRangeValue - customRange.min) /
+              Math.max(customRange.step, customRange.max - customRange.min)) *
+            100
+          }%`,
+          customThumbPosition: `calc(8px + (100% - 16px) * ${
+            (customRangeValue - customRange.min) /
+            Math.max(customRange.step, customRange.max - customRange.min)
+          })`,
           responsive: responsiveValues.ranges.length > 1,
           responsiveSummary: responsiveValues.summary,
           responsiveChanges: responsiveValues.changes,
@@ -5126,9 +5581,15 @@ Publr.store("chrome", () => {
       state.marginSidesLinked = linked("margin", marginSides, state.marginLinkAvailable);
       state.paddingSidesLabel = "Edit all padding sides";
       state.marginSidesLabel = "Edit all margin sides";
+      state.borderSidesLabel = "Edit border properties";
       state.boxPaddingShown = state.paddingLinkAvailable;
       state.boxMarginShown = state.marginLinkAvailable;
-      state.spacingBoxShown = state.boxPaddingShown || state.boxMarginShown;
+      state.boxBorderShown =
+        blockSupportsStyle(supports, "borderWidth") ||
+        blockSupportsStyle(supports, "borderColor") ||
+        blockSupportsStyle(supports, "borderRadius");
+      state.boxBorderRadiusShown = blockSupportsStyle(supports, "borderRadius");
+      state.spacingBoxShown = state.boxPaddingShown || state.boxMarginShown || state.boxBorderShown;
       type BoxValueKey =
         | "boxPaddingTop"
         | "boxPaddingRight"
@@ -5137,22 +5598,39 @@ Publr.store("chrome", () => {
         | "boxMarginTop"
         | "boxMarginRight"
         | "boxMarginBottom"
-        | "boxMarginLeft";
+        | "boxMarginLeft"
+        | "boxBorderTop"
+        | "boxBorderRight"
+        | "boxBorderBottom"
+        | "boxBorderLeft";
       const syncBoxValues = (kind: "padding" | "margin", isLinked: boolean) => {
         for (const side of ["Top", "Right", "Bottom", "Left"] as const) {
-          const value = effectiveStyle(id!, isLinked ? kind : `${kind}${side}`).value;
+          const value = isLinked
+            ? spacingValueForSide(id!, kind, side)
+            : effectiveStyle(id!, `${kind}${side}`).value || spacingValueForSide(id!, kind, side);
           const stateKey = `box${kind === "padding" ? "Padding" : "Margin"}${side}` as BoxValueKey;
           state[stateKey] = value;
         }
       };
       syncBoxValues("padding", state.paddingSidesLinked);
       syncBoxValues("margin", state.marginSidesLinked);
-      const activeKind = state.boxActiveKind === "margin" ? "margin" : "padding";
+      state.boxBorderTop = borderValueForSide(id!, "borderWidth", "Top");
+      state.boxBorderRight = borderValueForSide(id!, "borderWidth", "Right");
+      state.boxBorderBottom = borderValueForSide(id!, "borderWidth", "Bottom");
+      state.boxBorderLeft = borderValueForSide(id!, "borderWidth", "Left");
+      state.boxBorderRadiusTopLeft = borderRadiusCornerValue(id!, "borderTopLeftRadius");
+      state.boxBorderRadiusTopRight = borderRadiusCornerValue(id!, "borderTopRightRadius");
+      state.boxBorderRadiusBottomRight = borderRadiusCornerValue(id!, "borderBottomRightRadius");
+      state.boxBorderRadiusBottomLeft = borderRadiusCornerValue(id!, "borderBottomLeftRadius");
+      const activeKind: BoxSpacingKind =
+        state.boxActiveKind === "margin"
+          ? "margin"
+          : state.boxActiveKind === "border"
+            ? "border"
+            : "padding";
       const activeSide = ["Top", "Right", "Bottom", "Left"].includes(state.boxActiveSide)
         ? (state.boxActiveSide as BoxSpacingRow["side"])
         : "Top";
-      const activeLinked =
-        activeKind === "padding" ? state.paddingSidesLinked : state.marginSidesLinked;
       if (state.boxEditorOpen && state.boxEditorTargetId !== id) {
         state.boxEditorOpen = false;
         state.boxEditorTargetId = "";
@@ -5160,6 +5638,10 @@ Publr.store("chrome", () => {
       const editorTargets =
         state.boxEditorOpen && state.boxEditorTargetId === id
           ? orderedSpacingSides(state.boxEditorSelectedSides)
+          : [];
+      const editorCorners =
+        state.boxEditorOpen && state.boxEditorTargetId === id && state.boxEditorRadiusOnly
+          ? orderedBorderRadiusCorners(state.boxEditorSelectedCorners)
           : [];
       state.boxTargetPaddingTop = activeKind === "padding" && editorTargets.includes("Top");
       state.boxTargetPaddingRight = activeKind === "padding" && editorTargets.includes("Right");
@@ -5173,16 +5655,52 @@ Publr.store("chrome", () => {
       state.boxTargetMarginLeft = activeKind === "margin" && editorTargets.includes("Left");
       state.boxTargetMarginAll =
         activeKind === "margin" && editorTargets.length === spacingSides.length;
+      state.boxTargetBorderRight =
+        activeKind === "border" && !state.boxEditorRadiusOnly && editorTargets.includes("Right");
+      state.boxTargetBorderBottom =
+        activeKind === "border" && !state.boxEditorRadiusOnly && editorTargets.includes("Bottom");
+      state.boxTargetBorderLeft =
+        activeKind === "border" && !state.boxEditorRadiusOnly && editorTargets.includes("Left");
+      state.boxTargetBorderTop =
+        activeKind === "border" && !state.boxEditorRadiusOnly && editorTargets.includes("Top");
+      state.boxTargetBorderAll =
+        activeKind === "border" &&
+        !state.boxEditorRadiusOnly &&
+        editorTargets.length === spacingSides.length;
+      state.boxTargetRadiusTopLeft =
+        activeKind === "border" &&
+        state.boxEditorRadiusOnly &&
+        editorCorners.includes("borderTopLeftRadius");
+      state.boxTargetRadiusTopRight =
+        activeKind === "border" &&
+        state.boxEditorRadiusOnly &&
+        editorCorners.includes("borderTopRightRadius");
+      state.boxTargetRadiusBottomRight =
+        activeKind === "border" &&
+        state.boxEditorRadiusOnly &&
+        editorCorners.includes("borderBottomRightRadius");
+      state.boxTargetRadiusBottomLeft =
+        activeKind === "border" &&
+        state.boxEditorRadiusOnly &&
+        editorCorners.includes("borderBottomLeftRadius");
       state.boxActiveKey = `${activeKind}-${activeSide}`;
-      state.boxActiveLabel = spacingSelectionTitle(activeKind, state.boxEditorSelectedSides);
-      state.boxActiveValue = effectiveStyle(
-        id!,
-        activeLinked ? activeKind : `${activeKind}${activeSide}`,
-      ).value;
-      state.boxActiveRangeIndex =
-        spacingChoices.findIndex((step) => step.key === state.boxActiveValue) + 1;
-      state.boxActiveRangeMax = spacingChoices.length;
-      state.boxEditorTitle = spacingSelectionTitle(activeKind, state.boxEditorSelectedSides);
+      state.boxActiveLabel = `${spacingKindLabel(activeKind)} ${spacingSelectionLabel(
+        state.boxEditorSelectedSides,
+      )}`;
+      state.boxActiveValue = spacingValueForSide(id!, activeKind, activeSide);
+      state.boxEditorTitle =
+        activeKind === "border" && state.boxEditorRadiusOnly
+          ? "Border Radius"
+          : spacingKindLabel(activeKind);
+      state.boxEditorSourceLabel =
+        activeKind === "border" && state.boxEditorRadiusOnly
+          ? borderRadiusSelectionLabel(state.boxEditorSelectedCorners)
+          : spacingSelectionLabel(state.boxEditorSelectedSides);
+      state.boxEditorSyncShown = !state.boxEditorRadiusOnly;
+      state.boxEditorRadiusSyncShown =
+        activeKind === "border" &&
+        state.boxEditorRadiusOnly &&
+        blockSupportsStyle(supports, "borderRadius");
       const pairSides: BoxSpacingSide[] =
         activeSide === "Top" || activeSide === "Bottom" ? ["Top", "Bottom"] : ["Left", "Right"];
       state.boxEditorPairLabel =
@@ -5192,45 +5710,118 @@ Publr.store("chrome", () => {
       );
       state.boxEditorPairPressed = sameSpacingSides(state.boxEditorSelectedSides, pairSides);
       state.boxEditorAllPressed = sameSpacingSides(state.boxEditorSelectedSides, spacingSides);
-      state.boxEditorSelectionIcon = spacingSelectionIcon(state.boxEditorSelectedSides);
-      const custom = spacingCustomValue(state.boxActiveValue, spacingChoices);
-      const customScale = spacingCustomScale(custom.unit);
-      const customNumber = Number(custom.number);
-      const customRangeValue = Math.min(
-        customScale.max,
-        Math.max(customScale.min, Number.isFinite(customNumber) ? customNumber : customScale.min),
-      );
-      const customRatio =
-        (customRangeValue - customScale.min) /
-        Math.max(customScale.step, customScale.max - customScale.min);
-      state.boxEditorCustomNumber = custom.number;
-      state.boxEditorCustomUnit = custom.unit;
-      state.boxEditorCustomMin = customScale.min;
-      state.boxEditorCustomMax = customScale.max;
-      state.boxEditorCustomStep = customScale.step;
-      state.boxEditorCustomRangeValue = customRangeValue;
-      state.boxEditorCustomThumbPosition = `calc(8px + (100% - 16px) * ${customRatio})`;
-      state.boxEditorCustomTrackFill = `${customRatio * 100}%`;
-      const rangeIndex =
-        spacingChoices.findIndex((option) => option.key === state.boxActiveValue) + 1;
-      const snapRatio = rangeIndex / Math.max(1, spacingChoices.length);
-      state.boxEditorRows = [
-        {
+      state.boxEditorRadiusAllPressed =
+        state.boxEditorSelectedCorners.length === borderRadiusCorners.length;
+      state.boxEditorSelectionIcons = spacingSelectionIcons(state.boxEditorSelectedSides);
+      state.boxEditorSelectionIcon = state.boxEditorSelectionIcons[0] ?? "";
+      const makeBoxEditorRow = (
+        prop: string,
+        label: string,
+        value: string,
+        choices: { key: string; value: string; label: string }[],
+        scaleIcons = state.boxEditorSelectionIcons,
+      ): BoxSpacingRow => {
+        const scaleIcon = scaleIcons[0] ?? "";
+        const custom = spacingCustomValue(value, choices);
+        const customScale = spacingCustomScale(custom.unit);
+        const customNumber = Number(custom.number);
+        const customRangeValue = Math.min(
+          customScale.max,
+          Math.max(customScale.min, Number.isFinite(customNumber) ? customNumber : customScale.min),
+        );
+        const customRatio =
+          (customRangeValue - customScale.min) /
+          Math.max(customScale.step, customScale.max - customScale.min);
+        const rangeIndex = choices.findIndex((option) => option.key === value) + 1;
+        const snapRatio = rangeIndex / Math.max(1, choices.length);
+        const customOpen =
+          activeKind === "border"
+            ? !!state.tokenScaleCustom[prop] || (!!value && rangeIndex === 0)
+            : state.boxEditorCustomOpen;
+        return {
+          prop,
+          kind: activeKind,
           side: activeSide,
-          label: state.boxActiveLabel,
-          value: state.boxActiveValue,
+          label,
+          value,
           valueLabel:
-            spacingChoices.find((option) => option.key === state.boxActiveValue)?.label ??
-            (state.boxActiveValue ? "Custom" : "None"),
+            choices.find((option) => option.key === value)?.label ?? (value ? "Custom" : "None"),
           rangeIndex,
-          snapped: !state.boxActiveValue || rangeIndex > 0,
+          rangeMax: choices.length,
+          snapped: !value || rangeIndex > 0,
           thumbPosition: `calc(8px + (100% - 16px) * ${snapRatio})`,
-          options: spacingChoices.map((option, index) => ({
+          scaleIcon,
+          hasScaleIcon: !!scaleIcon,
+          inherited: false,
+          responsive: false,
+          customOpen,
+          customParsed: true,
+          customNumber: custom.number,
+          customUnit: custom.unit,
+          customMin: customScale.min,
+          customMax: customScale.max,
+          customStep: customScale.step,
+          customRangeValue,
+          customTrackFill: `${customRatio * 100}%`,
+          customThumbPosition: `calc(8px + (100% - 16px) * ${customRatio})`,
+          scaleIcons,
+          options: choices.map((option, index) => ({
             key: option.key,
+            label: option.label,
             active: rangeIndex > 0 && index < rangeIndex,
           })),
-        },
-      ];
+        };
+      };
+      const widthChoices = boxScaleChoices(activeKind, spacingChoices);
+      const radiusChoices = radii(theme).map(({ key, value }) => ({
+        key,
+        value,
+        label: key,
+      }));
+      state.boxEditorRadiusShown =
+        activeKind === "border" &&
+        state.boxEditorRadiusOnly &&
+        blockSupportsStyle(supports, "borderRadius");
+      const selectedRadiusCorners = borderRadiusCorners.filter(({ prop }) =>
+        state.boxEditorSelectedCorners.includes(prop),
+      );
+      const selectedRadiusValues = selectedRadiusCorners.map(({ prop }) =>
+        borderRadiusCornerValue(id!, prop),
+      );
+      const selectedRadiusValue = selectedRadiusValues.every(
+        (value) => value === selectedRadiusValues[0],
+      )
+        ? (selectedRadiusValues[0] ?? "")
+        : "";
+      state.boxEditorRadiusRows =
+        state.boxEditorRadiusShown && selectedRadiusCorners[0]
+          ? [
+              {
+                ...makeBoxEditorRow(
+                  selectedRadiusCorners[0].prop,
+                  borderRadiusSelectionLabel(state.boxEditorSelectedCorners),
+                  selectedRadiusValue,
+                  radiusChoices,
+                  [iconRef(selectedRadiusCorners[0].icon)],
+                ),
+                scaleIcons: selectedRadiusCorners.map(({ icon }) => iconRef(icon)),
+              },
+            ]
+          : [];
+      state.boxEditorRows =
+        activeKind === "border"
+          ? state.boxEditorRadiusOnly || !blockSupportsStyle(supports, "borderWidth")
+            ? []
+            : [
+                makeBoxEditorRow(
+                  "borderWidth",
+                  "Width",
+                  borderValueForSide(id!, "borderWidth", activeSide),
+                  widthChoices,
+                ),
+              ]
+          : [makeBoxEditorRow("", state.boxActiveLabel, state.boxActiveValue, widthChoices)];
+      state.boxEditorMultipleRows = false;
       state.optionalStyleControls = capabilities
         .filter(
           ([prop, , support]) =>
@@ -5319,12 +5910,12 @@ Publr.store("chrome", () => {
         {
           prop: "paddingInline",
           label: "Horizontal padding",
-          shown: shown("paddingInline"),
+          shown: !state.boxPaddingShown && shown("paddingInline"),
         },
         {
           prop: "paddingBlock",
           label: "Vertical padding",
-          shown: shown("paddingBlock"),
+          shown: !state.boxPaddingShown && shown("paddingBlock"),
         },
         ...paddingSides.map((prop) => ({
           prop,
@@ -5364,8 +5955,8 @@ Publr.store("chrome", () => {
             r.label,
             (r.prop.startsWith("padding") || r.prop.startsWith("margin")
               ? spacingChoices
-              : SPACING_STEPS.map((key) => ({ key, label: key }))
-            ).map(({ key, label }) => ({ key, label })),
+              : SPACING_STEPS.map((key) => ({ key, label: key, value: key }))
+            ).map(({ key, label, value }) => ({ key, label, value })),
           ),
         );
       const aspectValues =
@@ -5389,21 +5980,21 @@ Publr.store("chrome", () => {
           ? scaleRow(
               "gap",
               "Gap",
-              spacingChoices.map(({ key, label }) => ({ key, label })),
+              spacingChoices.map(({ key, label, value }) => ({ key, label, value })),
             )
           : null,
         shown("rowGap")
           ? scaleRow(
               "rowGap",
               "Row gap",
-              spacingChoices.map(({ key, label }) => ({ key, label })),
+              spacingChoices.map(({ key, label, value }) => ({ key, label, value })),
             )
           : null,
         shown("columnGap")
           ? scaleRow(
               "columnGap",
               "Column gap",
-              spacingChoices.map(({ key, label }) => ({ key, label })),
+              spacingChoices.map(({ key, label, value }) => ({ key, label, value })),
             )
           : null,
         shown("justifyContent")
@@ -5460,35 +6051,87 @@ Publr.store("chrome", () => {
           : null,
       ].filter((row): row is ScaleRow => !!row);
       // Border (C4)
-      const bw = effectiveStyle(id!, "borderWidth").value;
-      state.borderWidthOptions = shown("borderWidth")
-        ? BORDER_WIDTH_STEPS.map((s) => ({
-            key: s,
-            label: s,
-            pressed: s === bw,
-          }))
-        : [];
-      state.borderWidthRangeIndex = state.borderWidthOptions.findIndex((o) => o.key === bw) + 1;
-      state.borderWidthRangeMax = state.borderWidthOptions.length;
-      state.borderWidthValue = bw ?? "";
-      const radiusRow = shown("borderRadius")
-        ? scaleRow(
-            "borderRadius",
-            "Radius",
-            radii(theme).map((o) => ({ key: o.key, label: o.key })),
-          )
-        : null;
-      state.borderRadiusOptions = radiusRow?.options ?? [];
-      state.borderRadiusIsSelect = radiusRow?.isSelect ?? false;
-      state.borderRadiusValue = radiusRow?.value ?? "";
-      state.borderRadiusRangeIndex = radiusRow?.rangeIndex ?? 0;
-      state.borderRadiusRangeMax = radiusRow?.rangeMax ?? 0;
+      // Width is edited in the unified box model above. The Border panel keeps
+      // the properties that are not part of box geometry.
+      state.borderWidthRows = [];
+      state.borderRadiusRows = [];
       const bcRow = shown("borderColor") ? colorRow("borderColor", "Color") : null;
+      const activeBorderColor =
+        activeKind === "border"
+          ? borderValueForSide(id!, "borderColor", activeSide)
+          : (bcRow?.value ?? "");
+      const semanticBorderColors = semanticColors(theme);
+      const recommendedBorderColors = semanticBorderColors
+        .filter((color) => colorRoleKey(color.key) === "border")
+        .sort((left, right) => {
+          const leftActive = colorContextKey(left.key) === activeColorContext ? 0 : 1;
+          const rightActive = colorContextKey(right.key) === activeColorContext ? 0 : 1;
+          return leftActive - rightActive;
+        });
+      const tokenBorderColors = paletteTokens(theme).map((token) => {
+        const key = token.name.slice("color-".length);
+        return {
+          key,
+          value: token.value,
+          family: key.replace(/-\d+$/, ""),
+          label: key
+            .split("-")
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" "),
+        };
+      });
+      const borderPalette =
+        state.borderColorTier === "semantic"
+          ? semanticBorderColors
+          : state.borderColorTier === "tokens"
+            ? tokenBorderColors
+            : state.borderColorTier === "custom"
+              ? []
+              : recommendedBorderColors;
+      const borderSwatches = borderPalette.map((color) => ({
+        key: color.key,
+        css: color.value,
+        label: color.label,
+        pressed: color.key === activeBorderColor,
+      }));
+      const borderColorGrid = borderSwatches.length > GRID_MIN;
+      const borderColorFamilies = borderColorGrid
+        ? borderPalette.reduce<SwatchFamily[]>((families, color, index) => {
+            const familyName = color.family || "Colors";
+            const family = families.find((candidate) => candidate.family === familyName);
+            if (family) family.swatches.push(borderSwatches[index]);
+            else families.push({ family: familyName, swatches: [borderSwatches[index]] });
+            return families;
+          }, [])
+        : [];
+      const selectedColor =
+        [...semanticBorderColors, ...tokenBorderColors].find(
+          (color) => color.key === activeBorderColor,
+        )?.value ?? activeBorderColor;
+      const shortHex = /^#([\da-f])([\da-f])([\da-f])$/i.exec(selectedColor);
+      const fullHex = /^#[\da-f]{6}$/i.test(selectedColor)
+        ? selectedColor
+        : shortHex
+          ? `#${shortHex[1]}${shortHex[1]}${shortHex[2]}${shortHex[2]}${shortHex[3]}${shortHex[3]}`
+          : "#000000";
       state.borderColorShown = !!bcRow;
-      state.borderColorGrid = bcRow?.grid ?? false;
-      state.borderColorValue = bcRow?.value ?? "";
-      state.borderColorSwatches = bcRow?.swatches ?? [];
-      state.borderColorFamilies = bcRow?.families ?? [];
+      state.boxEditorBorderColorShown =
+        activeKind === "border" &&
+        !state.boxEditorRadiusOnly &&
+        !!bcRow &&
+        editorTargets.length > 0 &&
+        editorTargets.every((side) => hasBorderWidth(borderValueForSide(id!, "borderWidth", side)));
+      state.borderColorTierRecommended = state.borderColorTier === "recommended";
+      state.borderColorTierSemantic = state.borderColorTier === "semantic";
+      state.borderColorTierTokens = state.borderColorTier === "tokens";
+      state.borderColorTierCustom = state.borderColorTier === "custom";
+      state.borderColorChoicesShown = state.borderColorTier !== "custom";
+      state.borderColorGrid = borderColorGrid;
+      state.borderColorValue = activeBorderColor;
+      state.borderColorCustomValue = fullHex;
+      state.borderColorCustomText = selectedColor || "";
+      state.borderColorSwatches = borderColorGrid ? [] : borderSwatches;
+      state.borderColorFamilies = borderColorFamilies;
       const borderStyle = effectiveStyle(id!, "borderStyle").value;
       state.borderStyleOptions = shown("borderStyle")
         ? BORDER_STYLES.map(({ key, label }) => ({
@@ -5497,11 +6140,7 @@ Publr.store("chrome", () => {
             pressed: key === borderStyle,
           }))
         : [];
-      state.borderShown =
-        !!state.borderWidthOptions.length ||
-        !!state.borderRadiusOptions.length ||
-        state.borderColorShown ||
-        !!state.borderStyleOptions.length;
+      state.borderShown = !!state.borderStyleOptions.length;
       // Typography extras (C5): line-height + letter-spacing scales come from
       // the theme; decoration + case are keyword utilities (the spec, not the
       // theme) and keep their static vocabulary.
@@ -5587,9 +6226,20 @@ Publr.store("chrome", () => {
       state.textSpacingResetShown = false;
       state.boxPaddingShown = false;
       state.boxMarginShown = false;
+      state.boxBorderShown = false;
+      state.boxBorderRadiusTopLeft = "";
+      state.boxBorderRadiusTopRight = "";
+      state.boxBorderRadiusBottomRight = "";
+      state.boxBorderRadiusBottomLeft = "";
       state.boxEditorOpen = false;
       state.boxEditorTargetId = "";
       state.boxEditorRows = [];
+      state.boxEditorRadiusRows = [];
+      state.boxEditorRadiusShown = false;
+      state.boxEditorRadiusOnly = false;
+      state.boxEditorRadiusSyncShown = false;
+      state.boxEditorRadiusAllPressed = false;
+      state.boxEditorBorderColorShown = false;
       state.boxTargetPaddingTop = false;
       state.boxTargetPaddingRight = false;
       state.boxTargetPaddingBottom = false;
@@ -5600,19 +6250,27 @@ Publr.store("chrome", () => {
       state.boxTargetMarginBottom = false;
       state.boxTargetMarginLeft = false;
       state.boxTargetMarginAll = false;
+      state.boxTargetBorderTop = false;
+      state.boxTargetBorderRight = false;
+      state.boxTargetBorderBottom = false;
+      state.boxTargetBorderLeft = false;
+      state.boxTargetBorderAll = false;
+      state.boxTargetRadiusTopLeft = false;
+      state.boxTargetRadiusTopRight = false;
+      state.boxTargetRadiusBottomRight = false;
+      state.boxTargetRadiusBottomLeft = false;
+      state.boxBorderRadiusShown = false;
       state.paddingLinkAvailable = false;
       state.paddingSidesLinked = true;
       state.paddingSidesLabel = "Separate sides";
       state.marginLinkAvailable = false;
       state.marginSidesLinked = true;
       state.marginSidesLabel = "Separate sides";
+      state.borderSidesLabel = "Edit border properties";
       state.layoutRows = [];
       state.borderShown = false;
-      state.borderWidthOptions = [];
-      state.borderWidthValue = "";
-      state.borderRadiusOptions = [];
-      state.borderRadiusIsSelect = false;
-      state.borderRadiusValue = "";
+      state.borderWidthRows = [];
+      state.borderRadiusRows = [];
       state.borderStyleOptions = [];
       state.borderColorShown = false;
       state.borderColorGrid = false;
@@ -5652,6 +6310,7 @@ Publr.store("chrome", () => {
       state.blockTemplatePartLabel = lockedTemplatePart.label;
       state.blockIsContainer = false;
     }
+    if (state.boxEditorOpen) scheduleBoxEditorPosition();
     state.emptyNote = n > 1 ? `${n} blocks selected.` : "No block selected.";
   }
 
@@ -7999,38 +8658,133 @@ Publr.store("chrome", () => {
         const key = d.key === "none" ? "" : d.key;
         writeStyle(id, d.prop, key === readStyle(id, d.prop) ? "" : key);
       },
-      applyStyleRange(d: Dataset, ctx: { event: Event }) {
+      applyTokenScale(d: Dataset, ctx: { event: Event }) {
         const id = panelTarget();
-        if (!id || !d.prop) return;
-        const row = [...state.dimensionRows, ...state.layoutRows, ...state.typographyRows].find(
-          (candidate) => candidate.prop === d.prop,
-        );
+        const row = tokenScaleRow(d);
+        if (!id || !row) return;
+        const index = Number((ctx.event.target as HTMLInputElement).value);
+        const value = index > 0 ? (row.options[index - 1]?.key ?? "") : "";
+        if (d.kind === "padding" || d.kind === "margin" || d.kind === "border")
+          writeBoxSpacing(id, d.kind, value, d.prop);
+        else if (d.prop) writeStyle(id, d.prop, value);
+      },
+      previewTokenScale(d: Dataset, ctx: { event: Event }) {
+        const row = tokenScaleRow(d);
         if (!row) return;
         const index = Number((ctx.event.target as HTMLInputElement).value);
-        writeStyle(id, d.prop, index > 0 ? (row.options[index - 1]?.key ?? "") : "");
+        row.rangeIndex = index;
+        row.thumbPosition = `calc(8px + (100% - 16px) * ${index / Math.max(1, row.rangeMax)})`;
+        row.valueLabel = index > 0 ? (row.options[index - 1]?.label ?? "None") : "None";
+        row.options.forEach((option, optionIndex) => {
+          option.active = index > 0 && optionIndex < index;
+        });
       },
-      applyBorderRange(d: Dataset, ctx: { event: Event }) {
-        const id = panelTarget();
-        if (!id || (d.prop !== "borderWidth" && d.prop !== "borderRadius")) return;
-        const options =
-          d.prop === "borderWidth" ? state.borderWidthOptions : state.borderRadiusOptions;
-        const index = Number((ctx.event.target as HTMLInputElement).value);
-        writeStyle(id, d.prop, index > 0 ? (options[index - 1]?.key ?? "") : "");
+      toggleTokenScaleCustom(d: Dataset) {
+        const row = tokenScaleRow(d);
+        if (!row) return;
+        if (d.kind === "padding" || d.kind === "margin")
+          state.boxEditorCustomOpen = !row.customOpen;
+        else if (d.kind === "border" && d.prop) state.tokenScaleCustom[d.prop] = !row.customOpen;
+        else if (d.prop) state.tokenScaleCustom[d.prop] = !row.customOpen;
+        syncBlockPanel();
       },
-      applyBoxSpacing(d: Dataset, ctx: { event: Event }) {
+      applyTokenScaleCustom(d: Dataset, ctx: { event: Event }) {
         const id = panelTarget();
-        const kind = d.kind === "margin" ? "margin" : d.kind === "padding" ? "padding" : null;
-        const side = spacingSides.find((value) => value === d.side);
-        if (!id || !kind || !side) return;
-        writeBoxSpacing(id, kind, (ctx.event.target as HTMLInputElement).value.trim());
+        const component = (ctx.event.target as Element).closest<HTMLElement>(
+          '[data-publr-component="token-scale"]',
+        );
+        const number = component?.querySelector<HTMLInputElement>('input[type="number"]');
+        const unit = component?.querySelector<HTMLSelectElement>("select");
+        const raw = number?.value.trim() ?? "";
+        if (!id || !raw || !Number.isFinite(Number(raw)) || !unit) return;
+        const value = `${raw}${unit.value}`;
+        if (d.kind === "padding" || d.kind === "margin" || d.kind === "border")
+          writeBoxSpacing(id, d.kind, value, d.prop);
+        else if (d.prop) writeStyle(id, d.prop, value);
+      },
+      previewTokenScaleCustom(d: Dataset, ctx: { event: Event }) {
+        const row = tokenScaleRow(d);
+        const value = Number((ctx.event.target as HTMLInputElement).value);
+        if (!row || !Number.isFinite(value)) return;
+        row.customNumber = String(value);
+        row.customRangeValue = value;
+        const ratio =
+          (value - row.customMin) / Math.max(row.customStep, row.customMax - row.customMin);
+        row.customTrackFill = `${ratio * 100}%`;
+        row.customThumbPosition = `calc(8px + (100% - 16px) * ${ratio})`;
+      },
+      applyTokenScaleCustomRange(d: Dataset, ctx: { event: Event }) {
+        const id = panelTarget();
+        const row = tokenScaleRow(d);
+        const value = Number((ctx.event.target as HTMLInputElement).value);
+        if (!id || !row || !Number.isFinite(value)) return;
+        const raw = `${value}${row.customUnit}`;
+        if (d.kind === "padding" || d.kind === "margin" || d.kind === "border")
+          writeBoxSpacing(id, d.kind, raw, d.prop);
+        else if (d.prop) writeStyle(id, d.prop, raw);
+      },
+      applyBoxBorderColor(d: Dataset) {
+        const id = panelTarget();
+        if (!id || d.value === undefined) return;
+        applyBoxBorderColorValue(id, d.value);
+      },
+      setBorderColorTier(d: Dataset) {
+        const tier = ["recommended", "semantic", "tokens", "custom"].find(
+          (candidate) => candidate === d.tier,
+        ) as BorderColorTier | undefined;
+        if (!tier) return;
+        state.borderColorTier = tier;
+        syncBlockPanel();
+      },
+      applyBoxBorderCustomColor(_d: Dataset, ctx: { event: Event }) {
+        const id = panelTarget();
+        const value = (ctx.event.target as HTMLInputElement).value.trim();
+        if (!id || !value) return;
+        applyBoxBorderColorValue(id, value);
+      },
+      previewBoxLayer(d: Dataset, ctx: { event: Event }) {
+        const event = ctx.event as PointerEvent;
+        event.stopPropagation();
+        const layer = event.currentTarget;
+        if (!(layer instanceof HTMLElement)) return;
+        const related = event.relatedTarget;
+        if (related instanceof Node && layer.contains(related)) return;
+        const kind =
+          d.kind === "margin"
+            ? "margin"
+            : d.kind === "padding"
+              ? "padding"
+              : d.kind === "border"
+                ? "border"
+                : null;
+        if (kind) showBoxLayerPreview(kind);
+      },
+      clearBoxLayerPreview(_d: Dataset, ctx: { event: Event }) {
+        const event = ctx.event as PointerEvent;
+        event.stopPropagation();
+        const layer = event.currentTarget;
+        const related = event.relatedTarget;
+        if (layer instanceof HTMLElement && related instanceof Node && layer.contains(related))
+          return;
+        clearBoxLayerPreview();
       },
       selectBoxSide(d: Dataset, ctx: { event: Event }) {
         const id = panelTarget();
-        const kind = d.kind === "margin" ? "margin" : d.kind === "padding" ? "padding" : null;
+        const kind =
+          d.kind === "margin"
+            ? "margin"
+            : d.kind === "padding"
+              ? "padding"
+              : d.kind === "border"
+                ? "border"
+                : null;
         const side = spacingSides.find((value) => value === d.side);
         if (!id || !kind || !side) return;
         const sameKindPane =
-          state.boxEditorOpen && state.boxEditorTargetId === id && state.boxActiveKind === kind;
+          state.boxEditorOpen &&
+          state.boxEditorTargetId === id &&
+          state.boxActiveKind === kind &&
+          !state.boxEditorRadiusOnly;
         const shift = (ctx.event as MouseEvent).shiftKey;
         if (shift && sameKindPane) {
           const selected = new Set(state.boxEditorSelectedSides);
@@ -8060,6 +8814,7 @@ Publr.store("chrome", () => {
           state.boxActiveSide = side;
         }
         state.boxActiveKind = kind;
+        state.boxEditorRadiusOnly = false;
         state.boxEditorOpen = true;
         state.boxEditorTargetId = id;
         setSpacingCustomMode(id, kind, state.boxActiveSide as BoxSpacingSide);
@@ -8067,24 +8822,62 @@ Publr.store("chrome", () => {
           positionBoxEditor(ctx.event.currentTarget);
         syncBlockPanel();
       },
-      applyBoxScale(d: Dataset, ctx: { event: Event }) {
+      selectBorderRadiusCorner(d: Dataset, ctx: { event: Event }) {
         const id = panelTarget();
-        const kind = d.kind === "margin" ? "margin" : d.kind === "padding" ? "padding" : null;
-        const side = spacingSides.find((value) => value === d.side);
-        if (!id || !kind || !side) return;
-        const index = Number((ctx.event.target as HTMLInputElement).value);
-        const options = spacings(activeTheme()).map((option) => option.key);
-        const value = index > 0 ? (options[index - 1] ?? "") : "";
-        writeBoxSpacing(id, kind, value);
+        const corner = borderRadiusCorners.find(({ prop }) => prop === d.corner)?.prop;
+        if (!id || !corner) return;
+        const sameRadiusPane =
+          state.boxEditorOpen && state.boxEditorTargetId === id && state.boxEditorRadiusOnly;
+        const shift = (ctx.event as MouseEvent).shiftKey;
+        if (shift && sameRadiusPane) {
+          const selected = new Set(state.boxEditorSelectedCorners);
+          if (selected.has(corner)) selected.delete(corner);
+          else selected.add(corner);
+          const next = orderedBorderRadiusCorners([...selected]);
+          if (!next.length) {
+            state.boxEditorOpen = false;
+            state.boxEditorTargetId = "";
+            syncBlockPanel();
+            return;
+          }
+          state.boxEditorSelectedCorners = next;
+        } else {
+          const sameSingleControl =
+            sameRadiusPane &&
+            state.boxEditorSelectedCorners.length === 1 &&
+            state.boxEditorSelectedCorners[0] === corner;
+          if (sameSingleControl) {
+            state.boxEditorOpen = false;
+            state.boxEditorTargetId = "";
+            syncBlockPanel();
+            return;
+          }
+          state.boxEditorSelectedCorners = [corner];
+        }
+        state.boxActiveKind = "border";
+        state.boxEditorRadiusOnly = true;
+        state.boxEditorOpen = true;
+        state.boxEditorTargetId = id;
+        if (ctx.event.currentTarget instanceof HTMLElement)
+          positionBoxEditor(ctx.event.currentTarget);
+        syncBlockPanel();
       },
       openSpacingSync(d: Dataset, ctx: { event: Event }) {
         const id = panelTarget();
-        const kind = d.kind === "margin" ? "margin" : d.kind === "padding" ? "padding" : null;
+        const kind =
+          d.kind === "margin"
+            ? "margin"
+            : d.kind === "padding"
+              ? "padding"
+              : d.kind === "border"
+                ? "border"
+                : null;
         if (!id || !kind) return;
         const sameControl =
           state.boxEditorOpen &&
           state.boxEditorTargetId === id &&
           state.boxActiveKind === kind &&
+          !state.boxEditorRadiusOnly &&
           sameSpacingSides(state.boxEditorSelectedSides, spacingSides);
         if (sameControl) {
           state.boxEditorOpen = false;
@@ -8093,6 +8886,7 @@ Publr.store("chrome", () => {
           return;
         }
         state.boxActiveKind = kind;
+        state.boxEditorRadiusOnly = false;
         state.boxActiveSide = "Top";
         state.boxEditorSelectedSides = [...spacingSides];
         state.boxEditorOpen = true;
@@ -8116,34 +8910,14 @@ Publr.store("chrome", () => {
           : next;
         syncBlockPanel();
       },
-      toggleBoxSpacingCustom() {
-        state.boxEditorCustomOpen = !state.boxEditorCustomOpen;
+      setBorderRadiusAll() {
+        if (!state.boxEditorRadiusOnly) return;
+        const activeCorner =
+          orderedBorderRadiusCorners(state.boxEditorSelectedCorners)[0] ?? "borderTopLeftRadius";
+        state.boxEditorSelectedCorners = state.boxEditorRadiusAllPressed
+          ? [activeCorner]
+          : borderRadiusCorners.map(({ prop }) => prop);
         syncBlockPanel();
-      },
-      applyBoxSpacingCustom(_d: Dataset, ctx: { event: Event }) {
-        const id = panelTarget();
-        if (!id || !state.boxEditorOpen) return;
-        const wrap = (ctx.event.target as Element).closest<HTMLElement>(
-          ".pbe-spacing-pane__custom",
-        );
-        const number = wrap?.querySelector<HTMLInputElement>('input[type="number"]');
-        const unit = wrap?.querySelector<HTMLSelectElement>("select");
-        const raw = number?.value.trim() ?? "";
-        if (!raw || !Number.isFinite(Number(raw)) || !unit) return;
-        const nextUnit = spacingCustomUnits.find((candidate) => candidate === unit.value);
-        if (!nextUnit) return;
-        writeBoxSpacing(id, state.boxActiveKind as BoxSpacingKind, `${raw}${nextUnit}`);
-      },
-      applyBoxSpacingCustomRange(_d: Dataset, ctx: { event: Event }) {
-        const id = panelTarget();
-        if (!id || !state.boxEditorOpen) return;
-        const value = Number((ctx.event.target as HTMLInputElement).value);
-        if (!Number.isFinite(value)) return;
-        writeBoxSpacing(
-          id,
-          state.boxActiveKind as BoxSpacingKind,
-          `${value}${state.boxEditorCustomUnit}`,
-        );
       },
       closeSpacingEditor() {
         state.boxEditorOpen = false;
@@ -8485,6 +9259,7 @@ Publr.store("chrome", () => {
       // The icon sprite first: every <use href="#pbe-i-…"> below resolves
       // against it (one hidden <symbol> set, bindable refs — see icons.ts).
       mountIconSprite();
+      shellRootEl = el;
       const viewportEl = el.querySelector<HTMLElement>(".pbe-canvas-viewport")!;
       const viewportResizeHandle = viewportEl.querySelector<HTMLElement>(".pbe-viewport-resizer")!;
       editorContentEl = el.querySelector<HTMLElement>("#editor-content")!;
@@ -8626,6 +9401,10 @@ Publr.store("chrome", () => {
         syncTree();
       };
       shellDocument.addEventListener("mousedown", onShellBackgroundMouseDown);
+      const shellView = shellDocument.defaultView ?? window;
+      const onShellViewportResize = () => scheduleBoxEditorPosition();
+      shellView.addEventListener("resize", onShellViewportResize);
+      shellView.visualViewport?.addEventListener("resize", onShellViewportResize);
 
       // Breakpoint buttons are useful presets, but the iframe can be inspected
       // at every width between them. Because the canvas stays centered, a
@@ -9036,9 +9815,15 @@ Publr.store("chrome", () => {
         canvasDocument.removeEventListener("click", onTemplateNodeClick, true);
         canvasDocument.removeEventListener("keydown", onTemplateNodeKeydown, true);
         shellDocument.removeEventListener("mousedown", onShellBackgroundMouseDown);
+        shellView.removeEventListener("resize", onShellViewportResize);
+        shellView.visualViewport?.removeEventListener("resize", onShellViewportResize);
+        if (boxEditorPositionFrame) shellView.cancelAnimationFrame(boxEditorPositionFrame);
+        boxEditorPositionFrame = 0;
+        shellRootEl = null;
         state.canvasResponsiveCompare = false;
         clearResponsiveComparison();
         removeTemplateNodeToolbar();
+        clearBoxLayerPreview();
       };
     },
   };
@@ -9182,10 +9967,11 @@ export async function createEditorShell(options: EditorShellOptions): Promise<Ed
   baseCss = options.baseCss ?? "";
   siteCss = options.siteCss ?? "";
   cssEngine = options.cssEngine ?? null;
+  currentEngineCss = "";
   mediaAdapter = resolveMediaAdapter(options.media, { register: true });
 
   const container = options.container;
-  container.innerHTML = shellHtml;
+  container.innerHTML = shellHtml.replaceAll("<!-- pbe-token-scale -->", tokenScaleHtml);
   const shellRoot = container.querySelector<HTMLElement>("#editor-shell");
   const designBaseStyle = document.createElement("style");
   designBaseStyle.dataset.designBaseCss = "";

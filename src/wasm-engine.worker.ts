@@ -15,6 +15,12 @@ interface JitExports {
   alloc(len: number): number;
   free(ptr: number, len: number): void;
   compile(ptr: number, len: number): number;
+  compileWithTheme(
+    classesPtr: number,
+    classesLen: number,
+    themePtr: number,
+    themeLen: number,
+  ): number;
   outLen(): number;
 }
 
@@ -32,15 +38,26 @@ const ready: Promise<JitExports> = (async () => {
   return instance.exports as unknown as JitExports;
 })();
 
-function compileClasses(ex: JitExports, classes: string[]): string {
+function compileClasses(
+  ex: JitExports,
+  classes: string[],
+  theme: { tokens: { name: string; value: string }[] },
+): string {
   const input = new TextEncoder().encode(classes.join(" "));
+  const themeInput = new TextEncoder().encode(JSON.stringify(theme));
   const inPtr = ex.alloc(input.length);
   if (inPtr === 0) throw new Error("wasm alloc failed");
+  const themePtr = ex.alloc(themeInput.length);
+  if (themePtr === 0) {
+    ex.free(inPtr, input.length);
+    throw new Error("wasm theme alloc failed");
+  }
   // Re-read .buffer after every wasm call: alloc/compile may grow memory,
   // which detaches any earlier ArrayBuffer view.
   new Uint8Array(ex.memory.buffer, inPtr, input.length).set(input);
+  new Uint8Array(ex.memory.buffer, themePtr, themeInput.length).set(themeInput);
 
-  const cssPtr = ex.compile(inPtr, input.length);
+  const cssPtr = ex.compileWithTheme(inPtr, input.length, themePtr, themeInput.length);
   const n = ex.outLen();
   let css = "";
   if (cssPtr !== 0 && n !== 0) {
@@ -48,6 +65,7 @@ function compileClasses(ex: JitExports, classes: string[]): string {
     css = new TextDecoder().decode(new Uint8Array(ex.memory.buffer, cssPtr, n).slice());
     ex.free(cssPtr, n);
   }
+  ex.free(themePtr, themeInput.length);
   ex.free(inPtr, input.length);
   if (cssPtr === 0) throw new Error("wasm compile failed");
   return css;
@@ -56,14 +74,15 @@ function compileClasses(ex: JitExports, classes: string[]): string {
 interface Req {
   id: number;
   classes: string[];
+  theme: { tokens: { name: string; value: string }[] };
 }
 
 ctx.onmessage = (e: MessageEvent) => {
-  const { id, classes } = e.data as Req;
+  const { id, classes, theme } = e.data as Req;
   ready.then(
     (ex) => {
       try {
-        ctx.postMessage({ id, css: compileClasses(ex, classes) });
+        ctx.postMessage({ id, css: compileClasses(ex, classes, theme) });
       } catch (err) {
         ctx.postMessage({ id, error: String(err instanceof Error ? err.message : err) });
       }

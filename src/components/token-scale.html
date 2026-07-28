@@ -1,0 +1,108 @@
+<div data-publr-component="token-scale">
+  <div
+    class="pbe-token-scale"
+    data-p-show="not row.customOpen"
+    data-p-bind="data-has-icon:row.hasScaleIcon;data-inherited:row.inherited;data-responsive:row.responsive"
+  >
+    <span class="pbe-spacing-side" aria-hidden="true" data-p-show="row.scaleIcon">
+      <template data-p-for="icon of row.scaleIcons" data-p-key="icon">
+        <svg viewBox="0 0 24 24"><use data-p-bind="href:icon"></use></svg>
+      </template>
+    </span>
+    <div class="pbe-spacing-pane__rail">
+      <span
+        class="pbe-spacing-pane__tooltip"
+        data-p-style="left->row.thumbPosition"
+        data-p-text="row.valueLabel"
+      ></span>
+      <div class="pbe-spacing-pane__track" aria-hidden="true">
+        <template data-p-for="opt of row.options" data-p-key="opt.key">
+          <span data-p-bind="data-active:opt.active"></span>
+        </template>
+      </div>
+      <span
+        class="pbe-spacing-pane__thumb"
+        aria-hidden="true"
+        data-p-style="left->row.thumbPosition"
+      ></span>
+      <input
+        type="range"
+        min="0"
+        step="1"
+        class="pbe-spacing-pane__range"
+        data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;max:row.rangeMax;value:row.rangeIndex;disabled:$styleDisabled;aria-label:row.label"
+        data-p-on="input:previewTokenScale;change:applyTokenScale"
+      />
+    </div>
+    <output class="pbe-spacing-pane__value" data-p-text="row.valueLabel"></output>
+    <button
+      type="button"
+      class="pbe-spacing-pane__custom-toggle"
+      aria-label="Set custom value"
+      title="Set custom value"
+      data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;disabled:$styleDisabled"
+      data-p-on="mousedown.prevent:swallow;click:toggleTokenScaleCustom"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#pbe-i-settings"></use></svg>
+    </button>
+  </div>
+  <div class="pbe-token-scale pbe-token-scale--custom" data-p-show="row.customOpen">
+    <label class="pbe-spacing-pane__custom-field" data-p-show="row.customParsed">
+      <span class="sr-only" data-p-text="row.label"></span>
+      <input
+        type="number"
+        inputmode="decimal"
+        data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;value:row.customNumber;disabled:$styleDisabled;aria-label:row.label"
+        data-p-on="change:applyTokenScaleCustom"
+      />
+      <select
+        aria-label="CSS unit"
+        data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;value:row.customUnit;disabled:$styleDisabled"
+        data-p-on="change:applyTokenScaleCustom"
+      >
+        <option value="px">px</option>
+        <option value="%">%</option>
+        <option value="em">em</option>
+        <option value="rem">rem</option>
+        <option value="vw">vw</option>
+        <option value="vh">vh</option>
+      </select>
+    </label>
+    <label class="pbe-token-scale__custom-text" data-p-show="not row.customParsed">
+      <span class="sr-only" data-p-text="row.label"></span>
+      <input
+        type="text"
+        placeholder="CSS value"
+        data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;value:row.value;disabled:$styleDisabled;aria-label:row.label"
+        data-p-on="change:applyStyleInput"
+      />
+    </label>
+    <div class="pbe-spacing-pane__custom-rail" data-p-show="row.customParsed">
+      <div class="pbe-spacing-pane__custom-track" aria-hidden="true">
+        <i data-p-style="width->row.customTrackFill"></i>
+      </div>
+      <span
+        class="pbe-spacing-pane__thumb"
+        aria-hidden="true"
+        data-p-style="left->row.customThumbPosition"
+      ></span>
+      <input
+        type="range"
+        class="pbe-spacing-pane__range"
+        data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;min:row.customMin;max:row.customMax;step:row.customStep;value:row.customRangeValue;disabled:$styleDisabled;aria-label:row.label"
+        data-p-on="input:previewTokenScaleCustom;change:applyTokenScaleCustomRange"
+      />
+    </div>
+    <button
+      type="button"
+      class="pbe-spacing-pane__custom-toggle"
+      aria-label="Use design token"
+      title="Use design token"
+      aria-pressed="true"
+      data-p-bind="data-prop:row.prop;data-kind:row.kind;data-side:row.side;disabled:$styleDisabled"
+      data-p-on="mousedown.prevent:swallow;click:toggleTokenScaleCustom"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#pbe-i-settings"></use></svg>
+    </button>
+  </div>
+</div>

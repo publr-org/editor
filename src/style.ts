@@ -338,7 +338,7 @@ const colorClass =
         ? `${prefix}-${v}`
         : hasToken(theme, `color-${v}`)
           ? `${prefix}-${v}`
-          : `${prefix}-[${arbitrary(v)}]`
+          : `${prefix}-[${prefix.startsWith("border") ? "color:" : ""}${arbitrary(v)}]`
       : null;
 
 // value → class for a token namespace: `lg` → text-lg if the theme has
@@ -459,18 +459,68 @@ export const STYLE_PROPS: Record<string, StyleProp> = {
     // v4 border widths are fixed utilities: "1" ⇒ `border`, other numbers ⇒
     // `border-N`, raw lengths ⇒ arbitrary.
     toClass: (v) =>
-      v ? (v === "1" ? "border" : NUM.test(v) ? `border-${v}` : `border-[${arbitrary(v)}]`) : null,
+      v
+        ? v === "1"
+          ? "border"
+          : NUM.test(v)
+            ? `border-${v}`
+            : `border-[length:${arbitrary(v)}]`
+        : null,
   },
   borderTopWidth: {
     panel: "border",
-    toClass: (v) => (v ? (v === "1" ? "border-t" : NUM.test(v) ? `border-t-${v}` : null) : null),
+    toClass: (v) =>
+      v
+        ? v === "1"
+          ? "border-t"
+          : NUM.test(v)
+            ? `border-t-${v}`
+            : `border-t-[length:${arbitrary(v)}]`
+        : null,
+  },
+  borderRightWidth: {
+    panel: "border",
+    toClass: (v) =>
+      v
+        ? v === "1"
+          ? "border-r"
+          : NUM.test(v)
+            ? `border-r-${v}`
+            : `border-r-[length:${arbitrary(v)}]`
+        : null,
+  },
+  borderBottomWidth: {
+    panel: "border",
+    toClass: (v) =>
+      v
+        ? v === "1"
+          ? "border-b"
+          : NUM.test(v)
+            ? `border-b-${v}`
+            : `border-b-[length:${arbitrary(v)}]`
+        : null,
   },
   borderLeftWidth: {
     panel: "border",
-    toClass: (v) => (v ? (v === "1" ? "border-l" : NUM.test(v) ? `border-l-${v}` : null) : null),
+    toClass: (v) =>
+      v
+        ? v === "1"
+          ? "border-l"
+          : NUM.test(v)
+            ? `border-l-${v}`
+            : `border-l-[length:${arbitrary(v)}]`
+        : null,
   },
   borderColor: { panel: "border", toClass: colorClass("border") },
+  borderTopColor: { panel: "border", toClass: colorClass("border-t") },
+  borderRightColor: { panel: "border", toClass: colorClass("border-r") },
+  borderBottomColor: { panel: "border", toClass: colorClass("border-b") },
+  borderLeftColor: { panel: "border", toClass: colorClass("border-l") },
   borderRadius: { panel: "border", toClass: tokenClass("rounded", "radius") },
+  borderTopLeftRadius: { panel: "border", toClass: tokenClass("rounded-tl", "radius") },
+  borderTopRightRadius: { panel: "border", toClass: tokenClass("rounded-tr", "radius") },
+  borderBottomRightRadius: { panel: "border", toClass: tokenClass("rounded-br", "radius") },
+  borderBottomLeftRadius: { panel: "border", toClass: tokenClass("rounded-bl", "radius") },
   borderStyle: { panel: "border", toClass: fixedClass(BORDER_STYLES) },
   lineHeight: { panel: "typography", toClass: tokenClass("leading", "leading") },
   letterSpacing: { panel: "typography", toClass: tokenClass("tracking", "tracking") },
@@ -522,8 +572,20 @@ const PROP_SUPPORT: Record<string, (s: StyleSupports) => StyleSupport | undefine
   flexWrap: (s) => s.layout?.flexWrap,
   gridColumns: (s) => s.layout?.gridColumns,
   borderWidth: (s) => s.border?.width,
+  borderTopWidth: (s) => s.border?.width,
+  borderRightWidth: (s) => s.border?.width,
+  borderBottomWidth: (s) => s.border?.width,
+  borderLeftWidth: (s) => s.border?.width,
   borderColor: (s) => s.border?.color,
+  borderTopColor: (s) => s.border?.color,
+  borderRightColor: (s) => s.border?.color,
+  borderBottomColor: (s) => s.border?.color,
+  borderLeftColor: (s) => s.border?.color,
   borderRadius: (s) => s.border?.radius,
+  borderTopLeftRadius: (s) => s.border?.radius,
+  borderTopRightRadius: (s) => s.border?.radius,
+  borderBottomRightRadius: (s) => s.border?.radius,
+  borderBottomLeftRadius: (s) => s.border?.radius,
   borderStyle: (s) => s.border?.style,
 };
 
@@ -588,7 +650,10 @@ export function blockSupportsStyle(supports: StyleSupports | undefined, prop: st
 // The arbitrary-value form: `text-[17px]` → "17px" (underscores decode to spaces).
 const arb = (prefix: string, cls: string): string | null =>
   cls.startsWith(`${prefix}-[`) && cls.endsWith("]")
-    ? cls.slice(prefix.length + 2, -1).replaceAll("_", " ")
+    ? cls
+        .slice(prefix.length + 2, -1)
+        .replace(/^(?:color|length|percentage):/, "")
+        .replaceAll("_", " ")
     : null;
 
 // A value that reads as a CSS color — disambiguates shared prefixes
@@ -720,8 +785,44 @@ const FROM_CLASS: Record<string, (cls: string, theme: Theme) => string | null> =
     const raw = arb("border", cls);
     return raw !== null && !COLORISH.test(raw) ? raw : null;
   },
+  borderTopWidth: (cls) => {
+    if (cls === "border-t") return "1";
+    const match = /^border-t-(\d+(?:\.\d+)?)$/.exec(cls);
+    if (match) return match[1];
+    const raw = arb("border-t", cls);
+    return raw !== null && !COLORISH.test(raw) ? raw : null;
+  },
+  borderRightWidth: (cls) => {
+    if (cls === "border-r") return "1";
+    const match = /^border-r-(\d+(?:\.\d+)?)$/.exec(cls);
+    if (match) return match[1];
+    const raw = arb("border-r", cls);
+    return raw !== null && !COLORISH.test(raw) ? raw : null;
+  },
+  borderBottomWidth: (cls) => {
+    if (cls === "border-b") return "1";
+    const match = /^border-b-(\d+(?:\.\d+)?)$/.exec(cls);
+    if (match) return match[1];
+    const raw = arb("border-b", cls);
+    return raw !== null && !COLORISH.test(raw) ? raw : null;
+  },
+  borderLeftWidth: (cls) => {
+    if (cls === "border-l") return "1";
+    const match = /^border-l-(\d+(?:\.\d+)?)$/.exec(cls);
+    if (match) return match[1];
+    const raw = arb("border-l", cls);
+    return raw !== null && !COLORISH.test(raw) ? raw : null;
+  },
   borderColor: fromColor("border"),
+  borderTopColor: fromColor("border-t"),
+  borderRightColor: fromColor("border-r"),
+  borderBottomColor: fromColor("border-b"),
+  borderLeftColor: fromColor("border-l"),
   borderRadius: fromToken("rounded", "radius"),
+  borderTopLeftRadius: fromToken("rounded-tl", "radius"),
+  borderTopRightRadius: fromToken("rounded-tr", "radius"),
+  borderBottomRightRadius: fromToken("rounded-br", "radius"),
+  borderBottomLeftRadius: fromToken("rounded-bl", "radius"),
   borderStyle: fromKeyword(BORDER_STYLES),
   lineHeight: fromToken("leading", "leading"),
   letterSpacing: fromToken("tracking", "tracking"),

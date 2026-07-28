@@ -388,10 +388,12 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     : null;
   const hoverIcon = hoverLabel ? h("span", "flex size-4 items-center justify-center") : null;
   const hoverName = hoverLabel ? h("span", "whitespace-nowrap") : null;
-  const hoverPart = (name: string) => {
+  const hoverBoxClip = hoverOutline ? h("div", "pbe-hover-box-clip") : null;
+  if (hoverOutline && hoverBoxClip) hoverOutline.appendChild(hoverBoxClip);
+  const hoverPart = (name: string, clipped = true) => {
     const part = h("div", `pbe-hover-box-part pbe-hover-${name}`);
     part.dataset.boxPart = name;
-    hoverOutline?.appendChild(part);
+    (clipped ? hoverBoxClip : hoverOutline)?.appendChild(part);
     return part;
   };
   const hoverBoxParts = hoverOutline
@@ -405,10 +407,10 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
         borderRight: hoverPart("border-right"),
         borderBottom: hoverPart("border-bottom"),
         borderLeft: hoverPart("border-left"),
-        marginTop: hoverPart("margin-top"),
-        marginRight: hoverPart("margin-right"),
-        marginBottom: hoverPart("margin-bottom"),
-        marginLeft: hoverPart("margin-left"),
+        marginTop: hoverPart("margin-top", false),
+        marginRight: hoverPart("margin-right", false),
+        marginBottom: hoverPart("margin-bottom", false),
+        marginLeft: hoverPart("margin-left", false),
       }
     : null;
   if (hoverLabel && hoverIcon && hoverName) {
@@ -701,7 +703,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       if (width <= 0 || height <= 0) return;
       const part = h("div", `pbe-hover-layout-${kind}`);
       part.dataset.layoutPart = kind;
-      hoverOutline.appendChild(part);
+      (hoverBoxClip ?? hoverOutline).appendChild(part);
       placeHoverPart(part, left, top, width, height);
       hoverLayoutParts.push(part);
     };
@@ -879,6 +881,15 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     hoverOutline.style.height = `${rect.height}px`;
     park(hoverOutline, rect.top, rect.left);
     const style = ownerWindow.getComputedStyle(root);
+    for (const prop of [
+      "borderTopLeftRadius",
+      "borderTopRightRadius",
+      "borderBottomRightRadius",
+      "borderBottomLeftRadius",
+    ] as const) {
+      hoverOutline.style[prop] = style[prop];
+      if (hoverBoxClip) hoverBoxClip.style[prop] = style[prop];
+    }
     const content = syncHoverBoxModel(rect, style);
     syncHoverLayout(root, block, rect, style, content);
 

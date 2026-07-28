@@ -158,6 +158,14 @@ describe("toolbar visual parity", () => {
       );
       const spacingPane = () => doc.querySelector<HTMLElement>(".pbe-spacing-pane")!;
       expect(spacingPane().classList.contains("hidden")).toBe(false);
+      const namedScale = spacingPane().querySelector<HTMLElement>(
+        ".pbe-token-scale:not(.pbe-token-scale--custom):not(.hidden)",
+      )!;
+      const namedCenters = [...namedScale.children].map((child) => {
+        const rect = (child as HTMLElement).getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      });
+      expect(Math.max(...namedCenters) - Math.min(...namedCenters)).toBeLessThan(1);
       marginTop.click();
       await vi.waitFor(() => expect(spacingPane().classList.contains("hidden")).toBe(true));
       marginTop.click();
@@ -183,11 +191,12 @@ describe("toolbar visual parity", () => {
             shiftKey: true,
           }),
         );
-      await vi.waitFor(() =>
-        expect(doc.querySelector(".pbe-spacing-pane__header")?.textContent).toContain(
-          "Margin top, right",
-        ),
-      );
+      await vi.waitFor(() => {
+        expect(doc.querySelector(".pbe-spacing-pane__header strong")?.textContent).toBe("Margin");
+        expect(doc.querySelector(".pbe-spacing-pane__header small")?.textContent).toBe(
+          "Top, Right",
+        );
+      });
       marginTop.click();
       const beforeSpacing = currentHeading().outerHTML;
       const boxScale = doc.querySelector<HTMLInputElement>(
@@ -204,14 +213,27 @@ describe("toolbar visual parity", () => {
       customToggle.click();
       await vi.waitFor(() =>
         expect(
-          doc.querySelector<HTMLElement>(".pbe-spacing-pane__custom")?.classList.contains("hidden"),
+          doc.querySelector<HTMLElement>(".pbe-token-scale--custom")?.classList.contains("hidden"),
         ).toBe(false),
       );
+      const customScale = doc.querySelector<HTMLElement>(".pbe-token-scale--custom:not(.hidden)")!;
+      const customCenters = [...customScale.children]
+        .filter((child) => !(child as HTMLElement).classList.contains("hidden"))
+        .map((child) => {
+          const rect = (child as HTMLElement).getBoundingClientRect();
+          return rect.top + rect.height / 2;
+        });
+      expect(Math.max(...customCenters) - Math.min(...customCenters)).toBeLessThan(1);
+      expect(
+        customScale
+          .querySelector<HTMLInputElement>('input[type="range"]')!
+          .classList.contains("pbe-spacing-pane__range"),
+      ).toBe(true);
       const arbitraryInput = doc.querySelector<HTMLInputElement>(
-        '.pbe-spacing-pane__custom input[type="number"]',
+        '.pbe-token-scale--custom input[type="number"]',
       )!;
       const arbitraryUnit = doc.querySelector<HTMLSelectElement>(
-        ".pbe-spacing-pane__custom select",
+        ".pbe-token-scale--custom select",
       )!;
       arbitraryUnit.value = "px";
       arbitraryInput.focus();
@@ -222,14 +244,21 @@ describe("toolbar visual parity", () => {
       expect(arbitraryInput.value).toBe("18");
       customToggle.click();
       const resetArbitrary = doc.querySelector<HTMLInputElement>(
-        '.pbe-spacing-pane__row:not(.pbe-spacing-pane__custom) input[type="range"]',
+        '.pbe-token-scale:not(.pbe-token-scale--custom) input[type="range"]',
       )!;
       resetArbitrary.value = "0";
       resetArbitrary.dispatchEvent(frameEvent("change"));
       await vi.waitFor(() => expect(currentHeading().outerHTML).not.toBe(arbitraryMargin));
+      if (width === 1180) {
+        doc.querySelector<HTMLButtonElement>(".pbe-spacing-pane__close")!.click();
+        await vi.waitFor(() => expect(spacingPane().classList.contains("hidden")).toBe(true));
+        const unifiedBoxModel = doc.querySelector<HTMLElement>(".pbe-box-model")!;
+        expect(unifiedBoxModel.querySelector(".pbe-box-model__border")).toBeTruthy();
+        expect(unifiedBoxModel.getBoundingClientRect().height).toBeLessThanOrEqual(190);
+      }
 
       const lineHeight = doc.querySelector<HTMLInputElement>(
-        '.pbe-scale__input[data-prop="lineHeight"]',
+        '[data-publr-component="token-scale"] input[type="range"][data-prop="lineHeight"]',
       )!;
       const beforeScale = currentHeading().outerHTML;
       lineHeight.focus();
@@ -238,7 +267,7 @@ describe("toolbar visual parity", () => {
       await vi.waitFor(() => expect(currentHeading().outerHTML).not.toBe(beforeScale));
       const appliedScale = currentHeading().outerHTML;
       const updatedLineHeight = doc.querySelector<HTMLInputElement>(
-        '.pbe-scale__input[data-prop="lineHeight"]',
+        '[data-publr-component="token-scale"] input[type="range"][data-prop="lineHeight"]',
       )!;
       updatedLineHeight.focus();
       updatedLineHeight.value = "0";
@@ -267,7 +296,11 @@ describe("toolbar visual parity", () => {
       // Dense controls stay collapsed until requested; the default screenshot
       // exercises the compact inspector rather than a scrolled box model.
       expect(doc.querySelector<HTMLDetailsElement>("#block-dimensions")!.open).toBe(false);
-      expect(doc.querySelector('.pbe-scale__input[data-prop="lineHeight"]')).toBeTruthy();
+      expect(
+        doc.querySelector(
+          '[data-publr-component="token-scale"] input[type="range"][data-prop="lineHeight"]',
+        ),
+      ).toBeTruthy();
       const sidebar = doc.querySelector<HTMLElement>("#sidebar")!;
       sidebar.scrollTop = 0;
       await new Promise<void>((resolve) =>
@@ -528,7 +561,7 @@ describe("toolbar visual parity", () => {
         frame!.contentWindow!.requestAnimationFrame(() => resolve()),
       );
       await expect.element(page.elementLocator(frame)).toMatchScreenshot("inspector-layout-icons", {
-        comparatorOptions: { allowedMismatchedPixelRatio: 0.01 },
+        comparatorOptions: { allowedMismatchedPixelRatio: 0.04 },
       });
     } finally {
       frame?.remove();

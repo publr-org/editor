@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { page as browserPage } from "@vitest/browser/context";
 import { attachInlineChrome, createEditor, flattenBlocks } from "../src/index";
 import type { Editor } from "../src/index";
 import { registerCoreBlocks, registerCorePatterns } from "../src/blocks";
@@ -135,6 +136,7 @@ describe("declared contextual toolbars", () => {
     paragraph.style.margin = "10px 11px 12px 13px";
     paragraph.style.borderStyle = "solid";
     paragraph.style.borderWidth = "2px 3px 4px 5px";
+    paragraph.style.borderRadius = "24px 12px 8px 4px";
     paragraph.style.padding = "6px 7px 8px 9px";
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
     vi.spyOn(paragraph, "getBoundingClientRect").mockReturnValue(new DOMRect(30, 40, 300, 100));
@@ -154,6 +156,32 @@ describe("declared contextual toolbars", () => {
     expect(part("content").style.top).toBe("8px");
     expect(part("content").style.width).toBe("276px");
     expect(part("content").style.height).toBe("80px");
+    const outline = chrome().querySelector<HTMLElement>(".pbe-hover-outline")!;
+    const clip = chrome().querySelector<HTMLElement>(".pbe-hover-box-clip")!;
+    expect(outline.style.borderTopLeftRadius).toBe("24px");
+    expect(outline.style.borderTopRightRadius).toBe("12px");
+    expect(outline.style.borderBottomRightRadius).toBe("8px");
+    expect(outline.style.borderBottomLeftRadius).toBe("4px");
+    expect(clip.style.borderRadius).toBe("24px 12px 8px 4px");
+    expect(getComputedStyle(clip).overflow).toBe("hidden");
+    expect(part("content").parentElement).toBe(clip);
+    expect(part("margin-top").parentElement).toBe(outline);
+  });
+
+  test("native :hover never overrides an authored container radius", async () => {
+    setup(
+      `<div data-pb-block="group" data-pb-id="group" data-pb-children>` +
+        `<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>` +
+        `</div>`,
+    );
+    const group = canvas.querySelector<HTMLElement>('[data-pb-id="group"]')!;
+    canvas.id = "canvas";
+    group.style.borderRadius = "80px 60px 40px 20px";
+    host.querySelector<HTMLElement>("[data-pbe-inline-chrome]")!.style.display = "none";
+
+    expect(getComputedStyle(group).borderRadius).toBe("80px 60px 40px 20px");
+    await browserPage.elementLocator(group).hover();
+    expect(getComputedStyle(group).borderRadius).toBe("80px 60px 40px 20px");
   });
 
   test("an active text toolbar suppresses hover on its block and ancestor chain", async () => {

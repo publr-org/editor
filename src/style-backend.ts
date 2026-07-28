@@ -112,6 +112,14 @@ const keyword = (map: Record<string, string>) => {
   };
 };
 
+const length = {
+  to: (value: string) => (/^\d+(\.\d+)?$/.test(value) ? `${value}px` : value),
+  from: (css: string) => {
+    const match = /^(\d+(?:\.\d+)?)px$/.exec(css.trim());
+    return match ? match[1] : css.trim() || undefined;
+  },
+};
+
 const DECLS: Record<string, DeclSpec> = {
   fontSize: { property: "font-size", ...varRef("text") },
   textAlign: {
@@ -190,8 +198,20 @@ const DECLS: Record<string, DeclSpec> = {
       return m ? m[1] : css.trim() || undefined;
     },
   },
+  borderTopWidth: { property: "border-top-width", ...length },
+  borderRightWidth: { property: "border-right-width", ...length },
+  borderBottomWidth: { property: "border-bottom-width", ...length },
+  borderLeftWidth: { property: "border-left-width", ...length },
   borderColor: { property: "border-color", ...varRef("color") },
+  borderTopColor: { property: "border-top-color", ...varRef("color") },
+  borderRightColor: { property: "border-right-color", ...varRef("color") },
+  borderBottomColor: { property: "border-bottom-color", ...varRef("color") },
+  borderLeftColor: { property: "border-left-color", ...varRef("color") },
   borderRadius: { property: "border-radius", ...varRef("radius") },
+  borderTopLeftRadius: { property: "border-top-left-radius", ...varRef("radius") },
+  borderTopRightRadius: { property: "border-top-right-radius", ...varRef("radius") },
+  borderBottomRightRadius: { property: "border-bottom-right-radius", ...varRef("radius") },
+  borderBottomLeftRadius: { property: "border-bottom-left-radius", ...varRef("radius") },
   borderStyle: {
     property: "border-style",
     ...keyword({
@@ -282,9 +302,11 @@ export const inlineBackend: StyleBackend = {
     if (value) decls.push([spec.property, spec.to(value, theme)]);
     // A border width without a style is invisible outside Tailwind preflight —
     // the inline carrier must be self-sufficient, so the style rides along.
-    const hasWidth = decls.some(([p]) => p === "border-width");
+    const hasWidth = decls.some(
+      ([p]) => p === "border-width" || /^border-(?:top|right|bottom|left)-width$/.test(p),
+    );
     const hasStyle = decls.some(([p]) => p === "border-style");
-    if (!hasWidth && prop === "borderWidth")
+    if (!hasWidth && prop.endsWith("Width") && prop.startsWith("border"))
       decls = decls.filter(([p, v]) => p !== "border-style" || v !== "solid");
     if (hasWidth && !hasStyle) decls.push(["border-style", "solid"]);
     serializeDecls(block, decls);
