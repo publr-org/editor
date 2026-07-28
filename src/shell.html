@@ -1115,9 +1115,8 @@
             class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
             data-p-bind="aria-selected:$sidebarTab == document"
             data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
-          >
-            Document
-          </button>
+            data-p-text="$templateIsPattern -> 'Pattern' ~ 'Document'"
+          ></button>
           <button
             type="button"
             role="tab"
@@ -1130,7 +1129,90 @@
           </button>
         </div>
         <div id="panel-document" class="p-4" role="tabpanel" data-p-show="$sidebarTab == document">
-          <div data-p-show="$documentShown">
+          <div id="pattern-overview" data-p-show="$templateIsPattern">
+            <section
+              id="pattern-style-selector"
+              class="pbe-pattern-overview-section"
+              data-p-show="$patternStyleSelectorShown"
+            >
+              <header class="pbe-pattern-overview-section__header">
+                <h2 data-p-text="$patternSchemeTitle"></h2>
+                <span data-p-show="$patternSchemeNote" data-p-text="$patternSchemeNote"></span>
+              </header>
+              <div class="grid grid-cols-2 gap-2" role="group" aria-label="Pattern color schemes">
+                <template data-p-for="context of $patternColorSchemes" data-p-key="context.key">
+                  <article
+                    class="pbe-pattern-scheme"
+                    data-p-bind="data-default:context.default;data-disabled:context.disabled"
+                  >
+                    <button
+                      type="button"
+                      class="pbe-pattern-scheme__select"
+                      data-p-bind="data-context:context.key;disabled:context.selectDisabled;aria-pressed:context.default;aria-label:context.selectLabel;title:context.selectLabel"
+                      data-p-on="mousedown.prevent:swallow;click:selectPatternDefaultColorContext"
+                    >
+                      <span
+                        class="pbe-pattern-scheme__preview"
+                        data-p-style="background-color->context.surfaceCss;color->context.foregroundCss"
+                      >
+                        <i></i><i></i><b data-p-style="background-color->context.accentCss"></b>
+                        <em
+                          data-p-show="context.statusShown"
+                          data-p-text="context.statusLabel"
+                        ></em>
+                      </span>
+                      <strong data-p-text="context.label"></strong>
+                    </button>
+                    <button
+                      type="button"
+                      class="pbe-pattern-scheme__availability"
+                      role="checkbox"
+                      data-p-show="context.availabilityShown"
+                      data-p-bind="data-context:context.key;disabled:context.default;aria-checked:context.enabled;aria-label:context.availabilityLabel;title:context.availabilityLabel"
+                      data-p-on="mousedown.prevent:swallow;click:togglePatternColorContextAvailability"
+                    >
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path
+                          d="m3.5 8.25 2.75 2.75 6.25-6.25"
+                          data-p-show="context.enabled"
+                        ></path>
+                      </svg>
+                    </button>
+                  </article>
+                </template>
+              </div>
+            </section>
+            <section class="pbe-pattern-overview-section mt-7">
+              <header class="pbe-pattern-overview-section__header">
+                <h2>Blocks</h2>
+              </header>
+              <div class="pbe-pattern-overview-tree">
+                <template data-p-for="row of $patternOverviewRows" data-p-key="row.id">
+                  <button
+                    type="button"
+                    class="pbe-pattern-overview-row"
+                    data-p-style="padding-left->row.pad"
+                    data-p-class="row.selected -> bg-ui-accent text-accent-foreground"
+                    data-p-bind="data-id:row.id;data-depth:row.depth"
+                    data-p-on="mousedown.prevent:swallow;click:treeSelect"
+                  >
+                    <span class="pbe-pattern-overview-row__icon">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" data-p-show="row.icon">
+                        <use data-p-bind="href:row.icon"></use>
+                      </svg>
+                      <span data-p-show="not row.icon" data-p-text="row.letter"></span>
+                    </span>
+                    <strong data-p-text="row.label"></strong>
+                    <span class="pbe-pattern-overview-row__container" data-p-show="row.container"
+                      >Container</span
+                    >
+                    <span class="pbe-pattern-overview-row__anchor" data-p-text="row.anchor"></span>
+                  </button>
+                </template>
+              </div>
+            </section>
+          </div>
+          <div data-p-show="$documentShown" data-p-class="$templateIsPattern -> hidden">
             <div class="flex items-start gap-3">
               <svg
                 class="mt-0.5 h-6 w-6 shrink-0"
@@ -1538,6 +1620,38 @@
               </div>
             </div>
             <div
+              id="block-header-settings"
+              class="mt-5 hidden"
+              data-p-show="$blockHeaderSettings.length"
+            >
+              <template data-p-for="row of $blockHeaderSettings" data-p-key="row.key">
+                <div
+                  class="pbe-structure-options flex flex-wrap gap-2"
+                  role="group"
+                  data-p-bind="aria-label:row.label"
+                >
+                  <template data-p-for="opt of row.options" data-p-key="opt.value">
+                    <button
+                      type="button"
+                      class="pbe-structure-option flex h-11 min-w-11 cursor-pointer items-center justify-center px-2 text-[13px] font-semibold"
+                      data-p-bind="data-id:row.id;data-mode:row.mode;data-field:row.field;data-setting:row.setting;data-style:row.style;data-value:opt.value;aria-pressed:opt.pressed;aria-label:opt.label;title:opt.label"
+                      data-p-on="mousedown.prevent:swallow;click:applySetting"
+                    >
+                      <svg
+                        class="h-6 w-6 fill-current"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        data-p-show="opt.icon"
+                      >
+                        <use data-p-bind="href:opt.icon" />
+                      </svg>
+                      <span data-p-show="not opt.icon" data-p-text="opt.label"></span>
+                    </button>
+                  </template>
+                </div>
+              </template>
+            </div>
+            <div
               class="mt-5 flex border-b border-neutral-200"
               role="tablist"
               aria-label="Block inspector"
@@ -1547,33 +1661,31 @@
                 type="button"
                 role="tab"
                 data-itab="settings"
-                class="relative h-10 flex-1 cursor-pointer text-[13px] font-medium aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+                class="relative flex h-11 flex-1 cursor-pointer items-center justify-center aria-selected:shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+                title="Settings"
+                aria-label="Settings"
                 data-p-bind="aria-selected:$blockInspectorTab == settings"
                 data-p-on="mousedown.prevent:swallow;click:setBlockInspectorTab"
               >
-                Settings
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <use href="#pbe-i-settings"></use>
+                </svg>
               </button>
               <button
                 type="button"
                 role="tab"
                 data-itab="styles"
-                class="relative hidden h-10 flex-1 cursor-pointer text-[13px] font-medium aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
+                class="relative hidden flex h-11 flex-1 cursor-pointer items-center justify-center aria-selected:shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+                title="Styles"
+                aria-label="Styles"
                 data-p-show="$blockHasStyles"
                 data-p-bind="aria-selected:$blockInspectorTab == styles;disabled:not $blockHasStyles"
                 data-p-on="mousedown.prevent:swallow;click:setBlockInspectorTab"
               >
-                Styles
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <use href="#pbe-i-palette"></use>
+                </svg>
               </button>
-            </div>
-            <div
-              class="pbe-breakpoint-status mt-3 hidden items-center justify-between rounded-lg px-3 py-2"
-              data-p-show="$styleBreakpointStatusShown"
-            >
-              <span class="text-[11px] font-semibold" data-p-text="$styleBreakpointLabel"></span>
-              <span
-                class="text-[9px] text-muted-foreground"
-                data-p-text="$styleBreakpointHelp"
-              ></span>
             </div>
             <!-- Pattern instance (thoughts/012): a fully DECOUPLED copy.
                One action — Edit pattern, over THIS copy — plus the copy's
@@ -1592,7 +1704,7 @@
               >
                 Edit pattern
               </button>
-              <div id="pattern-context" class="mt-4" data-p-show="$blockPatternContexts.length">
+              <div id="pattern-context" class="mt-4" data-p-show="$blockPatternContextShown">
                 <div
                   class="mb-2 flex items-center justify-between border-b border-neutral-200 pb-2"
                 >
@@ -1678,29 +1790,70 @@
                dataset carries primitive + target. -->
             <div id="block-settings" class="hidden" data-p-show="$blockInspectorTab == settings">
               <template data-p-for="row of $blockSettings" data-p-key="row.key">
-                <div class="mt-5" role="group" data-p-bind="aria-label:row.label">
-                  <div
-                    class="mb-3 flex items-center justify-between border-b border-neutral-200 pb-2"
-                    data-p-show="row.showSection"
-                  >
+                <div
+                  class="pbe-inspector-setting-row"
+                  role="group"
+                  data-p-bind="aria-label:row.label"
+                >
+                  <div class="pbe-inspector-section__header" data-p-show="row.showSection">
                     <button
                       type="button"
-                      class="flex cursor-pointer items-center gap-1 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
+                      class="pbe-inspector-section__trigger"
                       data-p-bind="data-section:row.sectionKey;aria-expanded:row.sectionExpanded"
                       data-p-on="mousedown.prevent:swallow;click:toggleSettingSection"
                     >
-                      <span data-p-text="row.section"></span><span aria-hidden="true">⌄</span>
+                      <span class="pbe-inspector-section__title" data-p-text="row.section"></span>
+                      <svg
+                        class="pbe-inspector-section__chevron"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <use href="#pbe-i-chevron-down"></use>
+                      </svg>
                     </button>
-                    <button
-                      type="button"
-                      class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
-                      data-p-bind="data-id:row.id;data-role:row.sectionRole;data-style:row.style"
-                      data-p-on="mousedown.prevent:swallow;click:resetSettingSection"
+                    <div
+                      class="pbe-inspector-section__menu"
+                      data-p-store="local:dropdown"
+                      data-publr-component="dropdown"
                     >
-                      Reset
-                    </button>
+                      <button
+                        type="button"
+                        class="pbe-inspector-section__menu-trigger"
+                        aria-label="Section actions"
+                        title="Section actions"
+                        aria-haspopup="menu"
+                        data-p-bind="aria-expanded:$open"
+                        data-p-on="mousedown.prevent:swallow;click:toggle"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <use href="#pbe-i-more"></use>
+                        </svg>
+                      </button>
+                      <div
+                        class="pbe-inspector-section__menu-content"
+                        data-publr-part="content"
+                        data-p-show="$open"
+                        data-p-portal="true"
+                        data-publr-placement="bottom-end"
+                        data-p-on="keydown:navKeys;click:itemClick"
+                        role="menu"
+                        aria-label="Section actions"
+                      >
+                        <button
+                          type="button"
+                          class="pbe-inspector-section__menu-item"
+                          role="menuitem"
+                          data-publr-part="item"
+                          data-p-bind="data-id:row.id;data-role:row.sectionRole;data-style:row.sectionStyle"
+                          data-p-on="click:resetSettingSection"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div class="hidden" data-p-show="row.sectionExpanded">
+                  <div class="pbe-inspector-section__body hidden" data-p-show="row.sectionExpanded">
                     <!-- toggle-group: option buttons (field / transform / island-bound) -->
                     <div
                       class="pbe-structure-options flex flex-wrap gap-2"
@@ -1805,15 +1958,21 @@
                         </svg>
                       </summary>
                       <div class="pbe-responsive-field__detail">
-                        <div class="pbe-responsive-field__track" aria-hidden="true">
+                        <div
+                          class="pbe-responsive-field__track"
+                          role="group"
+                          data-p-bind="aria-label:row.responsiveChanges"
+                        >
                           <template
                             data-p-for="range of row.responsiveRanges"
                             data-p-key="range.key"
                           >
-                            <i
+                            <button
+                              type="button"
                               data-p-style="flex-grow->range.span;background-color->range.color"
-                              data-p-bind="data-changed:range.changed;title:range.label"
-                            ></i>
+                              data-p-bind="data-breakpoint:range.key;data-props:range.props;data-index:range.index;data-min-index:range.minIndex;data-max-index:range.maxIndex;data-movable:range.movable;data-changed:range.changed;data-resettable:range.resettable;disabled:range.resetDisabled;aria-label:range.resetLabel;title:range.resetLabel"
+                              data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:resetResponsiveValueRange"
+                            ></button>
                           </template>
                         </div>
                         <div
@@ -1829,8 +1988,8 @@
                               type="button"
                               class="pbe-responsive-field__point"
                               data-p-style="--pbe-responsive-color->point.color"
-                              data-p-bind="data-breakpoint:point.key;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
-                              data-p-on="mousedown.prevent:swallow;click:jumpToStyleBreakpoint"
+                              data-p-bind="data-breakpoint:point.key;data-props:point.props;data-index:point.index;data-min-index:point.minIndex;data-max-index:point.maxIndex;data-movable:point.movable;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
+                              data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:jumpToStyleBreakpoint"
                             >
                               <i aria-hidden="true"></i>
                               <span data-p-text="point.viewport"></span>
@@ -1978,158 +2137,200 @@
                 </div>
               </template>
 
-              <section class="pbe-settings-layout mt-5" data-p-show="$layoutRows.length">
-                <div class="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 class="m-0 text-[14px] font-semibold text-foreground">Layout</h3>
-                    <p class="mt-0.5 mb-0 text-[10px] text-muted-foreground">
-                      Controls for the selected container type
-                    </p>
-                  </div>
+              <details
+                open
+                class="pbe-inspector-section pbe-inspector-accordion"
+                data-p-show="$layoutRows.length"
+              >
+                <summary class="pbe-inspector-section__header">
+                  <span class="pbe-inspector-section__title">Layout</span>
+                  <svg
+                    class="pbe-inspector-section__chevron"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <use href="#pbe-i-chevron-down"></use>
+                  </svg>
+                </summary>
+                <div
+                  class="pbe-inspector-section__menu pbe-inspector-accordion__menu"
+                  data-p-store="local:dropdown"
+                  data-publr-component="dropdown"
+                >
                   <button
                     type="button"
-                    data-panel="layout"
-                    class="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                    data-p-on="mousedown.prevent:swallow;click:resetStylePanel"
+                    class="pbe-inspector-section__menu-trigger"
+                    aria-label="Layout actions"
+                    title="Layout actions"
+                    aria-haspopup="menu"
+                    data-p-bind="aria-expanded:$open"
+                    data-p-on="mousedown.prevent:swallow;click:toggle"
                   >
-                    Reset
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <use href="#pbe-i-more"></use>
+                    </svg>
                   </button>
-                </div>
-                <template data-p-for="row of $layoutRows" data-p-key="row.prop">
-                  <div class="pbe-control-row">
-                    <div class="pbe-control-row__header">
-                      <span data-p-text="row.label"></span>
-                      <span
-                        class="pbe-current-value"
-                        data-p-show="not row.isRange"
-                        data-p-bind="data-inherited:row.inherited"
-                      >
-                        <strong data-p-text="row.valueLabel"></strong>
-                        <small data-p-show="row.inherited" data-p-text="row.inheritedLabel"></small>
-                      </span>
-                    </div>
-                    <div
-                      class="pbe-option-group flex overflow-hidden"
-                      role="group"
-                      data-p-bind="aria-label:row.label"
-                      data-p-show="row.isSegmented"
+                  <div
+                    class="pbe-inspector-section__menu-content"
+                    data-publr-part="content"
+                    data-p-show="$open"
+                    data-p-portal="true"
+                    data-publr-placement="bottom-end"
+                    data-p-on="keydown:navKeys;click:itemClick"
+                    role="menu"
+                    aria-label="Layout actions"
+                  >
+                    <button
+                      type="button"
+                      class="pbe-inspector-section__menu-item"
+                      role="menuitem"
+                      data-publr-part="item"
+                      data-panel="layout"
+                      data-p-on="click:resetStylePanel"
                     >
-                      <template data-p-for="opt of row.options" data-p-key="opt.key">
-                        <button
-                          type="button"
-                          class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-input px-1 text-[12px] font-semibold last:border-r-0"
-                          data-p-bind="data-prop:row.prop;data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label;title:opt.label"
-                          data-p-on="mousedown.prevent:swallow;click:applyDimension"
+                      Reset
+                    </button>
+                  </div>
+                </div>
+                <div class="pbe-inspector-section__body">
+                  <p class="mt-0 mb-4 text-[10px] text-muted-foreground">
+                    Controls for the selected container type
+                  </p>
+                  <template data-p-for="row of $layoutRows" data-p-key="row.prop">
+                    <div class="pbe-control-row">
+                      <div class="pbe-control-row__header">
+                        <span data-p-text="row.label"></span>
+                        <span
+                          class="pbe-current-value"
+                          data-p-show="not row.isRange"
+                          data-p-bind="data-inherited:row.inherited"
+                        >
+                          <strong data-p-text="row.valueLabel"></strong>
+                          <small
+                            data-p-show="row.inherited"
+                            data-p-text="row.inheritedLabel"
+                          ></small>
+                        </span>
+                      </div>
+                      <div
+                        class="pbe-option-group flex overflow-hidden"
+                        role="group"
+                        data-p-bind="aria-label:row.label"
+                        data-p-show="row.isSegmented"
+                      >
+                        <template data-p-for="opt of row.options" data-p-key="opt.key">
+                          <button
+                            type="button"
+                            class="flex h-10 flex-1 cursor-pointer items-center justify-center border-r border-input px-1 text-[12px] font-semibold last:border-r-0"
+                            data-p-bind="data-prop:row.prop;data-key:opt.key;aria-pressed:opt.pressed;disabled:$styleDisabled;aria-label:opt.label;title:opt.label"
+                            data-p-on="mousedown.prevent:swallow;click:applyDimension"
+                          >
+                            <svg
+                              class="h-5 w-5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              aria-hidden="true"
+                              data-p-show="opt.icon"
+                            >
+                              <use data-p-bind="href:opt.icon" />
+                            </svg>
+                            <span data-p-show="not opt.icon" data-p-text="opt.label"></span>
+                          </button>
+                        </template>
+                      </div>
+                      <div data-p-show="row.isRange"><!-- pbe-token-scale --></div>
+                      <select
+                        class="pbe-value-select h-10 w-full cursor-pointer px-3 text-[13px]"
+                        data-p-show="row.isSelect"
+                        data-p-bind="data-prop:row.prop;data-inherited:row.inherited;aria-label:row.label;disabled:$styleDisabled"
+                        data-p-on="change:applyStyleSelect"
+                      >
+                        <option value="">Default</option>
+                        <template data-p-for="opt of row.options" data-p-key="opt.key">
+                          <option
+                            data-p-bind="value:opt.key;selected:opt.pressed"
+                            data-p-text="opt.label"
+                          ></option>
+                        </template>
+                      </select>
+                      <details class="pbe-responsive-field" data-p-show="row.responsive">
+                        <summary
+                          class="pbe-responsive-field__summary"
+                          data-p-bind="aria-label:row.responsiveChanges;title:row.responsiveChanges"
                         >
                           <svg
-                            class="h-5 w-5"
+                            class="pbe-responsive-field__icon"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path d="M2.5 4.5h3a2.5 2.5 0 0 1 2.5 2.5v2" />
+                            <path d="M8 9a2.5 2.5 0 0 0 2.5 2.5h3" />
+                            <path d="M8 9a2.5 2.5 0 0 1 2.5-2.5h3" />
+                            <circle cx="2.5" cy="4.5" r="1" />
+                            <circle cx="13.5" cy="6.5" r="1" />
+                            <circle cx="13.5" cy="11.5" r="1" />
+                          </svg>
+                          <span>Responsive</span>
+                          <strong data-p-text="row.responsiveSummary"></strong>
+                          <svg
+                            class="pbe-responsive-field__chevron"
                             viewBox="0 0 24 24"
                             fill="none"
                             aria-hidden="true"
-                            data-p-show="opt.icon"
                           >
-                            <use data-p-bind="href:opt.icon" />
+                            <use href="#pbe-i-chevron-down"></use>
                           </svg>
-                          <span data-p-show="not opt.icon" data-p-text="opt.label"></span>
-                        </button>
-                      </template>
-                    </div>
-                    <div data-p-show="row.isRange"><!-- pbe-token-scale --></div>
-                    <select
-                      class="pbe-value-select h-10 w-full cursor-pointer px-3 text-[13px]"
-                      data-p-show="row.isSelect"
-                      data-p-bind="data-prop:row.prop;data-inherited:row.inherited;aria-label:row.label;disabled:$styleDisabled"
-                      data-p-on="change:applyStyleSelect"
-                    >
-                      <option value="">Default</option>
-                      <template data-p-for="opt of row.options" data-p-key="opt.key">
-                        <option
-                          data-p-bind="value:opt.key;selected:opt.pressed"
-                          data-p-text="opt.label"
-                        ></option>
-                      </template>
-                    </select>
-                    <details class="pbe-responsive-field" data-p-show="row.responsive">
-                      <summary
-                        class="pbe-responsive-field__summary"
-                        data-p-bind="aria-label:row.responsiveChanges;title:row.responsiveChanges"
-                      >
-                        <svg
-                          class="pbe-responsive-field__icon"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <path d="M2.5 4.5h3a2.5 2.5 0 0 1 2.5 2.5v2" />
-                          <path d="M8 9a2.5 2.5 0 0 0 2.5 2.5h3" />
-                          <path d="M8 9a2.5 2.5 0 0 1 2.5-2.5h3" />
-                          <circle cx="2.5" cy="4.5" r="1" />
-                          <circle cx="13.5" cy="6.5" r="1" />
-                          <circle cx="13.5" cy="11.5" r="1" />
-                        </svg>
-                        <span>Responsive</span>
-                        <strong data-p-text="row.responsiveSummary"></strong>
-                        <svg
-                          class="pbe-responsive-field__chevron"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <use href="#pbe-i-chevron-down"></use>
-                        </svg>
-                      </summary>
-                      <div class="pbe-responsive-field__detail">
-                        <div class="pbe-responsive-field__track" aria-hidden="true">
-                          <template
-                            data-p-for="range of row.responsiveRanges"
-                            data-p-key="range.key"
+                        </summary>
+                        <div class="pbe-responsive-field__detail">
+                          <div
+                            class="pbe-responsive-field__track"
+                            role="group"
+                            data-p-bind="aria-label:row.responsiveChanges"
                           >
-                            <i
-                              data-p-style="flex-grow->range.span;background-color->range.color"
-                              data-p-bind="data-changed:range.changed;title:range.label"
-                            ></i>
-                          </template>
-                        </div>
-                        <div
-                          class="pbe-responsive-field__points"
-                          role="group"
-                          data-p-bind="aria-label:row.responsiveChanges"
-                        >
-                          <template
-                            data-p-for="point of row.responsivePoints"
-                            data-p-key="point.pointKey"
-                          >
-                            <button
-                              type="button"
-                              class="pbe-responsive-field__point"
-                              data-p-style="--pbe-responsive-color->point.color"
-                              data-p-bind="data-breakpoint:point.key;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
-                              data-p-on="mousedown.prevent:swallow;click:jumpToStyleBreakpoint"
+                            <template
+                              data-p-for="range of row.responsiveRanges"
+                              data-p-key="range.key"
                             >
-                              <i aria-hidden="true"></i>
-                              <span data-p-text="point.viewport"></span>
-                            </button>
-                          </template>
+                              <button
+                                type="button"
+                                data-p-style="flex-grow->range.span;background-color->range.color"
+                                data-p-bind="data-breakpoint:range.key;data-props:range.props;data-index:range.index;data-min-index:range.minIndex;data-max-index:range.maxIndex;data-movable:range.movable;data-changed:range.changed;data-resettable:range.resettable;disabled:range.resetDisabled;aria-label:range.resetLabel;title:range.resetLabel"
+                                data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:resetResponsiveValueRange"
+                              ></button>
+                            </template>
+                          </div>
+                          <div
+                            class="pbe-responsive-field__points"
+                            role="group"
+                            data-p-bind="aria-label:row.responsiveChanges"
+                          >
+                            <template
+                              data-p-for="point of row.responsivePoints"
+                              data-p-key="point.pointKey"
+                            >
+                              <button
+                                type="button"
+                                class="pbe-responsive-field__point"
+                                data-p-style="--pbe-responsive-color->point.color"
+                                data-p-bind="data-breakpoint:point.key;data-props:point.props;data-index:point.index;data-min-index:point.minIndex;data-max-index:point.maxIndex;data-movable:point.movable;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
+                                data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:jumpToStyleBreakpoint"
+                              >
+                                <i aria-hidden="true"></i>
+                                <span data-p-text="point.viewport"></span>
+                              </button>
+                            </template>
+                          </div>
                         </div>
-                      </div>
-                    </details>
-                  </div>
-                </template>
-              </section>
+                      </details>
+                    </div>
+                  </template>
+                </div>
+              </details>
             </div>
 
             <div id="block-styles" class="hidden" data-p-show="$blockInspectorTab == styles">
-              <div class="flex h-11 items-center justify-between border-b border-neutral-200">
-                <span class="text-[13px] font-semibold text-neutral-900">Block styles</span>
-                <button
-                  type="button"
-                  class="cursor-pointer text-[12px] font-medium text-neutral-500 hover:text-neutral-900 disabled:cursor-default disabled:opacity-30"
-                  data-p-bind="disabled:not $styleHasValues"
-                  data-p-on="mousedown.prevent:swallow;click:resetBlockStyles"
-                >
-                  Reset all
-                </button>
-              </div>
               <!-- Universal STYLE controls (Phase C), grouped into panels
                (Styles / Typography / Color / Dimensions / Border). Shown per
                the block's supports/variations; values via editor.setStyle,
@@ -2139,24 +2340,53 @@
                colors legible), and the variation grid with a Default chip. -->
 
               <!-- Styles (C6): Default + named variations -->
-              <details
-                open
-                class="border-t border-neutral-200 py-5"
+              <section
+                class="pbe-inspector-section pbe-inspector-panel"
                 data-p-show="$variationOptions.length"
               >
-                <summary
-                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
-                >
-                  <span class="block text-[15px] font-semibold text-neutral-900">Styles</span>
-                  <button
-                    type="button"
-                    data-panel="styles"
-                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
-                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                <header class="pbe-inspector-section__header">
+                  <h3 class="pbe-inspector-section__title">Styles</h3>
+                  <div
+                    class="pbe-inspector-section__menu"
+                    data-p-store="local:dropdown"
+                    data-publr-component="dropdown"
                   >
-                    Reset
-                  </button>
-                </summary>
+                    <button
+                      type="button"
+                      class="pbe-inspector-section__menu-trigger"
+                      aria-label="Styles actions"
+                      title="Styles actions"
+                      aria-haspopup="menu"
+                      data-p-bind="aria-expanded:$open"
+                      data-p-on="mousedown.prevent:swallow;click:toggle"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <use href="#pbe-i-more"></use>
+                      </svg>
+                    </button>
+                    <div
+                      class="pbe-inspector-section__menu-content"
+                      data-publr-part="content"
+                      data-p-show="$open"
+                      data-p-portal="true"
+                      data-publr-placement="bottom-end"
+                      data-p-on="keydown:navKeys;click:itemClick"
+                      role="menu"
+                      aria-label="Styles actions"
+                    >
+                      <button
+                        type="button"
+                        class="pbe-inspector-section__menu-item"
+                        role="menuitem"
+                        data-publr-part="item"
+                        data-panel="styles"
+                        data-p-on="click:resetStylePanel"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </header>
                 <div class="grid grid-cols-2 gap-2" role="group" aria-label="Styles">
                   <template data-p-for="v of $variationOptions" data-p-key="v.name">
                     <button
@@ -2175,23 +2405,56 @@
                     </button>
                   </template>
                 </div>
-              </details>
+              </section>
 
               <!-- Typography (C1 font size + C5 extras) -->
-              <details class="border-t border-neutral-200 py-5" data-p-show="$styleFontSizeShown">
-                <summary
-                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
-                >
-                  <span class="block text-[15px] font-semibold text-neutral-900">Typography</span>
-                  <button
-                    type="button"
-                    data-panel="typography"
-                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
-                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+              <section
+                class="pbe-inspector-section pbe-inspector-panel"
+                data-p-show="$styleFontSizeShown"
+              >
+                <header class="pbe-inspector-section__header">
+                  <h3 class="pbe-inspector-section__title">Typography</h3>
+                  <div
+                    class="pbe-inspector-section__menu"
+                    data-p-store="local:dropdown"
+                    data-publr-component="dropdown"
                   >
-                    Reset
-                  </button>
-                </summary>
+                    <button
+                      type="button"
+                      class="pbe-inspector-section__menu-trigger"
+                      aria-label="Typography actions"
+                      title="Typography actions"
+                      aria-haspopup="menu"
+                      data-p-bind="aria-expanded:$open"
+                      data-p-on="mousedown.prevent:swallow;click:toggle"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <use href="#pbe-i-more"></use>
+                      </svg>
+                    </button>
+                    <div
+                      class="pbe-inspector-section__menu-content"
+                      data-publr-part="content"
+                      data-p-show="$open"
+                      data-p-portal="true"
+                      data-publr-placement="bottom-end"
+                      data-p-on="keydown:navKeys;click:itemClick"
+                      role="menu"
+                      aria-label="Typography actions"
+                    >
+                      <button
+                        type="button"
+                        class="pbe-inspector-section__menu-item"
+                        role="menuitem"
+                        data-publr-part="item"
+                        data-panel="typography"
+                        data-p-on="click:resetStylePanel"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </header>
                 <div class="pbe-control-row__header">
                   <span>Font size</span>
                   <span class="pbe-current-value" data-p-bind="data-inherited:$fontSizeInherited">
@@ -2328,15 +2591,21 @@
                         </svg>
                       </summary>
                       <div class="pbe-responsive-field__detail">
-                        <div class="pbe-responsive-field__track" aria-hidden="true">
+                        <div
+                          class="pbe-responsive-field__track"
+                          role="group"
+                          data-p-bind="aria-label:row.responsiveChanges"
+                        >
                           <template
                             data-p-for="range of row.responsiveRanges"
                             data-p-key="range.key"
                           >
-                            <i
+                            <button
+                              type="button"
                               data-p-style="flex-grow->range.span;background-color->range.color"
-                              data-p-bind="data-changed:range.changed;title:range.label"
-                            ></i>
+                              data-p-bind="data-breakpoint:range.key;data-props:range.props;data-index:range.index;data-min-index:range.minIndex;data-max-index:range.maxIndex;data-movable:range.movable;data-changed:range.changed;data-resettable:range.resettable;disabled:range.resetDisabled;aria-label:range.resetLabel;title:range.resetLabel"
+                              data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:resetResponsiveValueRange"
+                            ></button>
                           </template>
                         </div>
                         <div
@@ -2352,8 +2621,8 @@
                               type="button"
                               class="pbe-responsive-field__point"
                               data-p-style="--pbe-responsive-color->point.color"
-                              data-p-bind="data-breakpoint:point.key;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
-                              data-p-on="mousedown.prevent:swallow;click:jumpToStyleBreakpoint"
+                              data-p-bind="data-breakpoint:point.key;data-props:point.props;data-index:point.index;data-min-index:point.minIndex;data-max-index:point.maxIndex;data-movable:point.movable;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
+                              data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:jumpToStyleBreakpoint"
                             >
                               <i aria-hidden="true"></i>
                               <span data-p-text="point.viewport"></span>
@@ -2364,50 +2633,58 @@
                     </details>
                   </div>
                 </template>
-              </details>
+              </section>
 
               <!-- Color (C2): Text / Background swatch rows -->
-              <details
-                open
-                class="border-t border-neutral-200 py-5"
+              <section
+                class="pbe-inspector-section pbe-inspector-panel"
                 data-p-show="$colorRows.length"
               >
-                <summary
-                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
-                >
-                  <span class="block text-[15px] font-semibold text-neutral-900">Color</span>
-                  <button
-                    type="button"
-                    data-panel="color"
-                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
-                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
-                  >
-                    Reset
-                  </button>
-                </summary>
-                <div class="mb-5" data-p-show="$colorContextShown">
-                  <div class="pbe-control-row__header">
-                    <span>Color context</span>
-                    <span class="text-[9px] text-muted-foreground">Surface + text</span>
-                  </div>
+                <header class="pbe-inspector-section__header">
+                  <h3 class="pbe-inspector-section__title">Color</h3>
                   <div
-                    class="pbe-option-group flex overflow-hidden"
-                    role="group"
-                    aria-label="Color context"
+                    class="pbe-inspector-section__menu"
+                    data-p-store="local:dropdown"
+                    data-publr-component="dropdown"
                   >
-                    <template data-p-for="context of $colorContextOptions" data-p-key="context.key">
+                    <button
+                      type="button"
+                      class="pbe-inspector-section__menu-trigger"
+                      aria-label="Color actions"
+                      title="Color actions"
+                      aria-haspopup="menu"
+                      data-p-bind="aria-expanded:$open"
+                      data-p-on="mousedown.prevent:swallow;click:toggle"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <use href="#pbe-i-more"></use>
+                      </svg>
+                    </button>
+                    <div
+                      class="pbe-inspector-section__menu-content"
+                      data-publr-part="content"
+                      data-p-show="$open"
+                      data-p-portal="true"
+                      data-publr-placement="bottom-end"
+                      data-p-on="keydown:navKeys;click:itemClick"
+                      role="menu"
+                      aria-label="Color actions"
+                    >
                       <button
                         type="button"
-                        class="h-10 flex-1 cursor-pointer border-r border-input px-1 text-[11px] font-semibold last:border-r-0"
-                        data-p-bind="data-context:context.key;aria-pressed:context.pressed;disabled:$styleDisabled"
-                        data-p-on="mousedown.prevent:swallow;click:applyColorContext"
-                        data-p-text="context.label"
-                      ></button>
-                    </template>
+                        class="pbe-inspector-section__menu-item"
+                        role="menuitem"
+                        data-publr-part="item"
+                        data-panel="color"
+                        data-p-on="click:resetStylePanel"
+                      >
+                        Reset
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </header>
                 <template data-p-for="row of $colorRows" data-p-key="row.prop">
-                  <div class="pbe-color-row relative mt-2 first:mt-0">
+                  <div class="relative mt-2 first:mt-0">
                     <button
                       type="button"
                       class="pbe-color-value w-full cursor-pointer"
@@ -2490,27 +2767,57 @@
                     </div>
                   </div>
                 </template>
-              </details>
+              </section>
 
               <!-- Dimensions: Webflow-style box model + token scales. -->
-              <details
+              <section
                 id="block-dimensions"
-                class="border-t border-neutral-200 py-5"
+                class="pbe-inspector-section pbe-inspector-panel"
                 data-p-show="$dimensionPanelShown"
               >
-                <summary
-                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
-                >
-                  <span class="block text-[15px] font-semibold text-neutral-900">Dimensions</span>
-                  <button
-                    type="button"
-                    data-panel="spacing,dimensions"
-                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
-                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+                <header class="pbe-inspector-section__header">
+                  <h3 class="pbe-inspector-section__title">Dimensions</h3>
+                  <div
+                    class="pbe-inspector-section__menu"
+                    data-p-store="local:dropdown"
+                    data-publr-component="dropdown"
                   >
-                    Reset
-                  </button>
-                </summary>
+                    <button
+                      type="button"
+                      class="pbe-inspector-section__menu-trigger"
+                      aria-label="Dimensions actions"
+                      title="Dimensions actions"
+                      aria-haspopup="menu"
+                      data-p-bind="aria-expanded:$open"
+                      data-p-on="mousedown.prevent:swallow;click:toggle"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <use href="#pbe-i-more"></use>
+                      </svg>
+                    </button>
+                    <div
+                      class="pbe-inspector-section__menu-content"
+                      data-publr-part="content"
+                      data-p-show="$open"
+                      data-p-portal="true"
+                      data-publr-placement="bottom-end"
+                      data-p-on="keydown:navKeys;click:itemClick"
+                      role="menu"
+                      aria-label="Dimensions actions"
+                    >
+                      <button
+                        type="button"
+                        class="pbe-inspector-section__menu-item"
+                        role="menuitem"
+                        data-publr-part="item"
+                        data-panel="spacing,dimensions"
+                        data-p-on="click:resetStylePanel"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </header>
                 <div
                   class="mb-4 flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2"
                   data-p-show="$textSpacingResetShown"
@@ -2757,6 +3064,76 @@
                       </div>
                     </div>
                   </div>
+                  <details
+                    class="pbe-responsive-field pbe-responsive-field--box-model"
+                    data-p-show="$boxResponsive"
+                  >
+                    <summary
+                      class="pbe-responsive-field__summary"
+                      data-p-bind="aria-label:$boxResponsiveChanges;title:$boxResponsiveChanges"
+                    >
+                      <svg
+                        class="pbe-responsive-field__icon"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path d="M2.5 4.5h3a2.5 2.5 0 0 1 2.5 2.5v2" />
+                        <path d="M8 9a2.5 2.5 0 0 0 2.5 2.5h3" />
+                        <path d="M8 9a2.5 2.5 0 0 1 2.5-2.5h3" />
+                        <circle cx="2.5" cy="4.5" r="1" />
+                        <circle cx="13.5" cy="6.5" r="1" />
+                        <circle cx="13.5" cy="11.5" r="1" />
+                      </svg>
+                      <span>Responsive</span>
+                      <strong data-p-text="$boxResponsiveSummary"></strong>
+                      <svg
+                        class="pbe-responsive-field__chevron"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <use href="#pbe-i-chevron-down"></use>
+                      </svg>
+                    </summary>
+                    <div class="pbe-responsive-field__detail">
+                      <div
+                        class="pbe-responsive-field__track"
+                        role="group"
+                        data-p-bind="aria-label:$boxResponsiveChanges"
+                      >
+                        <template data-p-for="range of $boxResponsiveRanges" data-p-key="range.key">
+                          <button
+                            type="button"
+                            data-p-style="flex-grow->range.span;background-color->range.color"
+                            data-p-bind="data-breakpoint:range.key;data-props:range.props;data-index:range.index;data-min-index:range.minIndex;data-max-index:range.maxIndex;data-movable:range.movable;data-changed:range.changed;data-resettable:range.resettable;disabled:range.resetDisabled;aria-label:range.resetLabel;title:range.resetLabel"
+                            data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:resetResponsiveValueRange"
+                          ></button>
+                        </template>
+                      </div>
+                      <div
+                        class="pbe-responsive-field__points"
+                        role="group"
+                        data-p-bind="aria-label:$boxResponsiveChanges"
+                      >
+                        <template
+                          data-p-for="point of $boxResponsivePoints"
+                          data-p-key="point.pointKey"
+                        >
+                          <button
+                            type="button"
+                            class="pbe-responsive-field__point"
+                            data-p-style="--pbe-responsive-color->point.color"
+                            data-p-bind="data-breakpoint:point.key;data-props:point.props;data-index:point.index;data-min-index:point.minIndex;data-max-index:point.maxIndex;data-movable:point.movable;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
+                            data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:jumpToStyleBreakpoint"
+                          >
+                            <i aria-hidden="true"></i>
+                            <span data-p-text="point.viewport"></span>
+                          </button>
+                        </template>
+                      </div>
+                    </div>
+                  </details>
                   <section
                     class="pbe-color-popover pbe-box-model__control pbe-spacing-pane fixed z-50 hidden w-[286px]"
                     role="dialog"
@@ -3034,15 +3411,21 @@
                         </svg>
                       </summary>
                       <div class="pbe-responsive-field__detail">
-                        <div class="pbe-responsive-field__track" aria-hidden="true">
+                        <div
+                          class="pbe-responsive-field__track"
+                          role="group"
+                          data-p-bind="aria-label:row.responsiveChanges"
+                        >
                           <template
                             data-p-for="range of row.responsiveRanges"
                             data-p-key="range.key"
                           >
-                            <i
+                            <button
+                              type="button"
                               data-p-style="flex-grow->range.span;background-color->range.color"
-                              data-p-bind="data-changed:range.changed;title:range.label"
-                            ></i>
+                              data-p-bind="data-breakpoint:range.key;data-props:range.props;data-index:range.index;data-min-index:range.minIndex;data-max-index:range.maxIndex;data-movable:range.movable;data-changed:range.changed;data-resettable:range.resettable;disabled:range.resetDisabled;aria-label:range.resetLabel;title:range.resetLabel"
+                              data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:resetResponsiveValueRange"
+                            ></button>
                           </template>
                         </div>
                         <div
@@ -3058,8 +3441,8 @@
                               type="button"
                               class="pbe-responsive-field__point"
                               data-p-style="--pbe-responsive-color->point.color"
-                              data-p-bind="data-breakpoint:point.key;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
-                              data-p-on="mousedown.prevent:swallow;click:jumpToStyleBreakpoint"
+                              data-p-bind="data-breakpoint:point.key;data-props:point.props;data-index:point.index;data-min-index:point.minIndex;data-max-index:point.maxIndex;data-movable:point.movable;data-active:point.active;data-changed:point.changed;aria-label:point.label;title:point.label"
+                              data-p-on="mousedown.prevent:swallow;pointerdown.prevent:startResponsiveBoundaryDrag;keydown:moveResponsiveBoundary;click:jumpToStyleBreakpoint"
                             >
                               <i aria-hidden="true"></i>
                               <span data-p-text="point.viewport"></span>
@@ -3070,23 +3453,53 @@
                     </details>
                   </div>
                 </template>
-              </details>
+              </section>
 
               <!-- Border: discrete width/radius scales plus style and color. -->
-              <details class="border-t border-neutral-200 py-5" data-p-show="$borderShown">
-                <summary
-                  class="mb-4 flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden"
-                >
-                  <span class="block text-[15px] font-semibold text-neutral-900">Border</span>
-                  <button
-                    type="button"
-                    data-panel="border"
-                    class="cursor-pointer text-[11px] font-medium text-neutral-500 hover:text-neutral-900"
-                    data-p-on="mousedown.prevent:swallow;click.stop:resetStylePanel"
+              <section class="pbe-inspector-section pbe-inspector-panel" data-p-show="$borderShown">
+                <header class="pbe-inspector-section__header">
+                  <h3 class="pbe-inspector-section__title">Border</h3>
+                  <div
+                    class="pbe-inspector-section__menu"
+                    data-p-store="local:dropdown"
+                    data-publr-component="dropdown"
                   >
-                    Reset
-                  </button>
-                </summary>
+                    <button
+                      type="button"
+                      class="pbe-inspector-section__menu-trigger"
+                      aria-label="Border actions"
+                      title="Border actions"
+                      aria-haspopup="menu"
+                      data-p-bind="aria-expanded:$open"
+                      data-p-on="mousedown.prevent:swallow;click:toggle"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <use href="#pbe-i-more"></use>
+                      </svg>
+                    </button>
+                    <div
+                      class="pbe-inspector-section__menu-content"
+                      data-publr-part="content"
+                      data-p-show="$open"
+                      data-p-portal="true"
+                      data-publr-placement="bottom-end"
+                      data-p-on="keydown:navKeys;click:itemClick"
+                      role="menu"
+                      aria-label="Border actions"
+                    >
+                      <button
+                        type="button"
+                        class="pbe-inspector-section__menu-item"
+                        role="menuitem"
+                        data-publr-part="item"
+                        data-panel="border"
+                        data-p-on="click:resetStylePanel"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </header>
                 <div class="mb-4" data-p-show="$borderStyleOptions.length">
                   <span class="mb-1.5 block text-[12px] text-neutral-500">Style</span>
                   <div class="flex overflow-hidden rounded-xs border border-neutral-300">
@@ -3102,33 +3515,42 @@
                     </template>
                   </div>
                 </div>
-              </details>
+              </section>
               <details
-                class="pbe-advanced-section border-t border-neutral-200 py-5"
+                class="pbe-inspector-section pbe-inspector-accordion pbe-advanced-section"
                 data-p-show="$optionalStyleControls.length"
               >
-                <summary class="flex cursor-pointer list-none items-center justify-between">
-                  <span class="text-[15px] font-semibold">Advanced</span>
-                  <span class="pbe-section-chevron" aria-hidden="true">⌄</span>
-                </summary>
-                <p class="mt-1 mb-4 text-[10px] text-muted-foreground">
-                  Enable less common controls for this block.
-                </p>
-                <div class="flex flex-col gap-1">
-                  <template
-                    data-p-for="control of $optionalStyleControls"
-                    data-p-key="control.prop"
+                <summary class="pbe-inspector-section__header">
+                  <span class="pbe-inspector-section__title">Advanced</span>
+                  <svg
+                    class="pbe-inspector-section__chevron"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
                   >
-                    <button
-                      type="button"
-                      class="pbe-advanced-option flex h-10 w-full cursor-pointer items-center justify-between px-3 text-left text-[12px]"
-                      data-p-bind="data-prop:control.prop;aria-pressed:control.enabled"
-                      data-p-on="mousedown.prevent:swallow;click:toggleOptionalStyle"
+                    <use href="#pbe-i-chevron-down"></use>
+                  </svg>
+                </summary>
+                <div class="pbe-inspector-section__body">
+                  <p class="mt-0 mb-4 text-[10px] text-muted-foreground">
+                    Enable less common controls for this block.
+                  </p>
+                  <div class="flex flex-col gap-1">
+                    <template
+                      data-p-for="control of $optionalStyleControls"
+                      data-p-key="control.prop"
                     >
-                      <span data-p-text="control.label"></span>
-                      <span class="pbe-advanced-option__check">✓</span>
-                    </button>
-                  </template>
+                      <button
+                        type="button"
+                        class="pbe-advanced-option flex h-10 w-full cursor-pointer items-center justify-between px-3 text-left text-[12px]"
+                        data-p-bind="data-prop:control.prop;aria-pressed:control.enabled"
+                        data-p-on="mousedown.prevent:swallow;click:toggleOptionalStyle"
+                      >
+                        <span data-p-text="control.label"></span>
+                        <span class="pbe-advanced-option__check">✓</span>
+                      </button>
+                    </template>
+                  </div>
                 </div>
               </details>
             </div>

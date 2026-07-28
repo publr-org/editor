@@ -90,6 +90,34 @@ describe("POC homepage registered-pattern fixture", () => {
     expect(counts.image).toBeGreaterThanOrEqual(6);
   });
 
+  test("every homepage pattern flashes its editable units from its layout surface", () => {
+    const canvas = document.createElement("main");
+    document.body.appendChild(canvas);
+    const editor = createEditor({ canvas, defaultBlock: "paragraph", theme: HEARTH_THEME });
+    try {
+      editor.loadHtml(html);
+      for (const name of PATTERN_NAMES) {
+        const root = canvas.querySelector<HTMLElement>(`[data-pb-pattern="${name}"]`)!;
+        const layout = root.querySelector<HTMLElement>(":scope > [data-pb-id]")!;
+        layout.dispatchEvent(
+          new MouseEvent("mousedown", {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+          }),
+        );
+        const flash = document.querySelector<HTMLElement>("[data-pbe-pattern-flash]")!;
+        expect(flash, `${name} should create a flash overlay`).toBeTruthy();
+        expect(flash.shadowRoot!.querySelectorAll(".veil").length).toBeGreaterThan(0);
+        flash.remove();
+        layout.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+      }
+    } finally {
+      editor.destroy();
+      canvas.remove();
+    }
+  });
+
   test("the round-trip law holds over the composed page", () => {
     expect(upcast(parse(downcast(model)))).toEqual(model);
   });

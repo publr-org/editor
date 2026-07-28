@@ -1048,6 +1048,83 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   const scroller = scrollParent(host);
   const STICKY_GAP = 10; // toolbar-to-block breathing room while floating above
   const STICKY_MARGIN = 8; // gap from the viewport top once stuck
+  const FLOATING_GAP = 6;
+  const VIEWPORT_GUTTER = 0;
+
+  // The usable viewport in this document's coordinate space. An editor can
+  // live in an iframe, inside an overflow pane, or both; intersecting those
+  // clips keeps floating chrome on the pixels the author can actually see.
+  const visibleViewport = () => {
+    const visual = ownerWindow.visualViewport;
+    let left = visual?.offsetLeft ?? 0;
+    let top = visual?.offsetTop ?? 0;
+    let right =
+      left + (visual?.width ?? ownerDocument.documentElement.clientWidth ?? ownerWindow.innerWidth);
+    let bottom =
+      top +
+      (visual?.height ?? ownerDocument.documentElement.clientHeight ?? ownerWindow.innerHeight);
+    if (scroller) {
+      const rect = scroller.getBoundingClientRect();
+      left = Math.max(left, rect.left);
+      top = Math.max(top, rect.top);
+      right = Math.min(right, rect.right);
+      bottom = Math.min(bottom, rect.bottom);
+    }
+    return {
+      left,
+      top,
+      right: Math.max(left, right),
+      bottom: Math.max(top, bottom),
+    };
+  };
+
+  const clampToViewport = (value: number, size: number, start: number, end: number) => {
+    const minimum = start + VIEWPORT_GUTTER;
+    const maximum = Math.max(minimum, end - VIEWPORT_GUTTER - size);
+    return Math.min(Math.max(value, minimum), maximum);
+  };
+
+  type FloatingPlacement = "bottom-start" | "bottom-end";
+
+  // Position a toolbar-owned dropdown from its live trigger geometry. Start
+  // alignment is preferred, then shifted at either horizontal viewport edge.
+  // Below is preferred vertically; when it would collide with the bottom and
+  // there is more room above, the surface flips above the trigger.
+  const positionFloatingPanel = (
+    el: HTMLElement,
+    anchor: HTMLElement,
+    placement: FloatingPlacement = "bottom-start",
+  ) => {
+    const bounds = visibleViewport();
+    const rect = anchor.getBoundingClientRect();
+    const availableWidth = bounds.right - bounds.left;
+    const availableHeight = bounds.bottom - bounds.top;
+    el.style.maxWidth = `${availableWidth}px`;
+    el.style.maxHeight = `${availableHeight}px`;
+    const width = el.offsetWidth;
+    const height = el.offsetHeight;
+    el.style.overflowX = el.scrollWidth > availableWidth ? "auto" : "";
+    el.style.overflowY = el.scrollHeight > availableHeight ? "auto" : "";
+    const preferredLeft = placement === "bottom-end" ? rect.right - width : rect.left;
+    const left = clampToViewport(preferredLeft, width, bounds.left, bounds.right);
+    const below = rect.bottom + FLOATING_GAP;
+    const above = rect.top - FLOATING_GAP - height;
+    const belowOverflows = below + height > bounds.bottom - VIEWPORT_GUTTER;
+    const spaceBelow = bounds.bottom - rect.bottom;
+    const spaceAbove = rect.top - bounds.top;
+    const flipped = belowOverflows && spaceAbove > spaceBelow;
+    const preferredTop = flipped ? above : below;
+    const top = clampToViewport(preferredTop, height, bounds.top, bounds.bottom);
+    el.dataset.pbeSide = flipped ? "top" : "bottom";
+    if (toolbar?.contains(anchor) && toolbar.style.position === "fixed") {
+      el.style.position = "fixed";
+      el.style.top = `${top}px`;
+      el.style.left = `${left}px`;
+    } else {
+      el.style.position = "absolute";
+      park(el, top, left);
+    }
+  };
 
   // Linear keyboard nav shared by every menu-shaped panel.
   const wireMenuKeys = (panel: HTMLElement, onEscape: () => void) =>
@@ -1074,12 +1151,18 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     });
 
   // ONE floating surface open at a time, across all parts of this instance.
-  type Panel = { el: HTMLElement; onClose?: () => void };
+  type Panel = {
+    el: HTMLElement;
+    anchor?: HTMLElement;
+    placement?: FloatingPlacement;
+    onClose?: () => void;
+  };
   let openPanel: Panel | null = null;
   function showPanel(p: Panel) {
     closePanel();
     openPanel = p;
     p.el.hidden = false;
+    if (p.anchor) positionFloatingPanel(p.el, p.anchor, p.placement);
   }
   function closePanel() {
     if (!openPanel) return;
@@ -1812,10 +1895,9 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
           closePanel();
           return;
         }
-        const tr = trigger.getBoundingClientRect();
-        park(panel, tr.bottom + 6, tr.left);
         showPanel({
           el: panel,
+          anchor: trigger,
           onClose: () => trigger.setAttribute("aria-expanded", "false"),
         });
         trigger.setAttribute("aria-expanded", "true");
@@ -2014,10 +2096,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
           input.value = opts.href;
           newTab.checked = opts.target === "_blank";
           remove.hidden = !opts.canRemove;
-          const tr = trigger.getBoundingClientRect();
-          el.hidden = false; // measurable before parking
-          park(el, tr.bottom + 6, tr.left);
-          showPanel({ el });
+          showPanel({ el, anchor: trigger });
           input.focus();
           input.select();
         },
@@ -2059,11 +2138,9 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
       return fallback;
     };
     const openMenu = (trigger: HTMLButtonElement, panel: HTMLElement, focusFirst = true): void => {
-      const rect = trigger.getBoundingClientRect();
-      panel.hidden = false;
-      park(panel, rect.bottom + 6, rect.left);
       showPanel({
         el: panel,
+        anchor: trigger,
         onClose: () => {
           trigger.setAttribute("aria-expanded", "false");
           panel.remove();
@@ -2534,20 +2611,25 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     const rr = root.getBoundingClientRect();
     const th = toolbar.offsetHeight;
     const floating = rr.top - th - STICKY_GAP; // resting spot above the block
-    const stuck = (scroller ? scroller.getBoundingClientRect().top : 0) + STICKY_MARGIN;
+    const bounds = visibleViewport();
+    const availableWidth = bounds.right - bounds.left;
+    toolbar.style.maxWidth = `${availableWidth}px`;
+    toolbar.style.overflowX = toolbar.scrollWidth > availableWidth ? "auto" : "";
+    const stuck = bounds.top + STICKY_MARGIN;
     const trailing = rr.bottom - th; // pinned to the block's bottom as it exits
     const top = Math.min(Math.max(floating, stuck), trailing); // viewport coords
+    const left = clampToViewport(rr.left, toolbar.offsetWidth, bounds.left, bounds.right);
 
     if (top === stuck && floating < stuck && stuck < trailing) {
       // Stuck to the viewport top — fixed, so scroll doesn't move it at all.
       toolbar.style.position = "fixed";
       toolbar.style.top = `${top}px`;
-      toolbar.style.left = `${Math.max(0, rr.left)}px`;
+      toolbar.style.left = `${left}px`;
     } else {
       // Floating above / trailing the block — absolute, offset within the host
       // (constant across scroll, so the toolbar tracks the block natively).
       toolbar.style.position = "absolute";
-      park(toolbar, top, rr.left);
+      park(toolbar, top, left);
     }
   }
 
@@ -3279,21 +3361,30 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   // no button-state rebuild. Listen on the scroll container (falling back to
   // the window if the canvas isn't the scroller).
   const reposition = () => {
-    // An open dropdown is parked against the toolbar's current spot — moving
-    // the toolbar out from under it would separate the two. Leave both put.
-    if (!detached && !openPanel) {
-      hideAppender();
-      positionToolbar();
-      positionHover();
-      syncSpacerResizer();
-      syncImageResizer();
-    }
+    if (detached) return;
+    hideAppender();
+    positionToolbar();
+    if (openPanel?.anchor)
+      positionFloatingPanel(openPanel.el, openPanel.anchor, openPanel.placement);
+    positionHover();
+    syncSpacerResizer();
+    syncImageResizer();
   };
-  (scroller ?? ownerWindow).addEventListener("scroll", reposition, {
-    passive: true,
-  });
+  const scrollTargets: Array<HTMLElement | Window> = scroller
+    ? [scroller, ownerWindow]
+    : [ownerWindow];
+  for (const target of scrollTargets)
+    target.addEventListener("scroll", reposition, {
+      passive: true,
+    });
   ownerWindow.addEventListener("resize", reposition);
-  disposers.push(() => (scroller ?? ownerWindow).removeEventListener("scroll", reposition));
+  ownerWindow.visualViewport?.addEventListener("scroll", reposition, { passive: true });
+  ownerWindow.visualViewport?.addEventListener("resize", reposition);
+  disposers.push(() => {
+    for (const target of scrollTargets) target.removeEventListener("scroll", reposition);
+    ownerWindow.visualViewport?.removeEventListener("scroll", reposition);
+    ownerWindow.visualViewport?.removeEventListener("resize", reposition);
+  });
   disposers.push(() => ownerWindow.removeEventListener("resize", reposition));
 
   return function detach() {

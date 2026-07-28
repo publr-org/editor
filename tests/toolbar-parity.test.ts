@@ -901,6 +901,88 @@ describe("declared contextual toolbars", () => {
     expect(editor.getModel().blocks).toHaveLength(2);
   });
 
+  test("the toolbar sticks to the viewport, stays inside the right edge, then leaves with its block", async () => {
+    setup(`<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>`);
+    editor.selectBlock("p");
+    await vi.waitFor(() => expect(toolbar().hidden).toBe(false));
+
+    const block = canvas.querySelector<HTMLElement>('[data-pb-id="p"]')!;
+    const visual = window.visualViewport;
+    const viewportLeft = visual?.offsetLeft ?? 0;
+    const viewportTop = visual?.offsetTop ?? 0;
+    const viewportRight = viewportLeft + (visual?.width ?? document.documentElement.clientWidth);
+    const viewportBottom = viewportTop + (visual?.height ?? document.documentElement.clientHeight);
+    let blockRect = new DOMRect(viewportRight - 40, 100, 300, 400);
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, viewportRight, viewportBottom),
+    );
+    vi.spyOn(block, "getBoundingClientRect").mockImplementation(() => blockRect);
+    vi.spyOn(toolbar(), "offsetWidth", "get").mockReturnValue(180);
+    vi.spyOn(toolbar(), "offsetHeight", "get").mockReturnValue(40);
+
+    window.dispatchEvent(new Event("scroll"));
+    expect(toolbar().style.position).toBe("absolute");
+    expect(toolbar().style.left).toBe(`${viewportRight - 180}px`);
+    expect(toolbar().style.top).toBe("50px");
+
+    blockRect = new DOMRect(viewportRight - 40, -10, 300, 510);
+    window.dispatchEvent(new Event("scroll"));
+    expect(toolbar().style.position).toBe("fixed");
+    expect(toolbar().style.top).toBe(`${viewportTop + 8}px`);
+    expect(toolbar().style.left).toBe(`${viewportRight - 180}px`);
+
+    blockRect = new DOMRect(viewportRight - 40, -480, 300, 500);
+    window.dispatchEvent(new Event("scroll"));
+    expect(toolbar().style.position).toBe("absolute");
+    expect(toolbar().style.top).toBe("-20px");
+  });
+
+  test("a toolbar dropdown shifts at the right edge and flips above a bottom collision", async () => {
+    setup(`<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>`);
+    editor.selectBlock("p");
+    await vi.waitFor(() => expect(control("Options")).toBeTruthy());
+
+    const visual = window.visualViewport;
+    const viewportLeft = visual?.offsetLeft ?? 0;
+    const viewportTop = visual?.offsetTop ?? 0;
+    const viewportRight = viewportLeft + (visual?.width ?? document.documentElement.clientWidth);
+    const viewportBottom = viewportTop + (visual?.height ?? document.documentElement.clientHeight);
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, viewportRight, viewportBottom),
+    );
+    const trigger = control("Options");
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(viewportRight + 64, viewportBottom - 36, 36, 32),
+    );
+    const menu = chrome().querySelector<HTMLElement>(".pbe-more")!;
+    vi.spyOn(menu, "offsetWidth", "get").mockReturnValue(224);
+    vi.spyOn(menu, "offsetHeight", "get").mockReturnValue(160);
+
+    trigger.click();
+
+    expect(menu.dataset.pbeSide).toBe("top");
+    expect(menu.style.left).toBe(`${viewportRight - 224}px`);
+    expect(menu.style.top).toBe(`${viewportBottom - 36 - 6 - 160}px`);
+  });
+
+  test("a toolbar dropdown keeps start alignment when there is room", async () => {
+    setup(`<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>`);
+    editor.selectBlock("p");
+    await vi.waitFor(() => expect(control("Options")).toBeTruthy());
+
+    const trigger = control("Options");
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue(new DOMRect(200, 100, 36, 36));
+    const menu = chrome().querySelector<HTMLElement>(".pbe-more")!;
+    vi.spyOn(menu, "offsetWidth", "get").mockReturnValue(224);
+    vi.spyOn(menu, "offsetHeight", "get").mockReturnValue(160);
+
+    trigger.click();
+
+    expect(menu.dataset.pbeSide).toBe("bottom");
+    expect(Math.abs(Number.parseFloat(menu.style.left) - 200)).toBeLessThan(20);
+    expect(Math.abs(Number.parseFloat(menu.style.top) - 142)).toBeLessThan(20);
+  });
+
   test("alignment, text, and options popovers return focus on Escape", async () => {
     setup(
       `<p data-pb-block="paragraph" data-pb-id="p" data-pb-rich="body">Text</p>` +

@@ -25,6 +25,8 @@ const RESPONSIVE_DEVICE_ICONS = {
 } as const;
 
 const SHELL_ICONS = {
+  palette:
+    '<path d="M12 3.75a8.25 8.25 0 1 0 0 16.5h1.25a1.75 1.75 0 0 0 0-3.5h-.65a1.6 1.6 0 0 1 0-3.2h2.9A4.75 4.75 0 0 0 20.25 8.8 5.05 5.05 0 0 0 15.2 3.75H12Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="9" r=".8" fill="currentColor"/><circle cx="11" cy="6.8" r=".8" fill="currentColor"/><circle cx="15" cy="7.3" r=".8" fill="currentColor"/>',
   "sidebar-right":
     '<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M15.5 4.5v15"/></g>',
   "viewport-fit":

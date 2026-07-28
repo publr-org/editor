@@ -293,9 +293,11 @@ describe("toolbar visual parity", () => {
       await vi.waitFor(() =>
         expect(doc.querySelector<HTMLElement>("#block-styles")!.offsetParent).toBeTruthy(),
       );
-      // Dense controls stay collapsed until requested; the default screenshot
-      // exercises the compact inspector rather than a scrolled box model.
-      expect(doc.querySelector<HTMLDetailsElement>("#block-dimensions")!.open).toBe(false);
+      // Universal style groups are always-open inspector panels. Native
+      // disclosures are reserved for settings that are genuine accordions.
+      const dimensions = doc.querySelector<HTMLElement>("#block-dimensions")!;
+      expect(dimensions.tagName).toBe("SECTION");
+      expect(dimensions.classList.contains("pbe-inspector-panel")).toBe(true);
       expect(
         doc.querySelector(
           '[data-publr-component="token-scale"] input[type="range"][data-prop="lineHeight"]',

@@ -37,6 +37,10 @@ export interface PatternDefinition {
   description?: string;
   /** Icon name chrome resolves against its icon set — see SettingOption.icon. */
   icon?: string;
+  /** Semantic color context applied to fresh instances. Defaults to `default`. */
+  defaultColorContext?: string;
+  /** Theme color contexts hidden from this pattern instance's context picker. */
+  disabledColorContexts?: readonly string[];
 }
 
 /** A validated, frozen registry entry. */
@@ -47,6 +51,8 @@ export interface PatternType {
   readonly category?: string;
   readonly description?: string;
   readonly icon?: string;
+  readonly defaultColorContext?: string;
+  readonly disabledColorContexts?: readonly string[];
 }
 
 /**
@@ -79,7 +85,18 @@ export function registerPattern(name: string, def: PatternDefinition): PatternTy
   if (registry.has(name)) fail(ctx, "already registered");
   if (def === null || typeof def !== "object") fail(ctx, "definition must be an object");
   for (const key of Object.keys(def)) {
-    if (!["label", "content", "version", "category", "description", "icon"].includes(key))
+    if (
+      ![
+        "label",
+        "content",
+        "version",
+        "category",
+        "description",
+        "icon",
+        "defaultColorContext",
+        "disabledColorContexts",
+      ].includes(key)
+    )
       fail(ctx, `unknown key "${key}"`);
   }
   if (typeof def.label !== "string" || !def.label) fail(ctx, "label is required");
@@ -93,6 +110,20 @@ export function registerPattern(name: string, def: PatternDefinition): PatternTy
     fail(ctx, "description must be a non-empty string");
   if ("icon" in def && (typeof def.icon !== "string" || !def.icon))
     fail(ctx, "icon must be a non-empty string");
+  if (
+    "defaultColorContext" in def &&
+    (typeof def.defaultColorContext !== "string" || !NAME.test(def.defaultColorContext))
+  )
+    fail(ctx, "defaultColorContext must be a lowercase name");
+  if (
+    "disabledColorContexts" in def &&
+    (!Array.isArray(def.disabledColorContexts) ||
+      def.disabledColorContexts.some((key) => typeof key !== "string" || !NAME.test(key)))
+  )
+    fail(ctx, "disabledColorContexts must be an array of lowercase names");
+  const disabledColorContexts = [...new Set(def.disabledColorContexts ?? [])];
+  if (def.defaultColorContext && disabledColorContexts.includes(def.defaultColorContext))
+    fail(ctx, "defaultColorContext cannot also be disabled");
 
   // Validate the EXPANSION, not the markup: upcast the fragment exactly the
   // way insertPattern will and inspect what comes out.
@@ -138,6 +169,10 @@ export function registerPattern(name: string, def: PatternDefinition): PatternTy
     ...(def.category != null ? { category: def.category } : {}),
     ...(def.description != null ? { description: def.description } : {}),
     ...(def.icon != null ? { icon: def.icon } : {}),
+    ...(def.defaultColorContext != null ? { defaultColorContext: def.defaultColorContext } : {}),
+    ...(disabledColorContexts.length
+      ? { disabledColorContexts: Object.freeze(disabledColorContexts) }
+      : {}),
   });
   registry.set(name, frozen);
   return frozen;
@@ -166,10 +201,23 @@ export function patternTypes(): ({ name: string } & PatternType)[] {
 export function publishPattern(
   name: string,
   content: string,
+  colorSettings?: Pick<PatternDefinition, "defaultColorContext" | "disabledColorContexts">,
 ): { version: string; kind: "none" | "minor" | "major" } {
   const def = registry.get(name);
   if (!def) fail(`publishPattern("${name}")`, "not registered");
-  const kind = diffPatternContent(def.content, content);
+  const defaultColorContext =
+    colorSettings && "defaultColorContext" in colorSettings
+      ? colorSettings.defaultColorContext
+      : def.defaultColorContext;
+  const disabledColorContexts =
+    colorSettings && "disabledColorContexts" in colorSettings
+      ? colorSettings.disabledColorContexts
+      : def.disabledColorContexts;
+  const colorSettingsChanged =
+    defaultColorContext !== def.defaultColorContext ||
+    JSON.stringify(disabledColorContexts ?? []) !== JSON.stringify(def.disabledColorContexts ?? []);
+  const contentKind = diffPatternContent(def.content, content);
+  const kind = contentKind === "none" && colorSettingsChanged ? "minor" : contentKind;
   if (kind === "none") return { version: def.version, kind };
   const version = bumpPatternVersion(def.version, kind);
   const meta = {
@@ -177,6 +225,8 @@ export function publishPattern(
     ...(def.category != null ? { category: def.category } : {}),
     ...(def.description != null ? { description: def.description } : {}),
     ...(def.icon != null ? { icon: def.icon } : {}),
+    ...(defaultColorContext != null ? { defaultColorContext } : {}),
+    ...(disabledColorContexts?.length ? { disabledColorContexts } : {}),
   };
   const superseded = archive.get(name); // unregister clears it — hold on
   registry.delete(name);

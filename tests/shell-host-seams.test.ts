@@ -10,6 +10,7 @@ import { registerCoreBlocks, registerCorePatterns } from "../src/blocks";
 import { registerHomepagePatterns } from "../src/blocks/homepage-patterns";
 import { getPattern } from "../src/patterns";
 import { getBlockType } from "../src/registry";
+import { styleBreakpoints } from "../src/style";
 import {
   registerTemplate,
   registerTemplatePart,
@@ -888,6 +889,260 @@ describe("shell host seams", () => {
     );
   });
 
+  test("pattern definitions choose a default scheme and hide disabled alternatives", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const shell = await createEditorShell({
+      container: host,
+      content: '<p data-pb-block="paragraph" data-pb-rich="body">Before</p>',
+      media: false,
+      theme: {
+        ...HEARTH_THEME,
+        patterns: [
+          {
+            name: "scheme-callout",
+            label: "Scheme callout",
+            category: "Theme",
+            content: getPattern("home-hero")!.content,
+            defaultColorContext: "brand",
+            disabledColorContexts: ["inverse"],
+          },
+        ],
+      },
+    });
+    destroyShell = shell.destroy;
+    const [legacyRoot] = shell.editor.insertPattern("scheme-callout")!;
+
+    host.querySelector<HTMLButtonElement>("#inserter-toggle")!.click();
+    host.querySelector<HTMLButtonElement>('[data-itab="patterns"]')!.click();
+    host.querySelector<HTMLButtonElement>('#pattern-groups [data-group="All"]')!.click();
+    let edit!: HTMLButtonElement;
+    await vi.waitFor(() => {
+      edit = host.querySelector<HTMLButtonElement>(
+        '#pattern-flyout .pattern-edit[data-pattern="scheme-callout"]',
+      )!;
+      expect(edit).not.toBeNull();
+    });
+    edit.click();
+
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector('#pattern-overview [data-context="brand"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    expect(shell.editor.selection.blocks).toEqual([]);
+    expect(shell.editor.selection.active).toBeNull();
+    expect(host.querySelector('[data-tab="document"]')?.textContent?.trim()).toBe("Pattern");
+    expect(host.querySelector('[data-tab="document"]')?.getAttribute("aria-selected")).toBe("true");
+    expect(host.querySelector("#pattern-overview h2")?.textContent).toBe("Default pattern style");
+    expect(host.querySelector("#pattern-overview")?.textContent).not.toContain(
+      "Used for new copies",
+    );
+    expect(
+      host.querySelectorAll("#pattern-overview .pbe-pattern-overview-row").length,
+    ).toBeGreaterThan(4);
+    expect(host.querySelector("#pattern-overview .pbe-pattern-overview-row__chevron")).toBeNull();
+    expect(
+      host.querySelector<HTMLElement>('#pattern-overview [data-depth="0"]')?.style.paddingLeft,
+    ).toBe("4px");
+    expect(
+      host.querySelector<HTMLElement>('#pattern-overview [data-depth="4"]')?.style.paddingLeft,
+    ).toBe("52px");
+    expect(host.querySelector('#pattern-overview [data-context="inverse"]')?.textContent).toContain(
+      "Disabled",
+    );
+    expect(
+      host
+        .querySelector('#pattern-overview .pbe-pattern-scheme__availability[data-context="brand"]')
+        ?.classList.contains("hidden"),
+    ).toBe(true);
+
+    host
+      .querySelector<HTMLButtonElement>(
+        '#pattern-overview .pbe-pattern-scheme__select[data-context="inverse"]',
+      )!
+      .click();
+    expect(
+      host.querySelector('#pattern-overview [data-context="brand"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(shell.editor.serialize({ pipeline: "data" })).toContain("bg-brand-surface");
+    host
+      .querySelector<HTMLButtonElement>(
+        '#pattern-overview .pbe-pattern-scheme__availability[data-context="inverse"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector<HTMLButtonElement>(
+            '#pattern-overview .pbe-pattern-scheme__availability[data-context="inverse"]',
+          )
+          ?.getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+    host
+      .querySelector<HTMLButtonElement>(
+        '#pattern-overview .pbe-pattern-scheme__select[data-context="inverse"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(shell.editor.serialize({ pipeline: "data" })).toContain("bg-inverse-surface"),
+    );
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector<HTMLButtonElement>(
+            '#pattern-overview .pbe-pattern-scheme__availability[data-context="brand"]',
+          )
+          ?.hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    host
+      .querySelector<HTMLButtonElement>(
+        '#pattern-overview .pbe-pattern-scheme__availability[data-context="brand"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector<HTMLButtonElement>(
+            '#pattern-overview .pbe-pattern-scheme__availability[data-context="brand"]',
+          )
+          ?.getAttribute("aria-checked"),
+      ).toBe("false"),
+    );
+    expect(
+      host
+        .querySelector('#pattern-overview .pbe-pattern-scheme__availability[data-context="brand"]')
+        ?.closest("article")?.textContent,
+    ).toContain("Disabled");
+    expect(
+      getComputedStyle(
+        host
+          .querySelector(
+            '#pattern-overview .pbe-pattern-scheme__availability[data-context="brand"]',
+          )!
+          .closest("article")!,
+      ).opacity,
+    ).toBe("0.5");
+    expect(host.querySelector("#pattern-overview .pbe-pattern-scheme__current")).toBeNull();
+    host.querySelector<HTMLButtonElement>("#template-save")!.click();
+
+    await vi.waitFor(() =>
+      expect(getPattern("scheme-callout")).toMatchObject({
+        defaultColorContext: "inverse",
+        disabledColorContexts: ["brand"],
+      }),
+    );
+    shell.editor.selectBlock(legacyRoot.id);
+    await vi.waitFor(() =>
+      expect(
+        host.querySelector('#pattern-context [data-context="brand"]')?.getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    host.querySelector<HTMLButtonElement>('#pattern-context [data-context="inverse"]')!.click();
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector('#pattern-context [data-context="inverse"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    expect(host.querySelector('#pattern-context [data-context="brand"]')).not.toBeNull();
+    expect(shell.editor.getBlock(legacyRoot.id)?.settings?.legacyColorContexts).toEqual(["brand"]);
+    host.querySelector<HTMLButtonElement>('#pattern-context [data-context="brand"]')!.click();
+    await vi.waitFor(() =>
+      expect(
+        host.querySelector('#pattern-context [data-context="brand"]')?.getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+
+    const [root] = shell.editor.insertPattern("scheme-callout")!;
+    shell.editor.selectBlock(root.id);
+    await vi.waitFor(() =>
+      expect(
+        host
+          .querySelector('#pattern-context [data-context="inverse"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    expect(host.querySelector('#pattern-context [data-context="brand"]')).toBeNull();
+    expect(shell.editor.serialize({ pipeline: "data" })).toContain("bg-inverse-surface");
+
+    host.querySelector<HTMLButtonElement>("#sidebar-edit-pattern")!.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(true));
+    expect(shell.editor.selection.blocks).toEqual([]);
+    expect(shell.editor.selection.active).toBeNull();
+    expect(host.querySelector('[data-tab="document"]')?.textContent?.trim()).toBe("Pattern");
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-tab="document"]')?.getAttribute("aria-selected")).toBe(
+        "true",
+      ),
+    );
+    expect(host.querySelector("#pattern-overview")?.textContent).toContain("Applies to this copy");
+    expect(
+      host
+        .querySelector('#pattern-overview [data-context="inverse"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(host.querySelector('#pattern-overview [data-context="brand"]')).toBeNull();
+    host
+      .querySelector<HTMLButtonElement>(
+        '#pattern-overview .pbe-pattern-scheme__select[data-context="default"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(shell.editor.serialize({ pipeline: "data" })).toContain("bg-surface"),
+    );
+    host.querySelector<HTMLButtonElement>("#template-save")!.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(false));
+    expect(shell.editor.getBlock(root.id)?.settings?.colorContext).toBeUndefined();
+    expect(shell.editor.serialize({ pipeline: "data" })).toContain("bg-surface");
+  });
+
+  test("single-scheme themes omit pattern style selectors", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const shell = await createEditorShell({
+      container: host,
+      content: '<p data-pb-block="paragraph" data-pb-rich="body">Before</p>',
+      media: false,
+      theme: DEFAULT_THEME,
+    });
+    destroyShell = shell.destroy;
+
+    const [root] = shell.editor.insertPattern("call-to-action")!;
+    shell.editor.selectBlock(root.id);
+    await vi.waitFor(() =>
+      expect(
+        host.querySelector<HTMLElement>("#pattern-context")?.classList.contains("hidden"),
+      ).toBe(true),
+    );
+
+    host.querySelector<HTMLButtonElement>("#sidebar-edit-pattern")!.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(true));
+    expect(host.querySelector("#pattern-style-selector")?.classList.contains("hidden")).toBe(true);
+    expect(host.querySelector("#pattern-overview")?.textContent).toContain("Blocks");
+    host.querySelector<HTMLButtonElement>("#template-cancel")!.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(false));
+
+    host.querySelector<HTMLButtonElement>("#inserter-toggle")!.click();
+    host.querySelector<HTMLButtonElement>('[data-itab="patterns"]')!.click();
+    host.querySelector<HTMLButtonElement>('#pattern-groups [data-group="All"]')!.click();
+    let definitionEdit!: HTMLButtonElement;
+    await vi.waitFor(() => {
+      definitionEdit = host.querySelector<HTMLButtonElement>(
+        '#pattern-flyout .pattern-edit[data-pattern="call-to-action"]',
+      )!;
+      expect(definitionEdit).not.toBeNull();
+    });
+    definitionEdit.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(true));
+    expect(host.querySelector("#pattern-style-selector")?.classList.contains("hidden")).toBe(true);
+  });
+
   test("primitive buttons use the site accent while selected and while editing text", async () => {
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -1049,6 +1304,37 @@ describe("shell host seams", () => {
     expect(host.textContent).toContain("Brand");
   });
 
+  test("inspector section resets live in the shared actions dropdown", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const shell = await createEditorShell({
+      container: host,
+      content:
+        '<div data-pb-id="G" data-pb-block="group" data-pb-tag="tag" data-pb-children><p data-pb-block="paragraph" data-pb-rich="body">Inside</p></div>',
+      media: false,
+      theme: DEFAULT_THEME,
+    });
+    destroyShell = shell.destroy;
+
+    shell.editor.setStyle("G", "backgroundColor", "accent-surface");
+    shell.editor.selectBlock("G");
+    host.querySelector<HTMLButtonElement>('[data-itab="styles"]')!.click();
+    const trigger = host.querySelector<HTMLButtonElement>('[title="Color actions"]')!;
+    expect(trigger).not.toBeNull();
+    expect(trigger.querySelector('use[href="#pbe-i-more"]')).not.toBeNull();
+    trigger.click();
+
+    let menu!: HTMLElement;
+    await vi.waitFor(() => {
+      menu = document.querySelector<HTMLElement>(
+        '[role="menu"][aria-label="Color actions"]:not(.hidden)',
+      )!;
+      expect(menu).not.toBeNull();
+    });
+    menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click();
+    await vi.waitFor(() => expect(shell.editor.getStyle("G", "backgroundColor")).toBe(""));
+  });
+
   test("pattern roots expose their base and responsive layout recipe", async () => {
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -1073,9 +1359,7 @@ describe("shell host seams", () => {
           ?.getAttribute("aria-pressed"),
       ).toBe("true"),
     );
-    expect(host.querySelector('[data-context="inverse"]')?.getAttribute("aria-pressed")).toBe(
-      "true",
-    );
+    expect(host.querySelector('[aria-label="Color context"]')).toBeNull();
     const boxPadding = (side: string): HTMLButtonElement =>
       host.querySelector<HTMLButtonElement>(
         `.pbe-box-model__value[data-kind="padding"][data-side="${side}"]`,
@@ -1591,6 +1875,30 @@ describe("shell host seams", () => {
     await vi.waitFor(() =>
       expect(host.querySelector("#block-card-title")?.textContent).toBe("Group"),
     );
+    const layoutPicker = host.querySelector<HTMLElement>(
+      '#block-header-settings [data-style="layoutMode"]',
+    )!;
+    expect(layoutPicker).toBeTruthy();
+    expect(host.querySelector('#block-settings [data-style="layoutMode"][data-value]')).toBeNull();
+    expect(
+      layoutPicker
+        .closest("#block-card")!
+        .querySelector('[role="tablist"]')!
+        .compareDocumentPosition(layoutPicker) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+    expect(host.querySelector('[data-itab="settings"] use')?.getAttribute("href")).toBe(
+      "#pbe-i-settings",
+    );
+    expect(host.querySelector('[data-itab="styles"] use')?.getAttribute("href")).toBe(
+      "#pbe-i-palette",
+    );
+    expect(getComputedStyle(host.querySelector('[data-itab="settings"]')!).display).toBe("flex");
+    expect(getComputedStyle(host.querySelector('[data-itab="styles"]')!).display).toBe("flex");
+    const paletteSymbol = document.querySelector("#pbe-i-palette")!;
+    expect(paletteSymbol.querySelectorAll("circle")).toHaveLength(3);
+    expect(paletteSymbol.querySelector("path")?.getAttribute("d")).toBe(
+      "M12 3.75a8.25 8.25 0 1 0 0 16.5h1.25a1.75 1.75 0 0 0 0-3.5h-.65a1.6 1.6 0 0 1 0-3.2h2.9A4.75 4.75 0 0 0 20.25 8.8 5.05 5.05 0 0 0 15.2 3.75H12Z",
+    );
     expect(
       host
         .querySelector('[data-style="layoutMode"][data-value="group"]')
@@ -1681,13 +1989,17 @@ describe("shell host seams", () => {
       ).toBe(true),
     );
 
-    host
-      .querySelector<HTMLButtonElement>('[data-role="structure"][data-style="layoutMode"]')!
-      .click();
+    host.querySelector<HTMLButtonElement>('[data-style="layoutMode"][data-value="group"]')!.click();
     await vi.waitFor(() =>
       expect(host.querySelector("#block-card-title")?.textContent).toBe("Group"),
     );
-    expect(shell.editor.getBlock("G")?.classes).toBe("mx-auto");
+    expect(shell.editor.getBlock("G")?.classes?.split(/\s+/)).toEqual([
+      "mx-auto",
+      "lg:pbe-container--content",
+      "lg:pbe-container--bleed-right",
+      "lg:pbe-container--off",
+      "lg:block",
+    ]);
     expect(shell.editor.getBlock("G")?.settings).toBeUndefined();
   });
 
@@ -1741,14 +2053,136 @@ describe("shell host seams", () => {
 
     points[0].click();
     await vi.waitFor(() =>
-      expect(host.querySelector(".pbe-breakpoint-status")?.textContent).toContain("Mobile"),
+      expect(
+        host
+          .querySelector('#viewport-switcher button[data-device="mobile"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true"),
     );
+    expect(host.querySelector(".pbe-breakpoint-status")).toBeNull();
     expect(
       host
         .querySelector<HTMLButtonElement>('button[role="switch"][data-style="containerEnabled"]')
         ?.getAttribute("aria-checked"),
     ).toBe("true");
     expect(points[3].getAttribute("aria-label")).toContain("field changes here");
+  });
+
+  test("box-model responsive ranges can be reset and their open boundaries moved", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const shell = await createEditorShell({
+      container: host,
+      content:
+        '<div data-pb-block="group" data-pb-id="G" data-pb-children><p data-pb-block="paragraph" data-pb-rich="body">One</p></div>',
+      media: false,
+      theme: DEFAULT_THEME,
+    });
+    destroyShell = shell.destroy;
+    shell.editor.selectBlock("G", { toggle: true });
+    host.querySelector<HTMLButtonElement>('[data-itab="styles"]')!.click();
+
+    shell.editor.setStyle("G", "padding", "2", "base");
+    shell.editor.setStyle("G", "padding", "4", "lg");
+
+    let indicator!: HTMLDetailsElement;
+    await vi.waitFor(() => {
+      indicator = host.querySelector<HTMLDetailsElement>(
+        ".pbe-responsive-field--box-model:not(.hidden)",
+      )!;
+      expect(indicator).not.toBeNull();
+      expect(indicator.textContent).toContain("2 variants");
+    });
+    const boxDiagram = indicator
+      .closest(".pbe-box-model")!
+      .querySelector<HTMLElement>(".pbe-box-model__margin")!;
+    expect(
+      boxDiagram.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    indicator.open = true;
+    let boundary = indicator.querySelector<HTMLButtonElement>(
+      '.pbe-responsive-field__point[data-breakpoint="lg"]',
+    )!;
+    expect(boundary.hasAttribute("data-changed")).toBe(true);
+    expect(boundary.hasAttribute("data-movable")).toBe(true);
+
+    indicator
+      .querySelector<HTMLButtonElement>(
+        '.pbe-responsive-field__track button[data-breakpoint="lg"]',
+      )!
+      .click();
+    await vi.waitFor(() => expect(shell.editor.getStyle("G", "padding", "lg")).toBe(""));
+
+    shell.editor.setStyle("G", "padding", "4", "lg");
+    await vi.waitFor(() => {
+      indicator = host.querySelector<HTMLDetailsElement>(
+        ".pbe-responsive-field--box-model:not(.hidden)",
+      )!;
+      boundary = indicator.querySelector<HTMLButtonElement>(
+        '.pbe-responsive-field__point[data-breakpoint="lg"]',
+      )!;
+      expect(boundary.hasAttribute("data-movable")).toBe(true);
+    });
+    indicator.open = true;
+    const target = indicator.querySelector<HTMLButtonElement>(
+      '.pbe-responsive-field__point[data-breakpoint="md"]',
+    )!;
+    const rangeBoundary = indicator.querySelector<HTMLButtonElement>(
+      '.pbe-responsive-field__track button[data-breakpoint="lg"]',
+    )!;
+    expect(target).not.toBeNull();
+    expect(rangeBoundary.hasAttribute("data-movable")).toBe(true);
+    const sourceX = 96;
+    const targetX = 64;
+    rangeBoundary.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: sourceX, pointerId: 1 }),
+    );
+    expect(rangeBoundary.getAttribute("data-dragging")).toBe("true");
+    document.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 80, pointerId: 1 }),
+    );
+    expect(rangeBoundary.style.flexGrow).toBe("3.5");
+    expect(rangeBoundary.hasAttribute("data-preview-label")).toBe(false);
+    expect(target.hasAttribute("data-drop-target")).toBe(false);
+    document.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: targetX, pointerId: 1 }),
+    );
+    expect(rangeBoundary.style.flexGrow).toBe("4");
+    expect(rangeBoundary.getAttribute("data-preview-label")).toBe("768px");
+    expect(target.getAttribute("data-drop-target")).toBe("true");
+    expect(target.getAttribute("data-changed")).toBe("true");
+    expect(shell.editor.getStyle("G", "padding", "lg")).toBe("4");
+    expect(shell.editor.getStyle("G", "padding", "md")).toBe("");
+    document.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, clientX: targetX, pointerId: 1 }),
+    );
+    await vi.waitFor(() => {
+      expect(shell.editor.getStyle("G", "padding", "lg")).toBe("");
+      expect(shell.editor.getStyle("G", "padding", "md")).toBe("4");
+      indicator = host.querySelector<HTMLDetailsElement>(
+        ".pbe-responsive-field--box-model:not(.hidden)",
+      )!;
+      expect(
+        indicator
+          .querySelector('.pbe-responsive-field__point[data-breakpoint="md"]')
+          ?.hasAttribute("data-changed"),
+      ).toBe(true);
+    });
+
+    for (const [index, breakpoint] of styleBreakpoints(DEFAULT_THEME).entries())
+      shell.editor.setStyle("G", "padding", String(index + 1), breakpoint.key);
+    await vi.waitFor(() => {
+      indicator = host.querySelector<HTMLDetailsElement>(
+        ".pbe-responsive-field--box-model:not(.hidden)",
+      )!;
+      const changed = [
+        ...indicator.querySelectorAll<HTMLButtonElement>(
+          ".pbe-responsive-field__point[data-changed]",
+        ),
+      ];
+      expect(changed).toHaveLength(styleBreakpoints(DEFAULT_THEME).length - 1);
+      expect(changed.every((point) => !point.hasAttribute("data-movable"))).toBe(true);
+    });
   });
 
   test("Row layout options use shared icons for every segmented choice", async () => {
@@ -3293,10 +3727,8 @@ describe("shell host seams", () => {
 
     await selectViewportBreakpoint("lg", "desktop");
     await vi.waitFor(() => expect(frame.getBoundingClientRect().width).toBe(1024));
-    host.querySelector<HTMLButtonElement>('[data-itab="styles"]')!.click();
-    host
-      .querySelector<HTMLButtonElement>('[aria-label="Color context"] [data-context="inverse"]')!
-      .click();
+    shell.editor.setStyle(root.id, "backgroundColor", "inverse-surface", "lg");
+    shell.editor.setStyle(root.id, "textColor", "inverse-foreground", "lg");
     await vi.waitFor(() =>
       expect(shell.editor.getStyle(root.id, "backgroundColor", "lg")).toBe("inverse-surface"),
     );

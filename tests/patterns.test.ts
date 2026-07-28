@@ -13,6 +13,7 @@ import {
   flattenBlocks,
   getPattern,
   getPatternContent,
+  HEARTH_THEME,
   patternTypes,
   publishPattern,
   registerBlock,
@@ -51,6 +52,30 @@ describe("registration: the expansion is validated, not the markup", () => {
     expect(patternTypes().some((p) => p.name === "probe")).toBe(true);
     expect(unregisterPattern("probe")).toBe(true);
     expect(getPattern("probe")).toBeUndefined();
+  });
+
+  test("color-scheme preferences are validated and frozen with the definition", () => {
+    const def = registerPattern("probe", {
+      label: "Probe",
+      content: TWO_PARAGRAPHS,
+      defaultColorContext: "inverse",
+      disabledColorContexts: ["brand", "brand"],
+    });
+    expect(def.defaultColorContext).toBe("inverse");
+    expect(def.disabledColorContexts).toEqual(["brand"]);
+    expect(Object.isFrozen(def.disabledColorContexts)).toBe(true);
+    expect(() => {
+      (def.disabledColorContexts as string[]).push("default");
+    }).toThrow();
+    unregisterPattern("probe");
+    expect(() =>
+      registerPattern("probe", {
+        label: "Probe",
+        content: TWO_PARAGRAPHS,
+        defaultColorContext: "brand",
+        disabledColorContexts: ["brand"],
+      }),
+    ).toThrow(/cannot also be disabled/);
   });
 
   test("definition shape is validated hard", () => {
@@ -219,6 +244,30 @@ describe("stamping: independent copies through one commit", () => {
     expect(editor.getModel().blocks[1].pattern).toBe("call-to-action");
     expect(editor.insertPattern("no-such-pattern")).toBeNull();
     expect(editor.history.undoDepth).toBe(depth + 1);
+  });
+
+  test("a fresh stamp uses the definition's explicit default color scheme", () => {
+    registerPattern("scheme-probe", {
+      label: "Scheme probe",
+      content:
+        '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="bg-brand-surface text-brand-foreground">' +
+        P("First") +
+        P("Second") +
+        "</div>",
+      defaultColorContext: "inverse",
+      disabledColorContexts: ["brand"],
+    });
+    try {
+      setup("");
+      editor.setTheme(HEARTH_THEME);
+      const root = editor.insertPattern("scheme-probe")![0];
+      expect(root.settings?.colorContext).toBe("inverse");
+      expect(root.children![0].classes).toContain("bg-inverse-surface");
+      expect(root.children![0].classes).toContain("text-inverse-foreground");
+      expect(root.children![0].classes).not.toContain("bg-brand-surface");
+    } finally {
+      unregisterPattern("scheme-probe");
+    }
   });
 
   test("insertPatternAdjacent stamps at an internal sibling boundary in one commit", () => {
@@ -485,6 +534,24 @@ describe("versioning: compare, bump, and the structural diff", () => {
       unregisterPattern("probe");
     }
   });
+
+  test("publishing color-scheme preferences is a minor definition change", () => {
+    registerPattern("probe", { label: "P", content: H("Title") + P("Body") });
+    try {
+      expect(
+        publishPattern("probe", H("Title") + P("Body"), {
+          defaultColorContext: "inverse",
+          disabledColorContexts: ["brand"],
+        }),
+      ).toEqual({ version: "1.1", kind: "minor" });
+      expect(getPattern("probe")).toMatchObject({
+        defaultColorContext: "inverse",
+        disabledColorContexts: ["brand"],
+      });
+    } finally {
+      unregisterPattern("probe");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -610,6 +677,61 @@ describe("pattern descendants use content-only editing mode", () => {
       href: "/target",
       aspectRatio: "square",
     });
+  });
+
+  test("pattern flashing accepts a layout target adopted from the shell document", () => {
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const frameDocument = frame.contentDocument!;
+    const frameWindow = frame.contentWindow as unknown as typeof window;
+    const frameCanvas = frameDocument.createElement("main");
+    frameDocument.body.appendChild(frameCanvas);
+    const framedEditor = createEditor({
+      canvas: frameCanvas,
+      defaultBlock: "paragraph",
+      groupBlock: "group",
+    });
+    try {
+      framedEditor.loadHtml(`
+        <div data-pb-block="pattern" data-pb-id="pattern" data-pb-pattern="call-to-action" data-pb-children>
+          <section data-pb-block="group" data-pb-id="layout" data-pb-tag="tag" data-pb-children>
+            <p data-pb-block="paragraph" data-pb-id="copy" data-pb-rich="body">Body</p>
+          </section>
+        </div>`);
+
+      // The shell can adopt a live canvas subtree into its iframe. Such an
+      // element belongs to the iframe document but keeps its parent-realm
+      // JavaScript wrapper, so iframe `instanceof Element` is false.
+      const oldLayout = frameCanvas.querySelector<HTMLElement>('[data-pb-id="layout"]')!;
+      const adoptedLayout = document.createElement("section");
+      for (const { name, value } of oldLayout.attributes) adoptedLayout.setAttribute(name, value);
+      adoptedLayout.append(...oldLayout.childNodes);
+      oldLayout.replaceWith(adoptedLayout);
+      expect(adoptedLayout.ownerDocument).toBe(frameDocument);
+      expect(adoptedLayout instanceof frameWindow.Element).toBe(false);
+
+      vi.spyOn(frameCanvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
+      vi.spyOn(
+        frameCanvas.querySelector<HTMLElement>('[data-pb-id="copy"]')!,
+        "getBoundingClientRect",
+      ).mockReturnValue(new DOMRect(30, 40, 300, 50));
+
+      adoptedLayout.dispatchEvent(
+        new frameWindow.MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: 450,
+          clientY: 200,
+        }),
+      );
+      const flash = frameDocument.querySelector<HTMLElement>("[data-pbe-pattern-flash]")!;
+      expect(flash).toBeTruthy();
+      expect(flash.shadowRoot!.querySelectorAll(".veil")).toHaveLength(1);
+    } finally {
+      framedEditor.destroy();
+      frame.remove();
+    }
   });
 });
 

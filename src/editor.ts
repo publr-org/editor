@@ -388,8 +388,16 @@ export function createEditor({
   // the affordance for "these parts are yours; Edit pattern owns the rest".
   function onPatternFlash(event: MouseEvent) {
     if (event.button !== 0 || !patternsOpaque) return;
-    const el =
-      event.target instanceof ownerWindow.Element ? event.target.closest("[data-pb-id]") : null;
+    // `instanceof ownerWindow.Element` is not safe here: the shell's live
+    // canvas is adopted into its iframe, so a valid target can retain a
+    // wrapper from the parent realm. Selection already treats DOM capability
+    // (`closest`) as the contract; use the same rule for the flash affordance.
+    const target = event.target as Node | null;
+    const targetEl =
+      target && typeof (target as Element).closest === "function"
+        ? (target as Element)
+        : target?.parentElement;
+    const el = targetEl?.closest("[data-pb-id]") ?? null;
     const path = el ? pathToBlock(model.blocks, el.getAttribute("data-pb-id")!) : null;
     if (!path) return;
     const rootIdx = path.findIndex(isInstanceRoot);
@@ -683,6 +691,87 @@ export function createEditor({
     return slot === null ? true : slot !== false && slot.includes(type);
   }
 
+  const colorContextPlan = (
+    blocks: Block[],
+    context: string,
+    settingsRoot?: Block,
+  ): (() => void) | null => {
+    const theme = activeTheme();
+    const prefix = context === "default" ? "" : `${context}-`;
+    if (
+      context !== "default" &&
+      (!hasToken(theme, `color-${prefix}surface`) || !hasToken(theme, `color-${prefix}foreground`))
+    )
+      return null;
+    const roles = semanticColorRoles(theme).sort((a, b) => b.key.length - a.key.length);
+    const roleOf = (value: string) =>
+      roles.find((role) => value === role.key || value.endsWith(`-${role.key}`))?.key;
+    const changes: Array<{
+      block: Block;
+      prop: "textColor" | "backgroundColor" | "borderColor";
+      breakpoint: StyleBreakpoint;
+      value: string;
+    }> = [];
+    for (const block of flattenBlocks(blocks)) {
+      for (const breakpoint of styleBreakpoints(theme).map((option) => option.key)) {
+        for (const prop of ["textColor", "backgroundColor", "borderColor"] as const) {
+          const current = styleBackend.read(block, prop, theme, breakpoint) ?? "";
+          const role = roleOf(current);
+          if (!role) continue;
+          const value = `${prefix}${role}`;
+          if (current !== value && hasToken(theme, `color-${value}`))
+            changes.push({ block, prop, breakpoint, value });
+        }
+      }
+    }
+    const stored = settingsRoot?.settings?.colorContext;
+    const nextStored = context === "default" ? "" : context;
+    if (!changes.length && (!settingsRoot || stored === nextStored)) return null;
+    return () => {
+      if (settingsRoot) {
+        settingsRoot.settings ??= {};
+        if (nextStored) settingsRoot.settings.colorContext = nextStored;
+        else delete settingsRoot.settings.colorContext;
+      }
+      for (const change of changes)
+        styleBackend.write(
+          change.block,
+          change.prop,
+          change.value,
+          "element",
+          theme,
+          change.breakpoint,
+        );
+    };
+  };
+
+  const patternColorContextPlan = (
+    root: Block,
+    context: string,
+    preserveContext?: string,
+  ): (() => void) | null => {
+    if (!root.pattern || root.type !== PATTERN_ROOT_TYPE) return null;
+    const applyColors = colorContextPlan(root.children ?? [], context, root);
+    const legacyContexts = Array.isArray(root.settings?.legacyColorContexts)
+      ? root.settings.legacyColorContexts.filter(
+          (candidate): candidate is string => typeof candidate === "string",
+        )
+      : [];
+    const nextLegacyContexts =
+      preserveContext && !legacyContexts.includes(preserveContext)
+        ? [...legacyContexts, preserveContext]
+        : legacyContexts;
+    const legacyChanged = nextLegacyContexts.length !== legacyContexts.length;
+    if (!applyColors && !legacyChanged) return null;
+    return () => {
+      applyColors?.();
+      if (legacyChanged) {
+        root.settings ??= {};
+        root.settings.legacyColorContexts = nextLegacyContexts;
+      }
+    };
+  };
+
   // A pattern stamp: upcast the registered fragment (the same path documents
   // load through) and re-mint EVERY id — patterns are independent copies,
   // never references, and ids authored in the fragment would collide from
@@ -701,16 +790,19 @@ export function createEditor({
     // identified by whatever provenance the fragment itself carries.
     if (!getBlockType(PATTERN_ROOT_TYPE)?.phantom) return blocks;
     for (const b of blocks) delete b.pattern; // the root owns the identity now
-    return [
-      {
-        type: PATTERN_ROOT_TYPE,
-        id: mintId(),
-        fields: {},
-        classes: "",
-        children: blocks,
-        pattern: name,
-      },
-    ];
+    const root: Block = {
+      type: PATTERN_ROOT_TYPE,
+      id: mintId(),
+      fields: {},
+      classes: "",
+      children: blocks,
+      pattern: name,
+    };
+    // Definitions authored before explicit scheme preferences existed keep
+    // their authored colors. Once a default is chosen, every fresh stamp is
+    // remapped to it.
+    if (pattern.defaultColorContext) patternColorContextPlan(root, pattern.defaultColorContext)?.();
+    return [root];
   }
 
   // Vertical-only scroll: scrollIntoView has no "leave horizontal alone"
@@ -1405,6 +1497,8 @@ export function createEditor({
       ownerDocument.removeEventListener("selectionchange", checkGhost);
       ownerDocument.removeEventListener("focusin", checkGhost);
       ownerDocument.removeEventListener("focusout", checkGhost);
+      canvas.removeEventListener("mousedown", onPatternFlash);
+      for (const el of ownerDocument.querySelectorAll("[data-pbe-pattern-flash]")) el.remove();
       blockSel.destroy();
     },
 
@@ -1885,7 +1979,12 @@ export function createEditor({
      * upcast like any load; one commit, one undo entry; the block lands
      * selected. Refused on unknown blocks and non-containers.
      */
-    setBlockChildren(id: string, html: string): Block | null {
+    setBlockChildren(
+      id: string,
+      html: string,
+      colorContext?: string,
+      legacyColorContexts?: readonly string[],
+    ): Block | null {
       const block = findBlock(id);
       if (!block || !block.children) return null;
       const tmp = ownerDocument.createElement("div");
@@ -1894,6 +1993,13 @@ export function createEditor({
       commit(
         () => {
           block.children = children;
+          if (legacyColorContexts) {
+            block.settings ??= {};
+            if (legacyColorContexts.length)
+              block.settings.legacyColorContexts = [...legacyColorContexts];
+            else delete block.settings.legacyColorContexts;
+          }
+          if (colorContext) patternColorContextPlan(block, colorContext)?.();
         },
         { label: `set children of ${id} (${children.length} blocks)` },
       );
@@ -2005,61 +2111,24 @@ export function createEditor({
      * Pattern recipes only reference semantic roles, so remapping those role
      * keys preserves every block's intent (surface, accent, muted, border)
      * while changing the palette as one undoable operation. */
-    setPatternColorContext(id: string, context: string): boolean {
+    setPatternColorContext(id: string, context: string, preserveContext?: string): boolean {
       const root = findBlock(id);
-      if (!root?.pattern || root.type !== PATTERN_ROOT_TYPE) return false;
-      const theme = activeTheme();
-      const prefix = context === "default" ? "" : `${context}-`;
-      if (
-        context !== "default" &&
-        (!hasToken(theme, `color-${prefix}surface`) ||
-          !hasToken(theme, `color-${prefix}foreground`))
-      )
-        return false;
-      const roles = semanticColorRoles(theme).sort((a, b) => b.key.length - a.key.length);
-      const roleOf = (value: string) =>
-        roles.find((role) => value === role.key || value.endsWith(`-${role.key}`))?.key;
-      const changes: Array<{
-        block: Block;
-        prop: "textColor" | "backgroundColor" | "borderColor";
-        breakpoint: StyleBreakpoint;
-        value: string;
-      }> = [];
-      for (const block of flattenBlocks(root.children ?? [])) {
-        for (const breakpoint of styleBreakpoints(theme).map((option) => option.key)) {
-          for (const prop of ["textColor", "backgroundColor", "borderColor"] as const) {
-            const current = styleBackend.read(block, prop, theme, breakpoint) ?? "";
-            const role = roleOf(current);
-            if (!role) continue;
-            const value = `${prefix}${role}`;
-            if (current !== value && hasToken(theme, `color-${value}`))
-              changes.push({ block, prop, breakpoint, value });
-          }
-        }
-      }
-      const stored = root.settings?.colorContext;
-      const nextStored = context === "default" ? "" : context;
-      if (!changes.length && stored === nextStored) return false;
-      commit(
-        () => {
-          root.settings ??= {};
-          if (nextStored) root.settings.colorContext = nextStored;
-          else delete root.settings.colorContext;
-          for (const change of changes)
-            styleBackend.write(
-              change.block,
-              change.prop,
-              change.value,
-              "element",
-              theme,
-              change.breakpoint,
-            );
-        },
-        { label: `pattern ${id} color context = ${context}` },
-      );
+      if (!root) return false;
+      const apply = patternColorContextPlan(root, context, preserveContext);
+      if (!apply) return false;
+      commit(apply, { label: `pattern ${id} color context = ${context}` });
       // Rebuild only this copy so the root remains selected and its pattern
       // controls stay visible after changing context.
       rerenderBlock(id);
+      return true;
+    },
+
+    /** Preview a semantic color context across the current isolation document. */
+    setDocumentColorContext(context: string): boolean {
+      const apply = colorContextPlan(model.blocks, context);
+      if (!apply) return false;
+      commit(apply, { label: `document color context = ${context}` });
+      renderCanvas();
       return true;
     },
 

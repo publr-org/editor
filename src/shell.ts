@@ -316,7 +316,10 @@ function syncThemePatterns(theme: Theme): void {
         existing.version === (pattern.version ?? "1.0") &&
         existing.category === pattern.category &&
         existing.description === pattern.description &&
-        existing.icon === pattern.icon;
+        existing.icon === pattern.icon &&
+        existing.defaultColorContext === pattern.defaultColorContext &&
+        JSON.stringify(existing.disabledColorContexts ?? []) ===
+          JSON.stringify(pattern.disabledColorContexts ?? []);
       if (!same && !installedThemePatterns.has(name))
         throw new Error(
           `PublrEditor: theme pattern "${name}" conflicts with an already registered pattern`,
@@ -1113,18 +1116,27 @@ interface DesignTypographyChoiceRow {
   color: string;
 }
 
-interface ColorContextRow {
+interface PatternContextRow {
   key: string;
   label: string;
   surface: string;
   foreground: string;
-  pressed: boolean;
-}
-
-interface PatternContextRow extends ColorContextRow {
   surfaceCss: string;
   foregroundCss: string;
   accentCss: string;
+  pressed: boolean;
+}
+
+interface PatternSchemeRow extends PatternContextRow {
+  default: boolean;
+  disabled: boolean;
+  enabled: boolean;
+  availabilityShown: boolean;
+  availabilityLabel: string;
+  selectLabel: string;
+  selectDisabled: boolean;
+  statusLabel: string;
+  statusShown: boolean;
 }
 
 interface SettingOptionRow {
@@ -1138,6 +1150,14 @@ interface ResponsiveValueRange {
   key: StyleBreakpoint;
   span: string;
   changed: boolean;
+  resettable: boolean;
+  resetDisabled: boolean;
+  resetLabel: string;
+  movable: boolean;
+  index: string;
+  minIndex: string;
+  maxIndex: string;
+  props: string;
   label: string;
   color: string;
 }
@@ -1148,6 +1168,11 @@ interface ResponsiveValuePoint {
   viewport: string;
   active: boolean;
   changed: boolean;
+  movable: boolean;
+  index: string;
+  minIndex: string;
+  maxIndex: string;
+  props: string;
   label: string;
   color: string;
 }
@@ -1186,6 +1211,7 @@ interface SettingRow {
   canUpload: boolean; // OPFS + service worker available
   section: string;
   sectionRole: string;
+  sectionStyle: string;
   sectionKey: string;
   sectionExpanded: boolean;
   showSection: boolean;
@@ -1517,6 +1543,7 @@ Publr.store("chrome", () => {
     blockIcon: "",
     blockLetter: "",
     blockDescription: "",
+    blockHeaderSettings: [] as SettingRow[],
     blockSettings: [] as SettingRow[],
     blockInspectorTab: "settings",
     blockHasStyles: false,
@@ -1581,8 +1608,6 @@ Publr.store("chrome", () => {
     canvasViewportHeight: "100%",
     canvasViewportLabel: "Full canvas",
     styleBreakpointLabel: "Mobile",
-    styleBreakpointHelp: "Base styles apply to every viewport",
-    styleBreakpointStatusShown: false,
     canvasViewportWidth: "100%",
     canvasViewportPixelWidth: 0,
     canvasViewportCustomWidth: null as number | null,
@@ -1624,12 +1649,15 @@ Publr.store("chrome", () => {
     colorPickerOpen: "",
     colorPopoverTop: "0px",
     colorPopoverLeft: "0px",
-    colorContextShown: false,
-    colorContextOptions: [] as ColorContextRow[],
     // Dimensions (C3): padding/margin rows over the active theme's spacing scale.
     dimensionRows: [] as ScaleRow[],
     dimensionPanelShown: false,
     spacingBoxShown: false,
+    boxResponsive: false,
+    boxResponsiveSummary: "",
+    boxResponsiveChanges: "",
+    boxResponsiveRanges: [] as ResponsiveValueRange[],
+    boxResponsivePoints: [] as ResponsiveValuePoint[],
     textSpacingResetShown: false,
     boxPaddingShown: false,
     boxMarginShown: false,
@@ -1898,6 +1926,18 @@ Publr.store("chrome", () => {
     blockPatternRoot: "", // the instance root id (inner selections remap here)
     blockPatternContent: [] as PatternContentRow[], // the copy's CONTENT blocks (Content outline)
     blockPatternContexts: [] as PatternContextRow[],
+    blockPatternContextShown: false,
+    blockPatternActiveContext: "default",
+    patternColorSchemesShown: false,
+    patternStyleSelectorShown: false,
+    patternColorSchemes: [] as PatternSchemeRow[],
+    patternDefaultColorContext: "default",
+    patternDisabledColorContexts: [] as string[],
+    patternLegacyColorContexts: [] as string[],
+    patternDefinitionMode: false,
+    patternSchemeTitle: "Default pattern style",
+    patternSchemeNote: "",
+    patternOverviewRows: [] as TreeRow[],
     // isolation editing modes: the page document parks, the SAME full editor
     // takes the isolated content. "definition" = library edit (Save =
     // versioned publish); "instance" = a placed copy's Edit pattern (Save =
@@ -1995,6 +2035,8 @@ Publr.store("chrome", () => {
   let boxEditorAnchorTop = 12;
   let boxEditorAnchorLeft = 12;
   let boxEditorPositionFrame = 0;
+  let responsiveBoundaryClickSuppressedUntil = 0;
+  let cancelResponsiveBoundaryDrag: (() => void) | null = null;
   const viewportDeviceSelections: Partial<Record<ViewportDevice, StyleBreakpoint>> = {};
 
   const clearVariationPreview = (): void => {
@@ -2530,7 +2572,7 @@ Publr.store("chrome", () => {
     styleBreakpoints().find((option) => option.key === source)?.label ?? "Mobile";
   const responsiveValueRanges = (
     id: string,
-    prop: string,
+    prop: string | readonly string[],
     defaultValue: string,
   ): {
     ranges: ResponsiveValueRange[];
@@ -2539,18 +2581,28 @@ Publr.store("chrome", () => {
     changes: string;
   } => {
     const breakpoints = styleBreakpoints();
+    const props = typeof prop === "string" ? [prop] : [...prop];
+    const serializedProps = props.join(",");
     const activeIndex = breakpoints.findIndex((option) => option.key === activeStyleBreakpoint());
     const viewportLabel = (breakpoint: (typeof breakpoints)[number]): string => {
       const pixels = cssLengthPx(breakpoint.viewport);
       return pixels == null ? breakpoint.viewport : `${Math.round(pixels)}px`;
     };
-    let inheritedValue = defaultValue;
+    const inheritedValues = Object.fromEntries(
+      props.map((candidate, index) => [candidate, index === 0 ? defaultValue : ""]),
+    ) as Record<string, string>;
     const values = breakpoints.map((breakpoint) => {
-      const explicitValue = editor.getStyle(id, prop, breakpoint.key);
-      if (explicitValue) inheritedValue = explicitValue;
+      const explicitProps = props.filter((candidate) => {
+        const explicitValue = editor.getStyle(id, candidate, breakpoint.key);
+        if (explicitValue) inheritedValues[candidate] = explicitValue;
+        return !!explicitValue;
+      });
       return {
-        value: inheritedValue,
-        explicit: !!explicitValue,
+        value:
+          props.length === 1
+            ? inheritedValues[props[0]]
+            : JSON.stringify(props.map((candidate) => inheritedValues[candidate])),
+        explicit: explicitProps.length > 0,
       };
     });
     const groups: {
@@ -2580,21 +2632,41 @@ Publr.store("chrome", () => {
         variants.length === 1 ? 70 : Math.round(32 + (index / (variants.length - 1)) * 54);
       return `color-mix(in oklch, var(--pbe-responsive-accent) ${shade}%, var(--background))`;
     };
-    const ranges = groups.map((group) => {
+    const ranges = groups.map((group, groupIndex) => {
       const start = breakpoints[group.start];
       const end = breakpoints[group.end];
+      const previous = groupIndex > 0 ? groups[groupIndex - 1] : undefined;
+      const minIndex = previous ? previous.start + 1 : group.start;
+      const maxIndex = group.end;
+      const movable = group.changed && minIndex < maxIndex;
       const screenLabel =
         group.start === group.end ? start.label : `${start.label} through ${end.label}`;
       return {
         key: start.key,
         span: String(group.end - group.start + 1),
         changed: group.changed,
+        resettable: group.changed,
+        resetDisabled: !group.changed,
+        resetLabel: group.changed
+          ? `Reset changes from ${viewportLabel(start)}`
+          : `${screenLabel} base variant`,
+        movable,
+        index: String(group.start),
+        minIndex: String(minIndex),
+        maxIndex: String(maxIndex),
+        props: serializedProps,
         label: `${screenLabel} share one variant`,
         color: variantColor(group.value),
       };
     });
     const points = breakpoints.map((breakpoint, index) => {
-      const changed = groups.some((group) => group.start === index && index > 0);
+      const groupIndex = groups.findIndex((group) => group.start === index && index > 0);
+      const group = groupIndex >= 0 ? groups[groupIndex] : undefined;
+      const previous = groupIndex > 0 ? groups[groupIndex - 1] : undefined;
+      const changed = !!group;
+      const minIndex = group && previous ? previous.start + 1 : index;
+      const maxIndex = group?.end ?? index;
+      const movable = changed && minIndex < maxIndex;
       const viewport = viewportLabel(breakpoint);
       return {
         key: breakpoint.key,
@@ -2602,7 +2674,18 @@ Publr.store("chrome", () => {
         viewport,
         active: index === activeIndex,
         changed,
-        label: `${breakpoint.label}, ${viewport}${changed ? ", field changes here" : ""}`,
+        movable,
+        index: String(index),
+        minIndex: String(minIndex),
+        maxIndex: String(maxIndex),
+        props: serializedProps,
+        label: `${breakpoint.label}, ${viewport}${
+          changed
+            ? movable
+              ? ", field changes here; drag left or right to move the boundary"
+              : ", field changes here; reset another block to make room"
+            : ""
+        }`,
         color: variantColor(values[index].value),
       };
     });
@@ -2614,11 +2697,77 @@ Publr.store("chrome", () => {
       changes: `Changes at ${changePoints.join(", ")}`,
     };
   };
+  const responsiveMutationProps = (raw: string | undefined): string[] =>
+    (raw ?? "")
+      .split(",")
+      .map((prop) => prop.trim())
+      .filter(Boolean);
+  const resetResponsiveBoundary = (
+    id: string,
+    props: readonly string[],
+    breakpoint: StyleBreakpoint,
+  ): boolean => {
+    const values = Object.fromEntries(
+      props.filter((prop) => !!editor.getStyle(id, prop, breakpoint)).map((prop) => [prop, ""]),
+    );
+    return Object.keys(values).length > 0 && editor.setStyles(id, values, breakpoint);
+  };
+  const moveResponsiveBoundary = (
+    id: string,
+    props: readonly string[],
+    source: StyleBreakpoint,
+    target: StyleBreakpoint,
+  ): boolean => {
+    if (source === target) return false;
+    const explicitValues = Object.fromEntries(
+      props
+        .map((prop) => [prop, editor.getStyle(id, prop, source)] as const)
+        .filter(([, value]) => !!value),
+    );
+    if (!Object.keys(explicitValues).length) return false;
+    if (!editor.setStyles(id, explicitValues, target)) return false;
+    editor.setStyles(
+      id,
+      Object.fromEntries(Object.keys(explicitValues).map((prop) => [prop, ""])),
+      source,
+    );
+    return true;
+  };
   const writeStyle = (id: string, prop: string, value: string): void =>
     editor.setStyle(id, prop, value, activeStyleBreakpoint());
   const writeStyles = (id: string, values: Readonly<Record<string, string>>): boolean =>
     editor.setStyles(id, values, activeStyleBreakpoint());
   const spacingSides: readonly BoxSpacingSide[] = ["Top", "Right", "Bottom", "Left"];
+  const boxModelResponsiveProps = [
+    "padding",
+    "paddingInline",
+    "paddingBlock",
+    "paddingTop",
+    "paddingRight",
+    "paddingBottom",
+    "paddingLeft",
+    "margin",
+    "marginTop",
+    "marginRight",
+    "marginBottom",
+    "marginLeft",
+    "borderWidth",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "borderRadius",
+    "borderTopLeftRadius",
+    "borderTopRightRadius",
+    "borderBottomRightRadius",
+    "borderBottomLeftRadius",
+    "borderColor",
+    "borderTopColor",
+    "borderRightColor",
+    "borderBottomColor",
+    "borderLeftColor",
+    "borderStyle",
+  ] as const;
   const orderedSpacingSides = (sides: readonly BoxSpacingSide[]): BoxSpacingSide[] =>
     spacingSides.filter((side) => sides.includes(side));
   const sameSpacingSides = (
@@ -3739,6 +3888,19 @@ Publr.store("chrome", () => {
       walk(editor.getModel().blocks, 0);
     }
     state.treeRows = rows;
+    const overviewRows: TreeRow[] = [];
+    const walkOverview = (blocks: Block[], depth: number) => {
+      for (const block of blocks) {
+        const hasChildren = !!block.children?.length;
+        overviewRows.push({
+          ...rowFor(block, depth, hasChildren, hasChildren),
+          pad: `${4 + depth * 12}px`,
+        });
+        if (hasChildren) walkOverview(block.children!, depth + 1);
+      }
+    };
+    if (state.templateIsPattern) walkOverview(editor.getModel().blocks, 0);
+    state.patternOverviewRows = overviewRows;
   }
 
   // Tree View drag/reorder. The source row remains in place and an absolutely
@@ -5005,7 +5167,71 @@ Publr.store("chrome", () => {
     state.designColorFamilyError = "";
   }
 
+  function syncPatternOverview(): void {
+    state.patternColorSchemesShown = state.templateIsPattern;
+    state.patternDefinitionMode = state.templateMode === "definition";
+    state.patternSchemeTitle = state.patternDefinitionMode
+      ? "Default pattern style"
+      : "Pattern style";
+    state.patternSchemeNote = state.patternDefinitionMode ? "" : "Applies to this copy";
+    if (!state.templateIsPattern) {
+      state.patternStyleSelectorShown = false;
+      state.patternColorSchemes = [];
+      return;
+    }
+    const disabledContexts = new Set(state.patternDisabledColorContexts);
+    const legacyContexts = new Set(state.patternLegacyColorContexts);
+    const contexts = themeColorContexts(activeTheme());
+    if (
+      state.patternDefinitionMode &&
+      !contexts.some(
+        (context) =>
+          context.key === state.patternDefaultColorContext && !disabledContexts.has(context.key),
+      )
+    ) {
+      const fallback =
+        contexts.find((context) => !disabledContexts.has(context.key)) ?? contexts[0];
+      state.patternDefaultColorContext = fallback?.key ?? "default";
+      disabledContexts.delete(state.patternDefaultColorContext);
+      state.patternDisabledColorContexts = [...disabledContexts];
+    }
+    const rows = contexts
+      .filter(
+        (context) =>
+          state.patternDefinitionMode ||
+          !disabledContexts.has(context.key) ||
+          legacyContexts.has(context.key) ||
+          context.key === state.patternDefaultColorContext,
+      )
+      .map((context) => {
+        const isDefault = context.key === state.patternDefaultColorContext;
+        const disabled = disabledContexts.has(context.key);
+        return {
+          ...context,
+          pressed: isDefault,
+          default: isDefault,
+          disabled,
+          enabled: !disabled,
+          availabilityShown: state.patternDefinitionMode && !isDefault,
+          availabilityLabel: disabled ? `Enable ${context.label}` : `Disable ${context.label}`,
+          selectLabel: state.patternDefinitionMode
+            ? disabled
+              ? `Enable ${context.label} before making it the default pattern style`
+              : `Use ${context.label} as the default pattern style`
+            : `Apply ${context.label} to this copy`,
+          selectDisabled: state.patternDefinitionMode && disabled,
+          statusLabel: disabled ? "Disabled" : state.patternDefinitionMode ? "Default" : "Selected",
+          statusShown: disabled || isDefault,
+        };
+      });
+    state.patternColorSchemes = rows;
+    state.patternStyleSelectorShown = state.patternDefinitionMode
+      ? contexts.length > 1
+      : rows.length > 1;
+  }
+
   function syncBlockPanel() {
+    syncPatternOverview();
     const n = editor.selection.blocks.length;
     const id = panelTarget();
     let block = id ? editor.getBlock(id) : null;
@@ -5072,11 +5298,32 @@ Publr.store("chrome", () => {
           .map(colorContextKey)
           .find((key): key is string => !!key);
         const activeContext = storedContext || inferredContext || "default";
-        state.blockPatternContexts = themeColorContexts(activeTheme()).map((context) => ({
-          ...context,
-          pressed: context.key === activeContext,
-        }));
-      } else state.blockPatternContexts = [];
+        const disabledContexts = new Set(patternDef.disabledColorContexts ?? []);
+        const legacyContexts = new Set(
+          Array.isArray(block.settings?.legacyColorContexts)
+            ? block.settings.legacyColorContexts.filter(
+                (context): context is string => typeof context === "string",
+              )
+            : [],
+        );
+        state.blockPatternActiveContext = activeContext;
+        state.blockPatternContexts = themeColorContexts(activeTheme())
+          .filter(
+            (context) =>
+              !disabledContexts.has(context.key) ||
+              context.key === activeContext ||
+              legacyContexts.has(context.key),
+          )
+          .map((context) => ({
+            ...context,
+            pressed: context.key === activeContext,
+          }));
+        state.blockPatternContextShown = state.blockPatternContexts.length > 1;
+      } else {
+        state.blockPatternContexts = [];
+        state.blockPatternContextShown = false;
+        state.blockPatternActiveContext = "default";
+      }
       state.blockLabel = blockLabelOf(block);
       // pattern instances all share the pattern-root icon (tree/toolbar/card agree)
       state.blockIcon = patternDef ? iconOf(PATTERN_ROOT_TYPE) : presentationIcon(block);
@@ -5103,7 +5350,7 @@ Publr.store("chrome", () => {
       } as const;
       const roleLabel = {
         content: "Content",
-        structure: "Layout",
+        structure: "Structure",
         design: "Appearance",
         advanced: "Advanced",
       } as const;
@@ -5134,7 +5381,7 @@ Publr.store("chrome", () => {
             : JSON.stringify(dependency) !== JSON.stringify(s.when.notEquals);
         })
         .sort((a, b) => roleRank[a.role] - roleRank[b.role] || a.index - b.index);
-      state.blockSettings = settingSpecs.map(({ s, index, role }, rowIndex) => {
+      const settingRows = settingSpecs.map(({ s, index, role }) => {
         const mode = s.transform
           ? ("transform" as const)
           : s.style
@@ -5232,12 +5479,14 @@ Publr.store("chrome", () => {
             !media?.src && !!mediaAdapter.browse && !state.mediaBusy[`${block.id}:${index}`],
           section: roleLabel[role],
           sectionRole: role,
+          sectionStyle:
+            settingSpecs.find((candidate) => candidate.role === role)?.s.style ?? s.style ?? "",
           sectionKey: `${block.id}:${role}`,
           sectionExpanded:
             `${block.id}:${role}` in state.settingSectionOpen
               ? state.settingSectionOpen[`${block.id}:${role}`]
               : role !== "advanced",
-          showSection: rowIndex === 0 || settingSpecs[rowIndex - 1].role !== role,
+          showSection: false,
           help: s.help ?? "",
           responsive: responsiveValues.ranges.length > 1,
           responsiveSummary: responsiveValues.summary,
@@ -5246,6 +5495,20 @@ Publr.store("chrome", () => {
           responsivePoints: responsiveValues.points,
         };
       });
+      // A container's layout identity is the one high-frequency setting that
+      // belongs with the block identity. Promote it above the inspector tabs
+      // while keeping every other registry setting in the shared sections.
+      state.blockHeaderSettings = settingRows.filter(
+        (row) => row.isChoice && row.style === "layoutMode",
+      );
+      const inspectorSettings = settingRows.filter(
+        (row) => !(row.isChoice && row.style === "layoutMode"),
+      );
+      state.blockSettings = inspectorSettings.map((row, rowIndex) => ({
+        ...row,
+        showSection:
+          rowIndex === 0 || inspectorSettings[rowIndex - 1].sectionRole !== row.sectionRole,
+      }));
       // Universal STYLE controls (Phase C): shown per the block's `supports`,
       // disabled when policy locks style (content-only). Value from editor.getStyle.
       const supports =
@@ -5254,7 +5517,6 @@ Publr.store("chrome", () => {
         patternDef || editingMode !== "default" ? undefined : editor.blockVariants(id!);
       state.blockHasStyles = !!supports || !!variants?.length;
       state.styleResponsiveAvailable = editor.styleBackend().name === "classes";
-      state.styleBreakpointStatusShown = state.styleResponsiveAvailable && !patternDef;
       if (!state.styleResponsiveAvailable) {
         state.styleBreakpoint = "base";
         state.canvasResponsiveCompare = false;
@@ -5285,13 +5547,6 @@ Publr.store("chrome", () => {
         state.canvasViewportResizeLabel = `Resize ${activeBreakpoint.viewport} canvas`;
       }
       syncCanvasViewportFit();
-      const activeBreakpointIndex = resolvedBreakpoints.findIndex(
-        (breakpoint) => breakpoint.key === activeBreakpoint.key,
-      );
-      state.styleBreakpointHelp =
-        activeBreakpointIndex === 0
-          ? "Starting point"
-          : `Builds on ${resolvedBreakpoints[activeBreakpointIndex - 1]?.label ?? "Mobile"}`;
       const breakpointOptions = resolvedBreakpoints.map((option) => ({
         ...option,
         hasValue: Object.keys(STYLE_PROPS).some(
@@ -5590,6 +5845,12 @@ Publr.store("chrome", () => {
         blockSupportsStyle(supports, "borderRadius");
       state.boxBorderRadiusShown = blockSupportsStyle(supports, "borderRadius");
       state.spacingBoxShown = state.boxPaddingShown || state.boxMarginShown || state.boxBorderShown;
+      const boxResponsiveValues = responsiveValueRanges(id!, boxModelResponsiveProps, "");
+      state.boxResponsive = boxResponsiveValues.ranges.length > 1;
+      state.boxResponsiveSummary = boxResponsiveValues.summary;
+      state.boxResponsiveChanges = boxResponsiveValues.changes;
+      state.boxResponsiveRanges = boxResponsiveValues.ranges;
+      state.boxResponsivePoints = boxResponsiveValues.points;
       type BoxValueKey =
         | "boxPaddingTop"
         | "boxPaddingRight"
@@ -5889,18 +6150,6 @@ Publr.store("chrome", () => {
       ]
         .filter((r) => r.shown)
         .map((r) => colorRow(r.prop, r.label));
-      const backgroundValue = effectiveStyle(id!, "backgroundColor").value;
-      const foregroundValue = effectiveStyle(id!, "textColor").value;
-      state.colorContextShown = shown("backgroundColor") && shown("textColor");
-      state.colorContextOptions = state.colorContextShown
-        ? themeColorContexts(theme).map((context) => ({
-            key: context.key,
-            label: context.label,
-            surface: context.surface,
-            foreground: context.foreground,
-            pressed: backgroundValue === context.surface && foregroundValue === context.foreground,
-          }))
-        : [];
       state.dimensionRows = [
         {
           prop: "padding",
@@ -6211,6 +6460,7 @@ Publr.store("chrome", () => {
     } else {
       state.blockDescription = "";
       state.blockSettings = [];
+      state.blockHeaderSettings = [];
       state.blockHasStyles = false;
       state.styleHasValues = false;
       state.blockInspectorTab = "settings";
@@ -6290,6 +6540,12 @@ Publr.store("chrome", () => {
       state.blockPatternRoot = "";
       state.blockPatternContent = [];
       state.blockPatternContexts = [];
+      state.blockPatternContextShown = false;
+      state.blockPatternActiveContext = "default";
+      if (!state.templateIsPattern) {
+        state.patternColorSchemesShown = false;
+        state.patternColorSchemes = [];
+      }
     }
     const lockedTemplatePart = documentTemplateNodes().find(
       (candidate) => candidate.id === state.selectedTemplateNodeId && candidate.kind === "part",
@@ -6302,6 +6558,7 @@ Publr.store("chrome", () => {
       state.blockDescription =
         "A shared template part. Edit the original to update every document that uses it.";
       state.blockSettings = [];
+      state.blockHeaderSettings = [];
       state.blockHasStyles = false;
       state.blockInspectorTab = "settings";
       state.blockIsPattern = false;
@@ -6309,6 +6566,10 @@ Publr.store("chrome", () => {
       state.blockTemplatePartName = lockedTemplatePart.name;
       state.blockTemplatePartLabel = lockedTemplatePart.label;
       state.blockIsContainer = false;
+      if (!state.templateIsPattern) {
+        state.patternColorSchemesShown = false;
+        state.patternColorSchemes = [];
+      }
     }
     if (state.boxEditorOpen) scheduleBoxEditorPosition();
     state.emptyNote = n > 1 ? `${n} blocks selected.` : "No block selected.";
@@ -6486,10 +6747,75 @@ Publr.store("chrome", () => {
       help: string;
       saveLabel: string;
       error: string;
+      patternDefaultColorContext: string;
+      patternDisabledColorContexts: string[];
+      patternLegacyColorContexts: string[];
     };
   }
 
+  interface IsolationViewportSnapshot {
+    canvasX: number;
+    canvasY: number;
+    targetVisualTop: number | null;
+    ancestors: Array<{ element: Element; left: number; top: number }>;
+    hostX: number;
+    hostY: number;
+  }
+
   const isolationStack: IsolationFrame[] = [];
+  let parkedViewport: IsolationViewportSnapshot | null = null;
+
+  const captureIsolationViewport = (targetId?: string | null): IsolationViewportSnapshot => {
+    const canvasWindow = canvasDocument.defaultView;
+    const target = targetId
+      ? canvasEl.querySelector<HTMLElement>(`[data-pb-id="${CSS.escape(targetId)}"]`)
+      : null;
+    const ancestors: IsolationViewportSnapshot["ancestors"] = [];
+    for (let element = canvasFrame.parentElement; element; element = element.parentElement)
+      ancestors.push({ element, left: element.scrollLeft, top: element.scrollTop });
+    return {
+      canvasX: canvasWindow?.scrollX ?? 0,
+      canvasY: canvasWindow?.scrollY ?? 0,
+      targetVisualTop: target?.getBoundingClientRect().top ?? null,
+      ancestors,
+      hostX: window.scrollX,
+      hostY: window.scrollY,
+    };
+  };
+
+  const restoreIsolationViewport = (
+    snapshot: IsolationViewportSnapshot | null,
+    targetId: string | null,
+  ): void => {
+    if (!snapshot) return;
+    const restore = () => {
+      if (state.templateMode) return;
+      for (const { element, left, top } of snapshot.ancestors) {
+        element.scrollLeft = left;
+        element.scrollTop = top;
+      }
+      window.scrollTo(snapshot.hostX, snapshot.hostY);
+      const canvasWindow = canvasDocument.defaultView;
+      if (!canvasWindow) return;
+      let canvasY = snapshot.canvasY;
+      if (targetId && snapshot.targetVisualTop != null) {
+        const target = canvasEl.querySelector<HTMLElement>(
+          `[data-pb-id="${CSS.escape(targetId)}"]`,
+        );
+        if (target)
+          canvasY = Math.max(
+            0,
+            canvasWindow.scrollY + target.getBoundingClientRect().top - snapshot.targetVisualTop,
+          );
+      }
+      canvasWindow.scrollTo(snapshot.canvasX, canvasY);
+    };
+    // loadHtml and selection are synchronous, so restore immediately to avoid
+    // a top-pinned paint. Repeat after the frame so Apply-to-copy's subsequent
+    // setBlockChildren render and focus restoration cannot dislodge the page.
+    restore();
+    requestAnimationFrame(restore);
+  };
 
   // Classes lent to the canvas as a BACKDROP during instance isolation (see
   // enterIsolation) — the instance editor isolates the copy's CHILDREN, so the
@@ -6539,6 +6865,9 @@ Publr.store("chrome", () => {
         help: state.templateHelp,
         saveLabel: state.templateSaveLabel,
         error: state.templateError,
+        patternDefaultColorContext: state.patternDefaultColorContext,
+        patternDisabledColorContexts: [...state.patternDisabledColorContexts],
+        patternLegacyColorContexts: [...state.patternLegacyColorContexts],
       },
     });
     if (backdropClasses.length) canvasEl.classList.remove(...backdropClasses);
@@ -6552,12 +6881,17 @@ Publr.store("chrome", () => {
     scope: IsolationScope,
     backdrop = "",
     nested = false,
+    restoreTargetId: string | null = null,
   ) {
     isolationOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (!nested) parkedDoc = editor.serialize(); // full editor-pipeline wire — everything survives
+    if (!nested) {
+      parkedDoc = editor.serialize(); // full editor-pipeline wire — everything survives
+      parkedViewport = captureIsolationViewport(restoreTargetId);
+    }
     currentIsolationScope = scope;
     state.templateIsPattern =
       state.templateMode === "definition" || state.templateMode === "instance";
+    if (state.templateIsPattern) inspectedId = null;
     state.templateCanvasShown = state.templateIsPattern || state.templateMode === "template-part";
     mountBareCanvas();
     state.templateLabel = label;
@@ -6574,10 +6908,11 @@ Publr.store("chrome", () => {
     editor.loadHtml(content);
     syncIsolationBreadcrumbs();
     requestAnimationFrame(syncIsolationCanvasHeight);
-    // land selected on the pattern's root element — the sidebar opens on the
-    // whole composition, not on nothing
+    // Pattern isolation opens at the pattern level with no implied block.
+    // Other isolation modes retain their established root-block landing.
     const root = editor.getModel().blocks[0];
-    if (root) editor.selectBlock(root.id);
+    if (root && !state.templateIsPattern) editor.selectBlock(root.id);
+    else editor.clearSelection();
   }
 
   function openTemplateEditor(name: string) {
@@ -6591,9 +6926,29 @@ Publr.store("chrome", () => {
     state.templateLead = "Editing pattern:";
     state.templateHelp = "Publishing updates the library design; placed copies never change";
     state.templateSaveLabel = "Publish pattern";
+    state.patternDefaultColorContext = def.defaultColorContext ?? "default";
+    state.patternDisabledColorContexts = [...(def.disabledColorContexts ?? [])];
+    state.patternLegacyColorContexts = [];
     enterIsolation(def.label, hydrateTemplateParts(def.content), {
       label: def.label,
       kind: "pattern",
+    });
+    if (!def.defaultColorContext) {
+      const inferredContext = flattenBlocks(editor.getModel().blocks)
+        .flatMap((block) => [
+          editor.getStyle(block.id, "backgroundColor"),
+          editor.getStyle(block.id, "textColor"),
+          editor.getStyle(block.id, "borderColor"),
+        ])
+        .map(colorContextKey)
+        .find((key): key is string => !!key);
+      state.patternDefaultColorContext = inferredContext ?? "default";
+      syncBlockPanel();
+    }
+    setSidebarOpen(true);
+    state.sidebarTab = "document";
+    requestAnimationFrame(() => {
+      if (state.templateMode === "definition") state.sidebarTab = "document";
     });
   }
 
@@ -6614,6 +6969,24 @@ Publr.store("chrome", () => {
     state.templateLead = "Editing pattern:";
     state.templateHelp = "Changes apply only to this copy";
     state.templateSaveLabel = "Apply to this copy";
+    const storedContext =
+      typeof block.settings?.colorContext === "string" ? block.settings.colorContext : "";
+    const inferredContext = flattenBlocks(block.children)
+      .flatMap((candidate) => [
+        editor.getStyle(candidate.id, "backgroundColor"),
+        editor.getStyle(candidate.id, "textColor"),
+        editor.getStyle(candidate.id, "borderColor"),
+      ])
+      .map(colorContextKey)
+      .find((key): key is string => !!key);
+    state.patternDefaultColorContext =
+      storedContext || inferredContext || def?.defaultColorContext || "default";
+    state.patternDisabledColorContexts = [...(def?.disabledColorContexts ?? [])];
+    state.patternLegacyColorContexts = Array.isArray(block.settings?.legacyColorContexts)
+      ? block.settings.legacyColorContexts.filter(
+          (context): context is string => typeof context === "string",
+        )
+      : [];
     // Borrow the instance root's classes as the canvas backdrop so the
     // children render on the section's own background (the copy's root frame
     // stays in the page — Save writes back via setBlockChildren).
@@ -6623,7 +6996,13 @@ Publr.store("chrome", () => {
       { label: def?.label ?? "Pattern", kind: "pattern" },
       block.classes,
       nested,
+      id,
     );
+    setSidebarOpen(true);
+    state.sidebarTab = "document";
+    requestAnimationFrame(() => {
+      if (state.templateMode === "instance") state.sidebarTab = "document";
+    });
   }
 
   function openPageTemplateEditor(name: string) {
@@ -6688,7 +7067,11 @@ Publr.store("chrome", () => {
     });
   }
 
-  function returnToParentIsolation(content?: string): boolean {
+  function returnToParentIsolation(
+    content?: string,
+    colorContext?: string,
+    legacyColorContexts?: readonly string[],
+  ): boolean {
     const frame = isolationStack.pop();
     if (!frame) return false;
     if (backdropClasses.length) canvasEl.classList.remove(...backdropClasses);
@@ -6710,9 +7093,13 @@ Publr.store("chrome", () => {
     state.templateHelp = frame.ui.help;
     state.templateSaveLabel = frame.ui.saveLabel;
     state.templateError = frame.ui.error;
+    state.patternDefaultColorContext = frame.ui.patternDefaultColorContext;
+    state.patternDisabledColorContexts = [...frame.ui.patternDisabledColorContexts];
+    state.patternLegacyColorContexts = [...frame.ui.patternLegacyColorContexts];
     editor.setPatternsOpaque(true);
     editor.loadHtml(frame.content);
-    if (content != null) editor.setBlockChildren(frame.targetId, content);
+    if (content != null)
+      editor.setBlockChildren(frame.targetId, content, colorContext, legacyColorContexts);
     else editor.selectBlock(frame.targetId);
     syncIsolationBreadcrumbs();
     syncCanvasViewportFit();
@@ -6839,6 +7226,8 @@ Publr.store("chrome", () => {
     if (returnToParentIsolation()) return;
     const wasPrimitive = state.templateMode === "primitive";
     const restoreId = instanceId; // instance mode: re-select the copy we edited
+    const restoreViewport = parkedViewport;
+    parkedViewport = null;
     const reopenDesign = returnToDesignWorkspace;
     returnToDesignWorkspace = null;
     state.templateMode = false;
@@ -6847,6 +7236,16 @@ Publr.store("chrome", () => {
     state.templateCanvasShown = false;
     state.templateChromeShown = false;
     state.templateError = "";
+    state.patternColorSchemesShown = false;
+    state.patternStyleSelectorShown = false;
+    state.patternColorSchemes = [];
+    state.patternDefaultColorContext = "default";
+    state.patternDisabledColorContexts = [];
+    state.patternLegacyColorContexts = [];
+    state.patternDefinitionMode = false;
+    state.patternSchemeTitle = "Default pattern style";
+    state.patternSchemeNote = "";
+    state.patternOverviewRows = [];
     syncCanvasViewportFit();
     templateName = null;
     instanceId = null;
@@ -6882,7 +7281,7 @@ Publr.store("chrome", () => {
     }
     // ids ride the wire (serialize → loadHtml round-trips them), so the
     // parked document still knows the instance — selection lands back on it
-    if (restoreId) editor.selectBlock(restoreId);
+    if (restoreId) editor.selectBlock(restoreId, { center: true });
     // Cancel/commit hide with the mode — return focus to the control that
     // opened it rather than dropping it on <body>.
     if (isolationOpener?.isConnected) isolationOpener.focus();
@@ -6893,6 +7292,7 @@ Publr.store("chrome", () => {
       syncDesignPanel();
       if (reopenDesign === "patterns") requestAnimationFrame(fillPatternPreviews);
     }
+    restoreIsolationViewport(restoreViewport, restoreId);
   }
 
   async function saveTemplate() {
@@ -6920,9 +7320,11 @@ Publr.store("chrome", () => {
       // back into the instance — one undo entry on the restored document
       const id = instanceId;
       const content = editor.serialize();
-      if (returnToParentIsolation(content)) return;
+      const colorContext = state.patternDefaultColorContext;
+      const legacyColorContexts = [...state.patternLegacyColorContexts];
+      if (returnToParentIsolation(content, colorContext, legacyColorContexts)) return;
       closeTemplateEditor();
-      if (id) editor.setBlockChildren(id, content);
+      if (id) editor.setBlockChildren(id, content, colorContext, legacyColorContexts);
       return;
     }
     if (state.templateMode === "template-part") {
@@ -6964,7 +7366,10 @@ Publr.store("chrome", () => {
     // definition restored on failure, superseded content archived per
     // version (the future Symbol "Update from Source" base).
     try {
-      const { kind } = publishPattern(name, editor.serialize());
+      const { kind } = publishPattern(name, editor.serialize(), {
+        defaultColorContext: state.patternDefaultColorContext,
+        disabledColorContexts: state.patternDisabledColorContexts,
+      });
       if (kind === "none") {
         closeTemplateEditor();
         return;
@@ -6984,6 +7389,12 @@ Publr.store("chrome", () => {
         ...(published.category ? { category: published.category } : {}),
         ...(published.description ? { description: published.description } : {}),
         ...(published.icon ? { icon: published.icon } : {}),
+        ...(published.defaultColorContext
+          ? { defaultColorContext: published.defaultColorContext }
+          : {}),
+        ...(published.disabledColorContexts?.length
+          ? { disabledColorContexts: [...published.disabledColorContexts] }
+          : {}),
       };
       const patterns = [...(activeTheme().patterns ?? [])];
       const at = patterns.findIndex((candidate) => candidate.name === name);
@@ -7690,7 +8101,11 @@ Publr.store("chrome", () => {
         syncBlockPanel();
         if (state.canvasResponsiveCompare) requestAnimationFrame(syncResponsiveComparison);
       },
-      jumpToStyleBreakpoint(d: Dataset) {
+      jumpToStyleBreakpoint(d: Dataset, ctx?: { event: Event }) {
+        if (Date.now() < responsiveBoundaryClickSuppressedUntil) {
+          ctx?.event.preventDefault();
+          return;
+        }
         if (!state.styleResponsiveAvailable) return;
         const breakpoint = styleBreakpoints().find((option) => option.key === d.breakpoint);
         if (!breakpoint || state.styleBreakpoint === breakpoint.key) return;
@@ -7701,6 +8116,172 @@ Publr.store("chrome", () => {
         syncCanvasViewport();
         syncBlockPanel();
         if (state.canvasResponsiveCompare) requestAnimationFrame(syncResponsiveComparison);
+      },
+      resetResponsiveValueRange(d: Dataset, ctx?: { event: Event }) {
+        if (Date.now() < responsiveBoundaryClickSuppressedUntil) {
+          ctx?.event.preventDefault();
+          return;
+        }
+        const id = panelTarget();
+        const breakpoint = styleBreakpoints().find((option) => option.key === d.breakpoint)?.key;
+        const props = responsiveMutationProps(d.props);
+        if (!id || !breakpoint || !props.length) return;
+        resetResponsiveBoundary(id, props, breakpoint);
+      },
+      moveResponsiveBoundary(d: Dataset, ctx: { event: Event }) {
+        const event = ctx.event as KeyboardEvent;
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        const id = panelTarget();
+        const breakpoints = styleBreakpoints();
+        const sourceIndex = Number(d.index);
+        const minIndex = Number(d.minIndex);
+        const maxIndex = Number(d.maxIndex);
+        const direction = event.key === "ArrowLeft" ? -1 : 1;
+        const targetIndex = Math.max(minIndex, Math.min(maxIndex, sourceIndex + direction));
+        const source = breakpoints[sourceIndex]?.key;
+        const target = breakpoints[targetIndex]?.key;
+        const props = responsiveMutationProps(d.props);
+        if (!id || !source || !target || target === source || !props.length) return;
+        event.preventDefault();
+        moveResponsiveBoundary(id, props, source, target);
+      },
+      startResponsiveBoundaryDrag(d: Dataset, ctx: { event: Event }) {
+        const event = ctx.event as PointerEvent;
+        const button = event.currentTarget;
+        const id = panelTarget();
+        const breakpoints = styleBreakpoints();
+        const sourceIndex = Number(d.index);
+        const minIndex = Number(d.minIndex);
+        const maxIndex = Number(d.maxIndex);
+        const source = breakpoints[sourceIndex]?.key;
+        const props = responsiveMutationProps(d.props);
+        if (
+          !id ||
+          !source ||
+          !props.length ||
+          !Number.isFinite(sourceIndex) ||
+          !Number.isFinite(minIndex) ||
+          !Number.isFinite(maxIndex) ||
+          minIndex >= maxIndex ||
+          !(button instanceof HTMLElement)
+        )
+          return;
+        cancelResponsiveBoundaryDrag?.();
+        const doc = button.ownerDocument;
+        const field = button.closest<HTMLElement>(".pbe-responsive-field");
+        const points =
+          button.closest<HTMLElement>(".pbe-responsive-field__points") ??
+          field?.querySelector<HTMLElement>(".pbe-responsive-field__points");
+        const track = field?.querySelector<HTMLElement>(".pbe-responsive-field__track");
+        const pointButtons = [
+          ...(points?.querySelectorAll<HTMLButtonElement>(".pbe-responsive-field__point") ?? []),
+        ];
+        const rangeButtons = [...(track?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+        const rangeBoundary = rangeButtons.find(
+          (candidate) => candidate.dataset.breakpoint === source,
+        );
+        const rangeIndex = rangeBoundary ? rangeButtons.indexOf(rangeBoundary) : -1;
+        const previousRange = rangeIndex > 0 ? rangeButtons[rangeIndex - 1] : undefined;
+        if (!field || !points || !rangeBoundary || !previousRange) return;
+        const pointsRect = points?.getBoundingClientRect();
+        const startX = event.clientX;
+        const stepWidth =
+          pointsRect && pointsRect.width > 0 ? pointsRect.width / breakpoints.length : 32;
+        const originalPreviousGrow =
+          Number(previousRange.style.flexGrow) ||
+          Number(doc.defaultView?.getComputedStyle(previousRange).flexGrow) ||
+          1;
+        const originalBoundaryGrow =
+          Number(rangeBoundary.style.flexGrow) ||
+          Number(doc.defaultView?.getComputedStyle(rangeBoundary).flexGrow) ||
+          1;
+        const originalPoints = pointButtons.map((point) => ({
+          point,
+          changed: point.hasAttribute("data-changed"),
+          color: point.style.getPropertyValue("--pbe-responsive-color"),
+        }));
+        const sourcePoint = pointButtons.find(
+          (point) => Number(point.dataset.index) === sourceIndex,
+        );
+        const sourceColor = sourcePoint?.style.getPropertyValue("--pbe-responsive-color") ?? "";
+        let targetIndex = sourceIndex;
+        let moved = false;
+        const positionForClientX = (clientX: number): number =>
+          Math.max(minIndex, Math.min(maxIndex, sourceIndex + (clientX - startX) / stepWidth));
+        const applyPreview = (position: number): void => {
+          const nearestIndex = Math.max(minIndex, Math.min(maxIndex, Math.round(position)));
+          const snapDistance = Math.min(6 / stepWidth, 0.1);
+          const snapped = Math.abs(position - nearestIndex) <= snapDistance;
+          const previewPosition = snapped ? nearestIndex : position;
+          targetIndex = nearestIndex;
+          const delta = previewPosition - sourceIndex;
+          previousRange.style.flexGrow = String(originalPreviousGrow + delta);
+          rangeBoundary.style.flexGrow = String(originalBoundaryGrow - delta);
+          for (const original of originalPoints) {
+            if (original.changed) original.point.dataset.changed = "true";
+            else original.point.removeAttribute("data-changed");
+            original.point.removeAttribute("data-drop-target");
+            original.point.style.setProperty("--pbe-responsive-color", original.color);
+          }
+          if (snapped && targetIndex !== sourceIndex) sourcePoint?.removeAttribute("data-changed");
+          const targetPoint = snapped
+            ? pointButtons.find((point) => Number(point.dataset.index) === targetIndex)
+            : undefined;
+          if (targetPoint && targetIndex !== sourceIndex) {
+            targetPoint.dataset.changed = "true";
+            targetPoint.dataset.dropTarget = "true";
+            if (sourceColor) targetPoint.style.setProperty("--pbe-responsive-color", sourceColor);
+          }
+          field.dataset.responsiveDragging = "true";
+          rangeBoundary.dataset.dragging = "true";
+          const previewLabel =
+            snapped && targetIndex !== sourceIndex
+              ? (targetPoint?.textContent?.trim() ?? breakpoints[targetIndex]?.viewport ?? "")
+              : "";
+          if (previewLabel) rangeBoundary.dataset.previewLabel = previewLabel;
+          else rangeBoundary.removeAttribute("data-preview-label");
+        };
+        const restorePreview = (): void => {
+          previousRange.style.flexGrow = String(originalPreviousGrow);
+          rangeBoundary.style.flexGrow = String(originalBoundaryGrow);
+          for (const original of originalPoints) {
+            if (original.changed) original.point.dataset.changed = "true";
+            else original.point.removeAttribute("data-changed");
+            original.point.removeAttribute("data-drop-target");
+            original.point.style.setProperty("--pbe-responsive-color", original.color);
+          }
+          field.removeAttribute("data-responsive-dragging");
+          rangeBoundary.removeAttribute("data-dragging");
+          rangeBoundary.removeAttribute("data-preview-label");
+        };
+        const clear = (): void => {
+          doc.removeEventListener("pointermove", onMove);
+          doc.removeEventListener("pointerup", onUp);
+          doc.removeEventListener("pointercancel", onCancel);
+          button.removeAttribute("data-dragging");
+          restorePreview();
+          cancelResponsiveBoundaryDrag = null;
+        };
+        const onMove = (moveEvent: PointerEvent): void => {
+          moved ||= Math.abs(moveEvent.clientX - startX) > 3;
+          applyPreview(positionForClientX(moveEvent.clientX));
+        };
+        const onUp = (upEvent: PointerEvent): void => {
+          const position = positionForClientX(upEvent.clientX);
+          targetIndex = Math.max(minIndex, Math.min(maxIndex, Math.round(position)));
+          applyPreview(targetIndex);
+          const target = breakpoints[targetIndex]?.key;
+          if (moved) responsiveBoundaryClickSuppressedUntil = Date.now() + 400;
+          clear();
+          if (moved && target && target !== source)
+            moveResponsiveBoundary(id, props, source, target);
+        };
+        const onCancel = (): void => clear();
+        cancelResponsiveBoundaryDrag = clear;
+        applyPreview(sourceIndex);
+        doc.addEventListener("pointermove", onMove);
+        doc.addEventListener("pointerup", onUp);
+        doc.addEventListener("pointercancel", onCancel);
       },
       resetBlockStyles() {
         const id = panelTarget();
@@ -7845,19 +8426,6 @@ Publr.store("chrome", () => {
         // without a width applies the 1px step.
         if (d.prop === "borderColor" && value && !readStyle(id, "borderWidth"))
           writeStyle(id, "borderWidth", "1");
-      },
-      applyColorContext(d: Dataset) {
-        const id = panelTarget();
-        const context = state.colorContextOptions.find((option) => option.key === d.context);
-        if (!id || !context) return;
-        state.colorPickerOpen = "";
-        const explicitlyPressed =
-          readStyle(id, "backgroundColor") === context.surface &&
-          readStyle(id, "textColor") === context.foreground;
-        writeStyles(id, {
-          backgroundColor: explicitlyPressed ? "" : context.surface,
-          textColor: explicitlyPressed ? "" : context.foreground,
-        });
       },
       toggleColorPicker(d: Dataset, ctx: { event: Event }) {
         if (!d.prop) return;
@@ -9127,9 +9695,59 @@ Publr.store("chrome", () => {
       },
       applyPatternColorContext(d: Dataset) {
         if (state.blockPatternRoot && d.context) {
-          editor.setPatternColorContext(state.blockPatternRoot, d.context);
+          const definition = state.blockPattern ? getPattern(state.blockPattern) : undefined;
+          const preserveContext = definition?.disabledColorContexts?.includes(
+            state.blockPatternActiveContext,
+          )
+            ? state.blockPatternActiveContext
+            : undefined;
+          editor.setPatternColorContext(state.blockPatternRoot, d.context, preserveContext);
           syncBlockPanel();
         }
+      },
+      selectPatternDefaultColorContext(d: Dataset) {
+        if (!state.patternColorSchemesShown || !d.context) return;
+        const context = state.patternColorSchemes.find((option) => option.key === d.context);
+        if (!context) return;
+        if (state.templateMode === "instance") {
+          if (
+            state.patternDisabledColorContexts.includes(state.patternDefaultColorContext) &&
+            !state.patternLegacyColorContexts.includes(state.patternDefaultColorContext)
+          )
+            state.patternLegacyColorContexts = [
+              ...state.patternLegacyColorContexts,
+              state.patternDefaultColorContext,
+            ];
+          state.patternDefaultColorContext = context.key;
+          editor.setDocumentColorContext(context.key);
+          syncBlockPanel();
+          state.sidebarTab = "document";
+          return;
+        }
+        if (state.templateMode !== "definition") return;
+        if (context.disabled) return;
+        state.patternDefaultColorContext = context.key;
+        state.patternDisabledColorContexts = state.patternDisabledColorContexts.filter(
+          (key) => key !== context.key,
+        );
+        editor.setDocumentColorContext(context.key);
+        syncBlockPanel();
+        state.sidebarTab = "document";
+      },
+      togglePatternColorContextAvailability(d: Dataset) {
+        if (
+          state.templateMode !== "definition" ||
+          !state.patternColorSchemesShown ||
+          !d.context ||
+          d.context === state.patternDefaultColorContext ||
+          !state.patternColorSchemes.some((option) => option.key === d.context)
+        )
+          return;
+        const disabled = new Set(state.patternDisabledColorContexts);
+        if (disabled.has(d.context)) disabled.delete(d.context);
+        else disabled.add(d.context);
+        state.patternDisabledColorContexts = [...disabled];
+        syncBlockPanel();
       },
       editDefinition(d: Dataset) {
         if (d.pattern) openTemplateEditor(d.pattern); // the library's edit affordance
@@ -9801,6 +10419,7 @@ Publr.store("chrome", () => {
 
       return () => {
         if (primitiveToastTimer) clearTimeout(primitiveToastTimer);
+        cancelResponsiveBoundaryDrag?.();
         endTreeDrag();
         window.clearTimeout(engineTimer);
         stopCanvasResize();
