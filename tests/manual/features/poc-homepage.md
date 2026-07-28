@@ -15,8 +15,8 @@ always uses the live pattern definitions rather than copied HTML.
       labels.
 - [ ] Editing one instance does not change its registered source pattern.
 - [ ] Inserting another pattern from the explorer creates an independent copy.
-- [ ] The plain editor at `/` still opens with the small “Hello, PublrEditor”
-      demo document.
+- [ ] The plain editor at `/` opens the same homepage composition as its
+      seed (persisted edits win; ⋮ → Reset demo data returns to the seed).
 
 ## Fixture
 

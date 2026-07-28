@@ -3,9 +3,10 @@
 // Everything the builder UI is — topbar, rails, sidebar, patterns explorer,
 // the chrome island — lives in the library now (createEditorShell +
 // shell.html); this file only supplies what a real host would: block
-// registration, the site theme, a CSS engine, persistence hooks (none here —
-// the wire panes are the demo's "persistence"), and content: the #seed
-// template or a ?fixture= URL.
+// registration, the site theme, a CSS engine, persistence (the library's
+// browser store for the document, demo-local localStorage for templates and
+// site design — CMS-free by design), and content: the #seed template or a
+// ?fixture= URL.
 //
 // Even "core" blocks go through the public registration API — there is no
 // privileged path: Publr core, plugins, and the devtools console all call
@@ -26,6 +27,7 @@ import siteCss from "./styles.css?inline";
 import "./styles.css";
 
 const {
+  browserPersistence,
   createEditorShell,
   DEFAULT_THEME,
   HEARTH_THEME,
@@ -98,17 +100,31 @@ const DEMO_PICK = new Set([
   "container-gutter",
 ]);
 
+// --- CMS-free persistence -----------------------------------------------------
+// The demo IS a host, so it opts into the library's browser store for the
+// document and keeps its own localStorage entries for the two host-owned
+// documents (templates below, site design here — the design document also
+// carries the pattern library, so published pattern edits ride along).
+// Everything survives reload; "Reset demo data" in the ⋮ menu clears all of it.
+const DEMO_CONTENT_STORAGE_KEY = "publr-editor.demo.document.v1";
+const DEMO_DESIGN_STORAGE_KEY = "publr-editor.demo.site-design.v1";
+const demoPersistence = browserPersistence({ key: DEMO_CONTENT_STORAGE_KEY });
+function loadDemoSiteDesign(): PublrEditor.Theme | null {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(DEMO_DESIGN_STORAGE_KEY) ?? "null",
+    ) as PublrEditor.Theme | null;
+    return saved && Array.isArray(saved.tokens) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
 const DEMO_TEMPLATE_STORAGE_KEY = "publr-editor.demo.templates.v1";
 const DEFAULT_DEMO_TEMPLATE =
   '<div data-pb-block="template-part" data-pb-children data-publr-template-part="site-header"><script type="application/json" data-pb-settings>{"name":"site-header"}</script></div>' +
   '<div data-pb-block="template-slot" data-publr-slot="content"><script type="application/json" data-pb-settings>{"name":"content"}</script><span>Content</span></div>' +
   '<div data-pb-block="template-part" data-pb-children data-publr-template-part="site-footer"><script type="application/json" data-pb-settings>{"name":"site-footer"}</script></div>';
-const LEGACY_DEMO_TEMPLATE_PARTS: Record<string, string> = {
-  "site-header":
-    '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="flex items-center justify-between border-b border-border px-8 py-5"><h2 data-pb-block="heading" data-pb-tag="level" data-pb-rich="text">Publr</h2><p data-pb-block="paragraph" data-pb-rich="body">Shared template header</p></div>',
-  "site-footer":
-    '<div data-pb-block="group" data-pb-tag="tag" data-pb-children class="border-t border-border px-8 py-5"><p data-pb-block="paragraph" data-pb-rich="body">Built with PublrEditor</p></div>',
-};
 const templatePartPattern = (name: "home-header" | "home-footer"): string => {
   const pattern = HOMEPAGE_PATTERNS.find(([candidate]) => candidate === name)?.[1];
   if (!pattern) throw new Error(`PublrEditor demo: default pattern "${name}" is not registered`);
@@ -128,16 +144,6 @@ function loadDemoTemplateState(): DemoTemplateState {
       localStorage.getItem(DEMO_TEMPLATE_STORAGE_KEY) ?? "null",
     ) as Partial<DemoTemplateState> | null;
     const savedParts = saved?.parts && typeof saved.parts === "object" ? { ...saved.parts } : {};
-    if (
-      savedParts["site-header"] === LEGACY_DEMO_TEMPLATE_PARTS["site-header"] ||
-      savedParts["site-header"]?.includes("Shared template header")
-    )
-      savedParts["site-header"] = DEFAULT_DEMO_TEMPLATE_PARTS["site-header"];
-    if (
-      savedParts["site-footer"] === LEGACY_DEMO_TEMPLATE_PARTS["site-footer"] ||
-      savedParts["site-footer"]?.includes("Built with PublrEditor")
-    )
-      savedParts["site-footer"] = DEFAULT_DEMO_TEMPLATE_PARTS["site-footer"];
     return {
       template: typeof saved?.template === "string" ? saved.template : DEFAULT_DEMO_TEMPLATE,
       parts: {
@@ -211,13 +217,19 @@ function refreshInlineThemeCss(): void {
 }
 
 // Core blocks live in src/blocks/ — one file per block, registered through
-// the same public API a plugin would use. Patterns register second: their
+// the same public API a plugin would use. Patterns come second: their
 // fragments validate against the block registry.
 registerCoreBlocks();
-// The demo theme owns a deliberate pattern vocabulary. Generic starter
-// recipes stay available through the library API but do not pollute this
-// site's governed pattern collection.
-registerHomepagePatterns();
+// The demo theme owns a deliberate pattern vocabulary — as THEME DATA on the
+// persisting demo (theme.patterns, so pattern edits publish into the design
+// document and survive reloads: a code-registered pattern would conflict with
+// its saved edited copy at the next boot), and as code registration on the
+// hermetic fixture/visual entries (registerHomepagePatterns in the IIFE).
+// Generic starter recipes stay available through the library API but do not
+// pollute this site's governed pattern collection.
+const HOMEPAGE_THEME_PATTERNS: NonNullable<PublrEditor.Theme["patterns"]> = HOMEPAGE_PATTERNS.map(
+  ([name, def]) => ({ name, ...def }),
+);
 
 // Fixture fences ride Markdown indentation — normalize it before loading.
 const dedent = (html: string): string => {
@@ -230,10 +242,27 @@ const dedent = (html: string): string => {
     .trim();
 };
 
-function patternCompositionHtml(names: readonly string[]): string {
+// The demo document: the Hearth & Home homepage assembled from the theme's
+// registered patterns (the features/poc-homepage fixture composes the same
+// list). Resolved from the live pattern definitions, never copied HTML.
+const DEMO_HOMEPAGE_COMPOSITION = [
+  "home-hero",
+  "home-giveaway",
+  "home-steps",
+  "home-community",
+  "home-categories",
+] as const;
+
+function patternCompositionHtml(
+  names: readonly string[],
+  // The registry by default (fixtures compose live definitions); the demo
+  // seed resolves against its theme pattern list, which the shell has not
+  // installed yet when the `content` option is computed.
+  resolve: (name: string) => { content: string } | undefined = getPattern,
+): string {
   const documentRoot = document.createElement("div");
   for (const name of names) {
-    const pattern = getPattern(name);
+    const pattern = resolve(name);
     if (!pattern) throw new Error(`PublrEditor demo: fixture pattern "${name}" is not registered`);
     const instance = document.createElement("div");
     instance.setAttribute("data-pb-block", PATTERN_ROOT_TYPE);
@@ -319,22 +348,56 @@ function demoMediaAdapter(): PublrEditor.MediaAdapter {
 void (async () => {
   const params = new URLSearchParams(location.search);
   const fixtureId = params.get("fixture");
-  const fixtureMd =
-    fixtureId && /^[\w-]+(\/[\w-]+)+$/.test(fixtureId)
-      ? fixtureFiles[`../tests/manual/${fixtureId}.md`]
-      : undefined;
-  const templateWidth =
-    typeof fixtureMd === "string" && /^wide:\s*true\s*$/m.test(fixtureMd.split("```")[0])
+  const fixtureRun = !!fixtureId && /^[\w-]+(\/[\w-]+)+$/.test(fixtureId);
+  const fixtureMd = fixtureRun ? fixtureFiles[`../tests/manual/${fixtureId}.md`] : undefined;
+  // Fixture runs must reproduce their .md exactly, and the ?visual-* params
+  // are screenshot-baseline entries — all stay hermetic: no stored state, no
+  // persistence-dependent chrome (e.g. the design workspace Reset control),
+  // and the small #seed document instead of the homepage composition.
+  const persistDemo = !fixtureRun && ![...params.keys()].some((key) => key.startsWith("visual-"));
+  // Hermetic entries get the homepage patterns as code registrations (as
+  // before). The persisting demo feeds them through theme.patterns instead —
+  // saved design (with its published pattern edits) first, defaults on a
+  // fresh profile — and the shell installs them at boot.
+  if (!persistDemo) registerHomepagePatterns();
+  const savedDesign = persistDemo ? loadDemoSiteDesign() : null;
+  const demoPatterns = savedDesign?.patterns?.length
+    ? savedDesign.patterns
+    : HOMEPAGE_THEME_PATTERNS;
+  const templateWidth = fixtureRun
+    ? typeof fixtureMd === "string" && /^wide:\s*true\s*$/m.test(fixtureMd.split("```")[0])
       ? "full"
+      : "content"
+    : persistDemo
+      ? "full" // the homepage composition is full-bleed sections
       : "content";
 
   let shell!: PublrEditor.EditorShell;
   shell = await createEditorShell({
     container: document.getElementById("shell-mount")!,
-    // Ordinary documents start with one semantic context. The commerce POC
-    // is itself a theme fixture and predefines the two additional contexts
-    // consumed by its patterns.
-    theme: fixtureId === "features/poc-homepage" ? DEMO_THEME : DEFAULT_DEMO_THEME,
+    // Fixture runs seed themselves below (async fence parsing); the demo
+    // proper seeds the Hearth & Home homepage composition — unless the
+    // browser store holds a saved document, which the shell prefers over
+    // `content`. The ?visual-* entries keep the small #seed document their
+    // screenshot baselines were taken against.
+    content: fixtureRun
+      ? undefined
+      : persistDemo
+        ? patternCompositionHtml(DEMO_HOMEPAGE_COMPOSITION, (name) =>
+            demoPatterns.find((pattern) => pattern.name === name),
+          )
+        : dedent(document.getElementById("seed")!.innerHTML),
+    persistence: persistDemo ? demoPersistence : false,
+    // The demo document is the homepage, so the demo theme predefines the
+    // additional semantic color contexts its patterns consume (the POC
+    // fixture exercises the same theme). A saved site design wins over the
+    // default pick; the separately-persisted template state overrides both.
+    theme:
+      fixtureId === "features/poc-homepage"
+        ? DEMO_THEME
+        : persistDemo
+          ? { ...(savedDesign ?? DEMO_THEME), patterns: demoPatterns, ...demoTemplateTheme() }
+          : DEFAULT_DEMO_THEME,
     templateWidth,
     styleBackend: INLINE_MODE ? inlineBackend : undefined, // ?inline (E2a)
     // Edit tracing in the console: ?debug in the URL, or `editor.debug = true`.
@@ -347,7 +410,11 @@ void (async () => {
     // CMS maps the same callbacks to its title/featured-image fields and
     // page actions.
     document: {
-      title: fixtureId ? fixtureId.split("/").at(-1)!.replaceAll("-", " ") : "Hello, PublrEditor",
+      title: fixtureId
+        ? fixtureId.split("/").at(-1)!.replaceAll("-", " ")
+        : persistDemo
+          ? "Homepage"
+          : "Hello, PublrEditor",
       onFeaturedImageChange: (image) => console.info("[demo] featured image changed", image),
       template: {
         name: "default",
@@ -365,6 +432,60 @@ void (async () => {
         rename: (title) => console.info("[demo] document renamed", title),
       },
     },
+    // The design document persists on EVERY mutation, not only on Publish —
+    // pattern edits publish into it (the shell folds a saved pattern into
+    // theme.patterns), and losing them because the user never pressed the
+    // design workspace's Publish would read as data loss in a local-first
+    // demo. Publish/Reset below still drive the workspace's saved/dirty state.
+    onSiteDesignChange: persistDemo
+      ? (designTheme) => {
+          try {
+            localStorage.setItem(DEMO_DESIGN_STORAGE_KEY, JSON.stringify(designTheme));
+          } catch {
+            // Privacy mode — design stays session-only.
+          }
+        }
+      : undefined,
+    saveSiteDesign: persistDemo
+      ? (designTheme) => {
+          try {
+            localStorage.setItem(DEMO_DESIGN_STORAGE_KEY, JSON.stringify(designTheme));
+          } catch {
+            // Privacy mode — design stays session-only.
+          }
+        }
+      : undefined,
+    resetSiteDesign: persistDemo
+      ? () => {
+          try {
+            localStorage.removeItem(DEMO_DESIGN_STORAGE_KEY);
+          } catch {
+            // Nothing stored.
+          }
+          shell.applyTheme({
+            ...DEMO_THEME,
+            patterns: HOMEPAGE_THEME_PATTERNS,
+            ...demoTemplateTheme(),
+          });
+        }
+      : undefined,
+    tools: [
+      {
+        id: "reset-demo-data",
+        label: "Reset demo data",
+        title: "Clear locally saved content, templates, and site design",
+        onClick: () => {
+          void demoPersistence.clear?.();
+          try {
+            localStorage.removeItem(DEMO_TEMPLATE_STORAGE_KEY);
+            localStorage.removeItem(DEMO_DESIGN_STORAGE_KEY);
+          } catch {
+            // Nothing stored.
+          }
+          location.reload();
+        },
+      },
+    ],
     baseCss: preflightCss, // the Preview export's reset
     siteCss, // the exact authored-content sheet used inside isolated previews
     engineLabel: INLINE_MODE ? "inline backend — no engine needed" : undefined,
@@ -397,7 +518,7 @@ void (async () => {
   // the shell from tests/manual/<id>.md's ```html fence instead — the md
   // is inlined at build time (fixtureFiles), so a fixture URL is directly
   // shareable and works on the deployed static demo, not just `vp dev`.
-  if (fixtureId && /^[\w-]+(\/[\w-]+)+$/.test(fixtureId)) {
+  if (fixtureRun) {
     void (
       fixtureMd !== undefined ? Promise.resolve(fixtureMd) : Promise.reject(new Error("HTTP 404"))
     )
@@ -449,8 +570,7 @@ void (async () => {
           `<p data-pb-block="paragraph" data-pb-rich="body">Fixture <code>${fixtureId}</code> failed to load: ${String(err instanceof Error ? err.message : err)}</p>`,
         );
       });
-  } else {
-    editor.loadHtml(dedent(document.getElementById("seed")!.innerHTML));
-    shell.refreshCss();
   }
+  // Non-fixture runs were already seeded by the shell (the `content` option,
+  // or the persisted document when the browser store holds one).
 })();
