@@ -71,6 +71,7 @@ import { blockToElement, downcast, upcast } from "./cast";
 import { createEditor } from "./editor";
 import { attachInlineChrome } from "./chrome-inline";
 import { createEditorShell } from "./shell";
+import { browserPersistence } from "./persistence-adapter";
 import { DEFAULT_BLOCK_POLICY, resolveBlockPolicy, resolveRootPolicy } from "./policy";
 import { ICONS, iconRef, iconSvg, mountIconSprite } from "./icons";
 import {
@@ -208,6 +209,9 @@ export {
   // explorer) as a library API — hosts drop it into a container and bring
   // their own document actions/panels (src/shell.ts).
   createEditorShell,
+  // The built-in localStorage document store — pass (or a custom-keyed one)
+  // as the shell's `persistence` option to run without any CMS backend.
+  browserPersistence,
   resolveRootPolicy,
   resolveBlockPolicy,
   DEFAULT_BLOCK_POLICY,
@@ -345,6 +349,7 @@ export type {
 } from "./registry";
 export type { EditingMode, Editor, EditorOptions } from "./editor";
 export type { MediaAdapter, MediaValue } from "./media-adapter";
+export type { PersistenceAdapter } from "./persistence-adapter";
 export type {
   EditorShell,
   EditorShellOptions,
@@ -413,5 +418,6 @@ if (typeof window !== "undefined" && window.Publr) {
     createEditor,
     attachInlineChrome,
     createEditorShell,
+    browserPersistence,
   };
 }

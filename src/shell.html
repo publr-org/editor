@@ -1115,7 +1115,7 @@
             class="relative h-12 cursor-pointer px-4 text-[13px] font-medium text-neutral-900 hover:text-accent focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] focus-visible:outline-none aria-selected:shadow-[inset_0_-1.5px_0_0_var(--color-accent)]"
             data-p-bind="aria-selected:$sidebarTab == document"
             data-p-on="mousedown.prevent:swallow;click:setSidebarTab"
-            data-p-text="$templateIsPattern -> 'Pattern' ~ 'Document'"
+            data-p-text="$sidebarDocumentTabLabel"
           ></button>
           <button
             type="button"
@@ -1129,7 +1129,7 @@
           </button>
         </div>
         <div id="panel-document" class="p-4" role="tabpanel" data-p-show="$sidebarTab == document">
-          <div id="pattern-overview" data-p-show="$templateIsPattern">
+          <div id="pattern-overview" class="flex flex-col gap-4" data-p-show="$templateIsPattern">
             <section
               id="pattern-style-selector"
               class="pbe-pattern-overview-section"
@@ -1178,6 +1178,96 @@
                         ></path>
                       </svg>
                     </button>
+                  </article>
+                </template>
+              </div>
+            </section>
+            <section
+              id="pattern-variants"
+              class="pbe-pattern-overview-section mt-7"
+              data-p-show="$patternVariantsShown"
+            >
+              <header class="pbe-pattern-overview-section__header">
+                <h2>Pattern variants</h2>
+                <button
+                  type="button"
+                  class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-xs text-lg hover:bg-neutral-100"
+                  aria-label="Add pattern variant"
+                  title="Add pattern variant"
+                  data-p-on="click:addPatternVariant"
+                >
+                  +
+                </button>
+              </header>
+              <p class="py-2 text-[13px] text-neutral-700" data-p-show="not $patternHasVariants">
+                No variants
+              </p>
+              <div
+                class="grid grid-cols-2 gap-2"
+                role="group"
+                aria-label="Pattern variants"
+                data-p-show="$patternHasVariants"
+              >
+                <template data-p-for="variant of $patternVariants" data-p-key="variant.name">
+                  <article class="min-w-0">
+                    <button
+                      type="button"
+                      class="pbe-pattern-variant w-full cursor-pointer overflow-hidden rounded-xs border border-neutral-300 text-left"
+                      data-p-class="variant.selected -> border-accent ring-1 ring-accent"
+                      data-p-bind="data-variant:variant.name;data-pattern-name:$patternDefinitionName;aria-pressed:variant.selected;aria-label:variant.label"
+                      data-p-on="mousedown.prevent:swallow;pointerenter:previewPatternVariant;pointerleave:clearPatternVariantPreview;focus:previewPatternVariant;blur:clearPatternVariantPreview;click:editPatternVariant"
+                    >
+                      <span
+                        class="pbe-pattern-variant-preview block w-full overflow-hidden bg-white"
+                        data-pattern-preview-shape="variant"
+                        data-p-bind="data-pattern-name:$patternDefinitionName;data-pattern-variant-preview:variant.name;data-pattern-preview-context:$patternDefaultColorContext"
+                      ></span>
+                      <em data-p-show="variant.default">Default</em>
+                      <strong data-p-text="variant.label"></strong>
+                    </button>
+                    <span class="mt-1 flex items-center justify-end gap-0.5">
+                      <button
+                        type="button"
+                        class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-xs text-[10px] text-neutral-500 hover:bg-neutral-100"
+                        title="Set as default"
+                        aria-label="Set as default variant"
+                        data-p-show="not variant.default"
+                        data-p-bind="data-variant:variant.name"
+                        data-p-on="click:setDefaultPatternVariant"
+                      >
+                        ★
+                      </button>
+                      <button
+                        type="button"
+                        class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-xs text-[13px] text-neutral-500 hover:bg-neutral-100"
+                        title="Rename variant"
+                        aria-label="Rename variant"
+                        data-p-bind="data-variant:variant.name"
+                        data-p-on="click:renamePatternVariant"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-xs text-[12px] text-neutral-500 hover:bg-neutral-100"
+                        title="Edit variant description"
+                        aria-label="Edit variant description"
+                        data-p-bind="data-variant:variant.name"
+                        data-p-on="click:describePatternVariant"
+                      >
+                        ≡
+                      </button>
+                      <button
+                        type="button"
+                        class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-xs text-[13px] text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
+                        title="Delete variant"
+                        aria-label="Delete variant"
+                        data-p-bind="data-variant:variant.name"
+                        data-p-on="click:deletePatternVariant"
+                      >
+                        ×
+                      </button>
+                    </span>
                   </article>
                 </template>
               </div>
@@ -1570,7 +1660,7 @@
             data-p-text="$emptyNote"
           ></p>
           <div id="block-card" class="hidden" data-p-show="$blockSelected">
-            <div class="flex items-start gap-3">
+            <div class="flex items-start gap-3 mb-4">
               <span id="block-card-icon" class="flex h-6 w-6 shrink-0 items-center justify-center">
                 <svg
                   class="h-6 w-6 fill-current"
@@ -1693,7 +1783,7 @@
                here later. -->
             <div
               id="pattern-actions"
-              class="mt-5 flex hidden flex-col gap-2"
+              class="flex hidden flex-col gap-6"
               data-p-show="$blockIsPattern"
             >
               <button
@@ -1704,9 +1794,9 @@
               >
                 Edit pattern
               </button>
-              <div id="pattern-context" class="mt-4" data-p-show="$blockPatternContextShown">
+              <div id="pattern-context" data-p-show="$blockPatternContextShown">
                 <div
-                  class="mb-2 flex items-center justify-between border-b border-neutral-200 pb-2"
+                  class="mb-4 flex items-center justify-between border-b border-neutral-200 pb-2"
                 >
                   <h3
                     class="m-0 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
@@ -1734,9 +1824,43 @@
                   </template>
                 </div>
               </div>
-              <div id="pattern-content" class="mt-4">
+              <div
+                id="pattern-variant-selector"
+                class="mt-6"
+                data-p-show="$blockPatternVariantsShown"
+              >
+                <div
+                  class="mb-3 flex items-center justify-between border-b border-neutral-200 pb-2"
+                >
+                  <h3
+                    class="m-0 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
+                  >
+                    Variants
+                  </h3>
+                  <span class="text-[9px] text-muted-foreground">Applies to this copy</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Pattern variants">
+                  <template data-p-for="variant of $blockPatternVariants" data-p-key="variant.name">
+                    <button
+                      type="button"
+                      class="pbe-pattern-variant cursor-pointer overflow-hidden rounded-xs border border-neutral-300 text-left"
+                      data-p-class="variant.selected -> border-accent ring-1 ring-accent"
+                      data-p-bind="data-variant:variant.name;aria-pressed:variant.selected;aria-label:variant.label"
+                      data-p-on="mousedown.prevent:swallow;pointerenter:previewPatternVariant;pointerleave:clearPatternVariantPreview;focus:previewPatternVariant;blur:clearPatternVariantPreview;click:applyPatternVariant"
+                    >
+                      <span
+                        class="pbe-pattern-variant-preview block w-full overflow-hidden bg-white"
+                        data-pattern-preview-shape="variant"
+                        data-p-bind="data-pattern-name:$blockPattern;data-pattern-variant-preview:variant.name;data-pattern-preview-context:$blockPatternActiveContext"
+                      ></span>
+                      <strong data-p-text="variant.label"></strong>
+                    </button>
+                  </template>
+                </div>
+              </div>
+              <div id="pattern-content" class="mb-4">
                 <h3
-                  class="m-0 border-b border-neutral-200 pb-2 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
+                  class="mb-4 border-b border-neutral-200 pb-2 text-[11px] font-semibold tracking-wider text-neutral-500 uppercase"
                 >
                   Content
                 </h3>

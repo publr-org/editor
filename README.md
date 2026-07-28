@@ -213,6 +213,7 @@ src/tree.ts       block-tree traversal (flatten / locate / path) for nesting
 src/editor.ts     createEditor — canvas, events, the commit() choke point
 src/chrome-inline.ts  attachInlineChrome — shipped floating toolbar + slash + "+" inserter
 src/shell.ts          createEditorShell — the FULL harness as a library API (host seams: actions/panels)
+src/persistence-adapter.ts  the `persistence` seam — false (host-owned, default) | true (localStorage) | host adapter
 src/shell.html        the harness markup (one PublrJS island), injected by createEditorShell
 src/icons.ts      thin adapter over the pinned @publr/icons UI package
 src/demo.ts       full builder demo shell (registers the core blocks via the public API)

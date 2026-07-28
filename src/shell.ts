@@ -63,6 +63,7 @@ import {
   colorContexts,
   containerWidths,
   fontSizes,
+  hasToken,
   isTailwindCompatibilityColor,
   leadings,
   paletteTokens,
@@ -112,10 +113,12 @@ import { iconRef, mountIconSprite } from "./icons";
 import { downcast, upcast } from "./cast";
 import { resolveMediaAdapter, toDocumentMediaValue, toImageValue } from "./media-adapter";
 import type { MediaAdapter, MediaValue, ResolvedMediaAdapter } from "./media-adapter";
+import { resolvePersistenceAdapter } from "./persistence-adapter";
+import type { PersistenceAdapter, ResolvedPersistenceAdapter } from "./persistence-adapter";
 import type { Block, FieldValue, ImageValue } from "./carriers";
 import type { Editor } from "./editor";
 import type { PolicyConfig } from "./policy";
-import { inlineBackend } from "./style-backend";
+import { classesBackend, inlineBackend } from "./style-backend";
 import type { StyleBackend } from "./style-backend";
 import { Publr, destroy, effect, hydrate } from "./publr-runtime";
 import { position } from "../vendor/publr/publr-position.js";
@@ -214,6 +217,14 @@ export interface EditorShellOptions {
    * stays); a MediaAdapter plugs the host's own upload()/browse() — browse()
    * surfaces "Media Library" buttons across the media surfaces. */
   media?: boolean | MediaAdapter;
+  /** Document persistence (see persistence-adapter.ts). false/omitted (the
+   * default) = none: the host seeds via `content` and persists via onChange.
+   * true = the built-in browser store (localStorage) — the CMS-free demo
+   * mode. A PersistenceAdapter plugs the host's own load()/save(): the shell
+   * loads it on boot (stored content wins over `content`, which becomes the
+   * first-run seed) and autosaves the editor wire pipeline, debounced, never
+   * while isolation is open. */
+  persistence?: boolean | PersistenceAdapter;
   /** The class compiler for authored utilities (E3). Null = build-time CSS
    * only; hosts can install one later via shell.setCssEngine. */
   cssEngine?: CssEngine | null;
@@ -295,6 +306,37 @@ export interface EditorShell {
 
 let shellOptions: EditorShellOptions | null = null;
 let siteDesignSavedJson = "";
+
+// --- document persistence (the `persistence` option) --------------------------
+// Autosave is captured-at-schedule: the wire HTML is snapshotted when the
+// change commits, so a flush that fires after isolation opens still writes
+// the page document, never the isolated fragment. Armed only after the boot
+// load — the initial loadHtml's onChange is not an edit worth re-saving.
+const PERSIST_DEBOUNCE_MS = 400;
+let persistence: ResolvedPersistenceAdapter = resolvePersistenceAdapter(false);
+let persistenceArmed = false;
+let persistenceTimer = 0;
+let persistencePending: string | null = null;
+
+function flushPersistence(): void {
+  if (persistenceTimer) {
+    window.clearTimeout(persistenceTimer);
+    persistenceTimer = 0;
+  }
+  if (persistencePending === null || !persistence.save) return;
+  const html = persistencePending;
+  persistencePending = null;
+  persistence.save(html).catch((err: unknown) => {
+    console.warn("[publr-editor] persistence save failed", err);
+  });
+}
+
+function schedulePersist(html: string): void {
+  if (!persistenceArmed || !persistence.save) return;
+  persistencePending = html;
+  window.clearTimeout(persistenceTimer);
+  persistenceTimer = window.setTimeout(flushPersistence, PERSIST_DEBOUNCE_MS);
+}
 const installedThemePatterns = new Set<string>();
 const installedThemeTemplates = new Set<string>();
 const installedThemeTemplateParts = new Set<string>();
@@ -319,7 +361,9 @@ function syncThemePatterns(theme: Theme): void {
         existing.icon === pattern.icon &&
         existing.defaultColorContext === pattern.defaultColorContext &&
         JSON.stringify(existing.disabledColorContexts ?? []) ===
-          JSON.stringify(pattern.disabledColorContexts ?? []);
+          JSON.stringify(pattern.disabledColorContexts ?? []) &&
+        JSON.stringify(existing.variants ?? []) === JSON.stringify(pattern.variants ?? []) &&
+        existing.defaultVariant === pattern.defaultVariant;
       if (!same && !installedThemePatterns.has(name))
         throw new Error(
           `PublrEditor: theme pattern "${name}" conflicts with an already registered pattern`,
@@ -398,8 +442,8 @@ const scopeEngineCss = (css: string): string =>
 // Tailwind's standalone preflight declares only `base,utilities`, while the
 // complete site sheet also owns `theme,components`. If preflight is inlined
 // first without a complete order, CSS creates `components` *after*
-// `utilities`; component defaults such as `.pbe-grid--2` then beat responsive
-// authored utilities such as `lg:grid-cols-4`. The canvas does not suffer
+// `utilities`; component defaults such as `.pbe-btn--solid` then beat
+// authored utilities such as `p-0`. The canvas does not suffer
 // because its complete site sheet establishes the four-layer order at load.
 // Establish it explicitly for every isolated/published document before any
 // supplied CSS is parsed so Preview and canvas share one cascade.
@@ -615,6 +659,9 @@ const breakpointMutationTokens = (): ThemeToken[] => {
 const PREVIEW_WIDTH = 1200;
 
 const previewCache = new Map<string, string>();
+const previewRequests = new WeakMap<HTMLElement, number>();
+const readyPreviewFrames = new WeakSet<HTMLIFrameElement>();
+const queuedPreviewRefills = new WeakSet<HTMLElement>();
 function copyComputedCustomProperties(source: Element | null, target: HTMLElement): void {
   if (!source) return;
   const computed = getComputedStyle(source);
@@ -653,25 +700,99 @@ function copyShellChromeTokens(source: Element | null, ...targets: HTMLElement[]
     }
   }
 }
-function patternPreviewHtml(name: string): string {
-  let html = previewCache.get(name);
-  if (html == null) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = getPattern(name)?.content ?? "";
-    html = downcast(upcast(tmp));
-    previewCache.set(name, html);
+function previewHtmlInColorContext(html: string, context: string): string {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  const model = upcast(tmp);
+  const theme = activeTheme();
+  const prefix = context === "default" ? "" : `${context}-`;
+  if (
+    context !== "default" &&
+    (!hasToken(theme, `color-${prefix}surface`) || !hasToken(theme, `color-${prefix}foreground`))
+  )
+    return downcast(model);
+  const roles = semanticColorRoles(theme).sort((a, b) => b.key.length - a.key.length);
+  const roleOf = (value: string) =>
+    roles.find((role) => value === role.key || value.endsWith(`-${role.key}`))?.key;
+  for (const block of flattenBlocks(model.blocks)) {
+    for (const breakpoint of styleBreakpoints(theme).map((option) => option.key)) {
+      for (const prop of ["textColor", "backgroundColor", "borderColor"] as const) {
+        const current = classesBackend.read(block, prop, theme, breakpoint) ?? "";
+        const role = roleOf(current);
+        if (!role) continue;
+        const value = `${prefix}${role}`;
+        if (current !== value && hasToken(theme, `color-${value}`))
+          classesBackend.write(block, prop, value, "element", theme, breakpoint);
+      }
+    }
   }
-  return html;
+  return downcast(model);
 }
 
-function resetPatternPreviews(name?: string): void {
-  const selector = name ? `[data-pattern-preview="${CSS.escape(name)}"]` : "[data-pattern-preview]";
-  for (const holder of document.querySelectorAll<HTMLElement>(selector)) {
-    delete holder.dataset.filled;
+function patternPreviewHtml(name: string, variantName?: string, context?: string): string {
+  const baseKey = variantName ? `${name}::${variantName}` : name;
+  let html = previewCache.get(baseKey);
+  if (html == null) {
+    const pattern = getPattern(name);
+    const variant = pattern?.variants?.find((candidate) => candidate.name === variantName);
+    const tmp = document.createElement("div");
+    tmp.innerHTML = variant?.content ?? pattern?.content ?? "";
+    html = downcast(upcast(tmp));
+    previewCache.set(baseKey, html);
+  }
+  if (!context) return html;
+  const contextualKey = `${baseKey}::context:${context}`;
+  let contextual = previewCache.get(contextualKey);
+  if (contextual == null) {
+    contextual = previewHtmlInColorContext(html, context);
+    previewCache.set(contextualKey, contextual);
+  }
+  return contextual;
+}
+
+function invalidatePatternPreview(holder: HTMLElement): void {
+  const frames = [...holder.querySelectorAll<HTMLIFrameElement>("iframe")];
+  if (frames.length && !frames.some((frame) => readyPreviewFrames.has(frame))) {
+    // Do not replace an iframe during its first load. Finish that frame in
+    // place, then run the requested refresh as an atomic ready-to-ready swap.
+    queuedPreviewRefills.add(holder);
+    return;
+  }
+  delete holder.dataset.filled;
+  if (!frames.length) {
     holder.replaceChildren();
     holder.style.height = "";
     holder.style.backgroundColor = "";
   }
+}
+
+function resetPatternPreviews(name?: string): void {
+  if (name)
+    for (const key of previewCache.keys())
+      if (key === name || key.startsWith(`${name}::`)) previewCache.delete(key);
+  const selector = name
+    ? `[data-pattern-preview="${CSS.escape(name)}"],[data-pattern-name="${CSS.escape(name)}"][data-pattern-variant-preview]`
+    : "[data-pattern-preview],[data-pattern-variant-preview]";
+  for (const holder of document.querySelectorAll<HTMLElement>(selector)) {
+    // Keep the rendered card in place while its replacement iframe loads.
+    // Clearing here exposed both the empty holder and then the iframe's blank
+    // document, which made context changes visibly flash twice.
+    invalidatePatternPreview(holder);
+  }
+  requestAnimationFrame(fillPatternPreviews);
+}
+
+function refillPatternVariantPreviews(name: string, variantName: string): void {
+  const selector = `[data-pattern-name="${CSS.escape(name)}"][data-pattern-variant-preview="${CSS.escape(variantName)}"]`;
+  for (const holder of document.querySelectorAll<HTMLElement>(selector))
+    invalidatePatternPreview(holder);
+  requestAnimationFrame(fillPatternPreviews);
+}
+
+function refillPatternVariantContextPreviews(name: string): void {
+  const selector = `[data-pattern-name="${CSS.escape(name)}"][data-pattern-variant-preview]`;
+  for (const holder of document.querySelectorAll<HTMLElement>(selector))
+    invalidatePatternPreview(holder);
   requestAnimationFrame(fillPatternPreviews);
 }
 
@@ -679,28 +800,49 @@ function resetPatternPreviews(name?: string): void {
 // same data-pattern-preview vocabulary). Each card is a non-interactive,
 // scaled iframe: the isolated pattern sees canvas CSS only.
 function fillPatternPreviews(): void {
-  for (const holder of document.querySelectorAll<HTMLElement>("[data-pattern-preview]")) {
+  for (const holder of document.querySelectorAll<HTMLElement>(
+    "[data-pattern-preview],[data-pattern-variant-preview]",
+  )) {
     if (holder.dataset.filled) continue;
-    const name = holder.dataset.patternPreview;
+    const name = holder.dataset.patternPreview ?? holder.dataset.patternName;
+    const variantName = holder.dataset.patternVariantPreview;
+    const context = holder.dataset.patternPreviewContext;
     if (!name || !holder.clientWidth) continue; // hidden panes measure 0 — fill on next open
     holder.dataset.filled = "1";
+    const request = (previewRequests.get(holder) ?? 0) + 1;
+    previewRequests.set(holder, request);
+    const previousFrame = holder.querySelector<HTMLIFrameElement>("iframe");
     const content = document.createElement("div");
-    content.innerHTML = patternPreviewHtml(name);
+    content.innerHTML = patternPreviewHtml(name, variantName, context);
     // The canvas stamps pbe-container on every container at render time.
     for (const el of content.querySelectorAll("[data-pb-children]"))
       el.classList.add("pbe-container");
 
     const frame = document.createElement("iframe");
-    frame.title = `${getPattern(name)?.label ?? "Pattern"} preview`;
+    const variantLabel = getPattern(name)?.variants?.find(
+      (candidate) => candidate.name === variantName,
+    )?.label;
+    frame.title = `${variantLabel ?? getPattern(name)?.label ?? "Pattern"} preview`;
     frame.tabIndex = -1;
     frame.setAttribute("aria-hidden", "true");
     frame.setAttribute("sandbox", "allow-same-origin");
     frame.style.cssText = `display:block;width:${PREVIEW_WIDTH}px;height:1px;border:0;transform-origin:top left;pointer-events:none`;
+    if (previousFrame) {
+      // The replacement must be connected for srcdoc and linked stylesheets
+      // to load, but it should not participate in layout or paint until ready.
+      frame.style.position = "absolute";
+      frame.style.inset = "0 auto auto 0";
+      frame.style.visibility = "hidden";
+      holder.appendChild(frame);
+    }
     frame.addEventListener(
       "load",
       () => {
         const doc = frame.contentDocument;
-        if (!doc || !holder.isConnected) return;
+        if (!doc || !holder.isConnected || previewRequests.get(holder) !== request) {
+          frame.remove();
+          return;
+        }
         const base = doc.createElement("base");
         base.href = document.baseURI;
         doc.head.appendChild(base);
@@ -710,6 +852,7 @@ function fillPatternPreviews(): void {
         // Copying only one path made cards silently lose arbitrary colors and
         // responsive utilities. These copies live inside the sandboxed iframe,
         // so none can reach the theme-editor chrome or the host document.
+        let installed = !previousFrame;
         let resizePreview = () => {};
         for (const source of document.head.querySelectorAll<HTMLStyleElement | HTMLLinkElement>(
           'style,link[rel="stylesheet"]',
@@ -764,9 +907,11 @@ function fillPatternPreviews(): void {
         doc.body.appendChild(canvas);
 
         resizePreview = () => {
-          if (!holder.isConnected) return;
+          if (!installed || !holder.isConnected || previewRequests.get(holder) !== request) return;
           const square = holder.dataset.patternPreviewShape === "square";
-          if (!square) {
+          const fitShape = holder.dataset.patternPreviewShape === "variant";
+          const fixedShape = square || fitShape;
+          if (!fixedShape) {
             const rootBackground = canvas.firstElementChild
               ? getComputedStyle(canvas.firstElementChild).backgroundColor
               : "transparent";
@@ -776,15 +921,44 @@ function fillPatternPreviews(): void {
                 : rootBackground;
           }
           const height = Math.max(48, canvas.scrollHeight, doc.body.scrollHeight);
-          const scale = holder.clientWidth / PREVIEW_WIDTH;
+          const widthScale = holder.clientWidth / PREVIEW_WIDTH;
+          const scale = fitShape ? Math.min(widthScale, holder.clientHeight / height) : widthScale;
           frame.style.height = `${height}px`;
           frame.style.transform = `scale(${scale})`;
+          if (fitShape) {
+            frame.style.position = "absolute";
+            frame.style.left = `${(holder.clientWidth - PREVIEW_WIDTH * scale) / 2}px`;
+            frame.style.top = `${(holder.clientHeight - height * scale) / 2}px`;
+          } else {
+            frame.style.position = "";
+            frame.style.left = "";
+            frame.style.top = "";
+          }
           // Preserve the fractional transformed height. Rounding up exposed a
           // 1px strip of the holder's white loading background above dark card
           // footers on brand/inverse patterns.
-          if (!square) holder.style.height = `${height * scale}px`;
+          if (!fixedShape) holder.style.height = `${height * scale}px`;
         };
-        requestAnimationFrame(resizePreview);
+        requestAnimationFrame(() => {
+          if (!holder.isConnected || previewRequests.get(holder) !== request) {
+            frame.remove();
+            return;
+          }
+          // Swap only after the replacement has its content and styles. The
+          // old preview stays painted until this callback, so the browser sees
+          // one atomic frame change instead of two blank intermediate states.
+          for (const child of holder.querySelectorAll(":scope > *"))
+            if (child !== frame) child.remove();
+          frame.style.visibility = "";
+          frame.style.inset = "";
+          installed = true;
+          resizePreview();
+          readyPreviewFrames.add(frame);
+          if (queuedPreviewRefills.delete(holder)) {
+            delete holder.dataset.filled;
+            requestAnimationFrame(fillPatternPreviews);
+          }
+        });
         for (const image of doc.images)
           image.addEventListener("load", resizePreview, { once: true });
         void doc.fonts?.ready.then(resizePreview);
@@ -792,7 +966,7 @@ function fillPatternPreviews(): void {
       { once: true },
     );
     frame.srcdoc = "<!doctype html><html><head></head><body></body></html>";
-    holder.replaceChildren(frame);
+    if (!previousFrame) holder.replaceChildren(frame);
   }
 }
 
@@ -1263,6 +1437,15 @@ interface PatternContentRow {
   selected: boolean; // the unit holding the canvas selection/caret
 }
 
+interface PatternVariantRow {
+  name: string;
+  label: string;
+  description: string;
+  selected: boolean;
+  default: boolean;
+  removable: boolean;
+}
+
 /** One outline row: a heading anywhere in the document, level-indented. */
 interface OutlineRow {
   id: string;
@@ -1538,6 +1721,7 @@ Publr.store("chrome", () => {
     // sidebar
     sidebarOpen: true,
     sidebarTab: "document",
+    sidebarDocumentTabLabel: "Document",
     blockSelected: false,
     blockLabel: "",
     blockIcon: "",
@@ -1928,16 +2112,25 @@ Publr.store("chrome", () => {
     blockPatternContexts: [] as PatternContextRow[],
     blockPatternContextShown: false,
     blockPatternActiveContext: "default",
+    blockPatternVariants: [] as PatternVariantRow[],
+    blockPatternVariantsShown: false,
+    blockPatternActiveVariant: "",
     patternColorSchemesShown: false,
     patternStyleSelectorShown: false,
     patternColorSchemes: [] as PatternSchemeRow[],
     patternDefaultColorContext: "default",
     patternDisabledColorContexts: [] as string[],
-    patternLegacyColorContexts: [] as string[],
     patternDefinitionMode: false,
     patternSchemeTitle: "Default pattern style",
     patternSchemeNote: "",
     patternOverviewRows: [] as TreeRow[],
+    patternVariants: [] as PatternVariantRow[],
+    patternVariantsShown: false,
+    patternHasVariants: false,
+    patternActiveVariant: "",
+    patternDefaultVariant: "",
+    patternVariantEditing: false,
+    patternDefinitionName: "",
     // isolation editing modes: the page document parks, the SAME full editor
     // takes the isolated content. "definition" = library edit (Save =
     // versioned publish); "instance" = a placed copy's Edit pattern (Save =
@@ -2098,10 +2291,20 @@ Publr.store("chrome", () => {
               bottom: rect.bottom - border.bottom,
               left: rect.left + border.left,
             }
-          : { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+          : {
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              left: rect.left,
+            };
     const inner =
       kind === "margin"
-        ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
+        ? {
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            left: rect.left,
+          }
         : kind === "padding"
           ? {
               top: outer.top + padding.top,
@@ -2800,7 +3003,11 @@ Publr.store("chrome", () => {
     spacingChoices: readonly { key: string; value: string; label: string }[],
   ): { key: string; value: string; label: string }[] =>
     kind === "border"
-      ? BORDER_WIDTH_STEPS.map((key) => ({ key, value: `${key}px`, label: `${key} px` }))
+      ? BORDER_WIDTH_STEPS.map((key) => ({
+          key,
+          value: `${key}px`,
+          label: `${key} px`,
+        }))
       : [...spacingChoices];
   const borderEdgeProp = (prop: "borderWidth" | "borderColor", side: BoxSpacingSide): string =>
     `border${side}${prop === "borderWidth" ? "Width" : "Color"}`;
@@ -2919,7 +3126,11 @@ Publr.store("chrome", () => {
     const value = spacingValueForSide(id, kind, side);
     const choices = boxScaleChoices(
       kind,
-      spacings(activeTheme()).map(({ key, value }) => ({ key, value, label: key })),
+      spacings(activeTheme()).map(({ key, value }) => ({
+        key,
+        value,
+        label: key,
+      })),
     );
     state.boxEditorCustomOpen = !!value && !choices.some((option) => option.key === value);
   };
@@ -3663,7 +3874,7 @@ Publr.store("chrome", () => {
 
   const neutralizeProjectedContentSlot = (slot: HTMLElement): void => {
     // A slot is replaced, not wrapped, when the template is published.
-    // Template-editor placeholder utilities (including the legacy CMS
+    // Template-editor placeholder utilities (including the CMS
     // `px-4 py-8 text-center` marker) therefore must not participate in the
     // document projection. `all: unset` preserves inheritance from the slot's
     // real parent while removing the slot element's own layout and typography.
@@ -5174,13 +5385,13 @@ Publr.store("chrome", () => {
       ? "Default pattern style"
       : "Pattern style";
     state.patternSchemeNote = state.patternDefinitionMode ? "" : "Applies to this copy";
+    if (state.patternDefinitionMode) syncPatternVariants();
     if (!state.templateIsPattern) {
       state.patternStyleSelectorShown = false;
       state.patternColorSchemes = [];
       return;
     }
     const disabledContexts = new Set(state.patternDisabledColorContexts);
-    const legacyContexts = new Set(state.patternLegacyColorContexts);
     const contexts = themeColorContexts(activeTheme());
     if (
       state.patternDefinitionMode &&
@@ -5200,7 +5411,6 @@ Publr.store("chrome", () => {
         (context) =>
           state.patternDefinitionMode ||
           !disabledContexts.has(context.key) ||
-          legacyContexts.has(context.key) ||
           context.key === state.patternDefaultColorContext,
       )
       .map((context) => {
@@ -5287,6 +5497,20 @@ Publr.store("chrome", () => {
           }))
         : [];
       if (patternDef) {
+        const activeVariant =
+          typeof block.settings?.variant === "string" && block.settings.variant
+            ? block.settings.variant
+            : (patternDef.defaultVariant ?? patternDef.variants?.[0]?.name ?? "");
+        state.blockPatternActiveVariant = activeVariant;
+        state.blockPatternVariants = (patternDef.variants ?? []).map((variant) => ({
+          name: variant.name,
+          label: variant.label,
+          description: variant.description ?? "",
+          selected: variant.name === activeVariant,
+          default: variant.name === patternDef.defaultVariant,
+          removable: false,
+        }));
+        state.blockPatternVariantsShown = state.blockPatternVariants.length > 1;
         const storedContext =
           typeof block.settings?.colorContext === "string" ? block.settings.colorContext : "";
         const inferredContext = flattenBlocks(block.children ?? [])
@@ -5299,27 +5523,18 @@ Publr.store("chrome", () => {
           .find((key): key is string => !!key);
         const activeContext = storedContext || inferredContext || "default";
         const disabledContexts = new Set(patternDef.disabledColorContexts ?? []);
-        const legacyContexts = new Set(
-          Array.isArray(block.settings?.legacyColorContexts)
-            ? block.settings.legacyColorContexts.filter(
-                (context): context is string => typeof context === "string",
-              )
-            : [],
-        );
         state.blockPatternActiveContext = activeContext;
         state.blockPatternContexts = themeColorContexts(activeTheme())
-          .filter(
-            (context) =>
-              !disabledContexts.has(context.key) ||
-              context.key === activeContext ||
-              legacyContexts.has(context.key),
-          )
+          .filter((context) => !disabledContexts.has(context.key) || context.key === activeContext)
           .map((context) => ({
             ...context,
             pressed: context.key === activeContext,
           }));
         state.blockPatternContextShown = state.blockPatternContexts.length > 1;
       } else {
+        state.blockPatternVariants = [];
+        state.blockPatternVariantsShown = false;
+        state.blockPatternActiveVariant = "";
         state.blockPatternContexts = [];
         state.blockPatternContextShown = false;
         state.blockPatternActiveContext = "default";
@@ -6229,21 +6444,33 @@ Publr.store("chrome", () => {
           ? scaleRow(
               "gap",
               "Gap",
-              spacingChoices.map(({ key, label, value }) => ({ key, label, value })),
+              spacingChoices.map(({ key, label, value }) => ({
+                key,
+                label,
+                value,
+              })),
             )
           : null,
         shown("rowGap")
           ? scaleRow(
               "rowGap",
               "Row gap",
-              spacingChoices.map(({ key, label, value }) => ({ key, label, value })),
+              spacingChoices.map(({ key, label, value }) => ({
+                key,
+                label,
+                value,
+              })),
             )
           : null,
         shown("columnGap")
           ? scaleRow(
               "columnGap",
               "Column gap",
-              spacingChoices.map(({ key, label, value }) => ({ key, label, value })),
+              spacingChoices.map(({ key, label, value }) => ({
+                key,
+                label,
+                value,
+              })),
             )
           : null,
         shown("justifyContent")
@@ -6349,7 +6576,11 @@ Publr.store("chrome", () => {
             const familyName = color.family || "Colors";
             const family = families.find((candidate) => candidate.family === familyName);
             if (family) family.swatches.push(borderSwatches[index]);
-            else families.push({ family: familyName, swatches: [borderSwatches[index]] });
+            else
+              families.push({
+                family: familyName,
+                swatches: [borderSwatches[index]],
+              });
             return families;
           }, [])
         : [];
@@ -6542,6 +6773,9 @@ Publr.store("chrome", () => {
       state.blockPatternContexts = [];
       state.blockPatternContextShown = false;
       state.blockPatternActiveContext = "default";
+      state.blockPatternVariants = [];
+      state.blockPatternVariantsShown = false;
+      state.blockPatternActiveVariant = "";
       if (!state.templateIsPattern) {
         state.patternColorSchemesShown = false;
         state.patternColorSchemes = [];
@@ -6590,6 +6824,9 @@ Publr.store("chrome", () => {
         : path
           ? ["Document", ...path.map((b) => blockLabelOf(b))].join(" › ")
           : "Document";
+    state.sidebarDocumentTabLabel =
+      state.templateIsPattern || state.blockIsPattern ? "Pattern" : "Document";
+    if (state.blockPatternVariantsShown) requestAnimationFrame(fillPatternPreviews);
   }
 
   // Familiar block-editor semantics: picking REPLACES an empty default block; otherwise a
@@ -6721,6 +6958,12 @@ Publr.store("chrome", () => {
   //   dock into the theme workspace while the parked page stays untouched.
 
   let templateName: string | null = null; // definition mode: the pattern name
+  let patternVariantDrafts: Array<{
+    name: string;
+    label: string;
+    description?: string;
+    content: string;
+  }> = [];
   let instanceId: string | null = null; // instance mode: the copy's block id
   let pageTemplateName: string | null = null;
   let templatePartName: string | null = null;
@@ -6749,7 +6992,6 @@ Publr.store("chrome", () => {
       error: string;
       patternDefaultColorContext: string;
       patternDisabledColorContexts: string[];
-      patternLegacyColorContexts: string[];
     };
   }
 
@@ -6772,7 +7014,11 @@ Publr.store("chrome", () => {
       : null;
     const ancestors: IsolationViewportSnapshot["ancestors"] = [];
     for (let element = canvasFrame.parentElement; element; element = element.parentElement)
-      ancestors.push({ element, left: element.scrollLeft, top: element.scrollTop });
+      ancestors.push({
+        element,
+        left: element.scrollLeft,
+        top: element.scrollTop,
+      });
     return {
       canvasX: canvasWindow?.scrollX ?? 0,
       canvasY: canvasWindow?.scrollY ?? 0,
@@ -6830,6 +7076,27 @@ Publr.store("chrome", () => {
   let isolationOpener: HTMLElement | null = null;
 
   function syncIsolationBreadcrumbs(): void {
+    if (
+      state.templateMode === "definition" &&
+      state.patternVariantEditing &&
+      state.patternActiveVariant &&
+      currentIsolationScope
+    ) {
+      const variant = patternVariantDrafts.find(
+        (candidate) => candidate.name === state.patternActiveVariant,
+      );
+      state.isolationBreadcrumbsShown = true;
+      state.isolationBreadcrumbs = [
+        { ...currentIsolationScope, index: 0, current: false },
+        {
+          label: variant?.label ?? "Variant",
+          kind: "pattern",
+          index: 1,
+          current: true,
+        },
+      ];
+      return;
+    }
     const scopes = [
       ...isolationStack.map((frame) => frame.scope),
       ...(currentIsolationScope ? [currentIsolationScope] : []),
@@ -6840,6 +7107,99 @@ Publr.store("chrome", () => {
       index,
       current: index === scopes.length - 1,
     }));
+  }
+
+  function cachePatternVariantDraft(variant: { name: string; content: string }): void {
+    if (!templateName) return;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = variant.content;
+    const baseKey = `${templateName}::${variant.name}`;
+    previewCache.set(baseKey, downcast(upcast(tmp)));
+    for (const key of previewCache.keys())
+      if (key.startsWith(`${baseKey}::context:`)) previewCache.delete(key);
+    refillPatternVariantPreviews(templateName, variant.name);
+  }
+
+  function capturePatternVariantDraft(): void {
+    if (
+      state.templateMode !== "definition" ||
+      !state.patternVariantEditing ||
+      !state.patternActiveVariant
+    )
+      return;
+    const variant = patternVariantDrafts.find(
+      (candidate) => candidate.name === state.patternActiveVariant,
+    );
+    if (variant) {
+      variant.content = editor.serialize();
+      cachePatternVariantDraft(variant);
+    }
+  }
+
+  function syncPatternVariants(): void {
+    state.patternVariantsShown = state.templateMode === "definition";
+    state.patternHasVariants = patternVariantDrafts.length > 1;
+    if (templateName) {
+      for (const variant of patternVariantDrafts) {
+        const tmp = document.createElement("div");
+        tmp.innerHTML = variant.content;
+        previewCache.set(`${templateName}::${variant.name}`, downcast(upcast(tmp)));
+      }
+    }
+    state.patternVariants = patternVariantDrafts.map((variant) => ({
+      name: variant.name,
+      label: variant.label,
+      description: variant.description ?? "",
+      selected: variant.name === state.patternActiveVariant,
+      default: variant.name === state.patternDefaultVariant,
+      removable: patternVariantDrafts.length > 2,
+    }));
+    syncIsolationBreadcrumbs();
+  }
+
+  function editPatternVariant(name: string): void {
+    const next = patternVariantDrafts.find((variant) => variant.name === name);
+    if (!next) return;
+    clearVariationPreview();
+    if (state.patternVariantEditing) capturePatternVariantDraft();
+    else {
+      const currentDefault = patternVariantDrafts.find(
+        (variant) => variant.name === state.patternDefaultVariant,
+      );
+      if (currentDefault) {
+        currentDefault.content = editor.serialize();
+        cachePatternVariantDraft(currentDefault);
+      }
+    }
+    state.patternActiveVariant = name;
+    state.patternVariantEditing = true;
+    state.templateSaveLabel = "Save variant";
+    editor.loadHtml(hydrateTemplateParts(next.content));
+    syncPatternVariants();
+    state.sidebarTab = "document";
+    requestAnimationFrame(fillPatternPreviews);
+  }
+
+  function closePatternVariantEditor(save: boolean): void {
+    if (state.templateMode !== "definition" || !state.patternVariantEditing) return;
+    clearVariationPreview();
+    if (save) capturePatternVariantDraft();
+    else {
+      const unchangedVariant = patternVariantDrafts.find(
+        (variant) => variant.name === state.patternActiveVariant,
+      );
+      if (unchangedVariant) cachePatternVariantDraft(unchangedVariant);
+    }
+    const defaultVariant = patternVariantDrafts.find(
+      (variant) => variant.name === state.patternDefaultVariant,
+    );
+    state.patternActiveVariant = state.patternDefaultVariant;
+    state.patternVariantEditing = false;
+    state.templateSaveLabel = "Publish pattern";
+    editor.loadHtml(hydrateTemplateParts(defaultVariant?.content ?? ""));
+    syncPatternVariants();
+    state.sidebarTab = "document";
+    requestAnimationFrame(fillPatternPreviews);
   }
 
   function pushIsolationParent(targetId: string): boolean {
@@ -6867,7 +7227,6 @@ Publr.store("chrome", () => {
         error: state.templateError,
         patternDefaultColorContext: state.patternDefaultColorContext,
         patternDisabledColorContexts: [...state.patternDisabledColorContexts],
-        patternLegacyColorContexts: [...state.patternLegacyColorContexts],
       },
     });
     if (backdropClasses.length) canvasEl.classList.remove(...backdropClasses);
@@ -6919,6 +7278,7 @@ Publr.store("chrome", () => {
     const def = getPattern(name);
     if (!def || state.templateMode) return;
     templateName = name;
+    state.patternDefinitionName = name;
     state.templateMode = "definition";
     state.templateIsInstance = false;
     state.templateIsPrimitive = false;
@@ -6928,7 +7288,12 @@ Publr.store("chrome", () => {
     state.templateSaveLabel = "Publish pattern";
     state.patternDefaultColorContext = def.defaultColorContext ?? "default";
     state.patternDisabledColorContexts = [...(def.disabledColorContexts ?? [])];
-    state.patternLegacyColorContexts = [];
+    patternVariantDrafts = (def.variants ?? []).map((variant) => ({
+      ...variant,
+    }));
+    state.patternDefaultVariant = def.defaultVariant ?? patternVariantDrafts[0]?.name ?? "";
+    state.patternActiveVariant = state.patternDefaultVariant;
+    state.patternVariantEditing = false;
     enterIsolation(def.label, hydrateTemplateParts(def.content), {
       label: def.label,
       kind: "pattern",
@@ -6946,7 +7311,9 @@ Publr.store("chrome", () => {
       syncBlockPanel();
     }
     setSidebarOpen(true);
+    syncPatternVariants();
     state.sidebarTab = "document";
+    requestAnimationFrame(fillPatternPreviews);
     requestAnimationFrame(() => {
       if (state.templateMode === "definition") state.sidebarTab = "document";
     });
@@ -6982,11 +7349,6 @@ Publr.store("chrome", () => {
     state.patternDefaultColorContext =
       storedContext || inferredContext || def?.defaultColorContext || "default";
     state.patternDisabledColorContexts = [...(def?.disabledColorContexts ?? [])];
-    state.patternLegacyColorContexts = Array.isArray(block.settings?.legacyColorContexts)
-      ? block.settings.legacyColorContexts.filter(
-          (context): context is string => typeof context === "string",
-        )
-      : [];
     // Borrow the instance root's classes as the canvas backdrop so the
     // children render on the section's own background (the copy's root frame
     // stays in the page — Save writes back via setBlockChildren).
@@ -7067,11 +7429,7 @@ Publr.store("chrome", () => {
     });
   }
 
-  function returnToParentIsolation(
-    content?: string,
-    colorContext?: string,
-    legacyColorContexts?: readonly string[],
-  ): boolean {
+  function returnToParentIsolation(content?: string, colorContext?: string): boolean {
     const frame = isolationStack.pop();
     if (!frame) return false;
     if (backdropClasses.length) canvasEl.classList.remove(...backdropClasses);
@@ -7095,11 +7453,9 @@ Publr.store("chrome", () => {
     state.templateError = frame.ui.error;
     state.patternDefaultColorContext = frame.ui.patternDefaultColorContext;
     state.patternDisabledColorContexts = [...frame.ui.patternDisabledColorContexts];
-    state.patternLegacyColorContexts = [...frame.ui.patternLegacyColorContexts];
     editor.setPatternsOpaque(true);
     editor.loadHtml(frame.content);
-    if (content != null)
-      editor.setBlockChildren(frame.targetId, content, colorContext, legacyColorContexts);
+    if (content != null) editor.setBlockChildren(frame.targetId, content, colorContext);
     else editor.selectBlock(frame.targetId);
     syncIsolationBreadcrumbs();
     syncCanvasViewportFit();
@@ -7223,6 +7579,7 @@ Publr.store("chrome", () => {
 
   function closeTemplateEditor() {
     if (!state.templateMode) return;
+    clearVariationPreview();
     if (returnToParentIsolation()) return;
     const wasPrimitive = state.templateMode === "primitive";
     const restoreId = instanceId; // instance mode: re-select the copy we edited
@@ -7241,11 +7598,18 @@ Publr.store("chrome", () => {
     state.patternColorSchemes = [];
     state.patternDefaultColorContext = "default";
     state.patternDisabledColorContexts = [];
-    state.patternLegacyColorContexts = [];
     state.patternDefinitionMode = false;
     state.patternSchemeTitle = "Default pattern style";
     state.patternSchemeNote = "";
     state.patternOverviewRows = [];
+    state.patternVariants = [];
+    state.patternVariantsShown = false;
+    state.patternHasVariants = false;
+    state.patternActiveVariant = "";
+    state.patternDefaultVariant = "";
+    state.patternVariantEditing = false;
+    state.patternDefinitionName = "";
+    patternVariantDrafts = [];
     syncCanvasViewportFit();
     templateName = null;
     instanceId = null;
@@ -7296,6 +7660,10 @@ Publr.store("chrome", () => {
   }
 
   async function saveTemplate() {
+    if (state.templateMode === "definition" && state.patternVariantEditing) {
+      closePatternVariantEditor(true);
+      return;
+    }
     if (state.templateMode === "primitive") {
       const type = primitiveType;
       if (type) {
@@ -7321,10 +7689,9 @@ Publr.store("chrome", () => {
       const id = instanceId;
       const content = editor.serialize();
       const colorContext = state.patternDefaultColorContext;
-      const legacyColorContexts = [...state.patternLegacyColorContexts];
-      if (returnToParentIsolation(content, colorContext, legacyColorContexts)) return;
+      if (returnToParentIsolation(content, colorContext)) return;
       closeTemplateEditor();
-      if (id) editor.setBlockChildren(id, content, colorContext, legacyColorContexts);
+      if (id) editor.setBlockChildren(id, content, colorContext);
       return;
     }
     if (state.templateMode === "template-part") {
@@ -7361,14 +7728,27 @@ Publr.store("chrome", () => {
     }
     if (!templateName || !getPattern(templateName)) return;
     const name = templateName;
+    const editedDefaultVariant = patternVariantDrafts.find(
+      (variant) => variant.name === state.patternDefaultVariant,
+    );
+    if (editedDefaultVariant) editedDefaultVariant.content = editor.serialize();
+    const variants =
+      patternVariantDrafts.length > 1
+        ? patternVariantDrafts.map((variant) => ({ ...variant }))
+        : undefined;
+    const defaultVariant = variants ? state.patternDefaultVariant : undefined;
+    const content =
+      variants?.find((variant) => variant.name === defaultVariant)?.content ?? editor.serialize();
     // publishPattern is the whole story: bump from the structural diff
     // (no-op saves keep the version), hard validation with the old
     // definition restored on failure, superseded content archived per
     // version (the future Symbol "Update from Source" base).
     try {
-      const { kind } = publishPattern(name, editor.serialize(), {
+      const { kind } = publishPattern(name, content, {
         defaultColorContext: state.patternDefaultColorContext,
         disabledColorContexts: state.patternDisabledColorContexts,
+        variants,
+        defaultVariant,
       });
       if (kind === "none") {
         closeTemplateEditor();
@@ -7395,6 +7775,10 @@ Publr.store("chrome", () => {
         ...(published.disabledColorContexts?.length
           ? { disabledColorContexts: [...published.disabledColorContexts] }
           : {}),
+        ...(published.variants?.length
+          ? { variants: published.variants.map((variant) => ({ ...variant })) }
+          : {}),
+        ...(published.defaultVariant ? { defaultVariant: published.defaultVariant } : {}),
       };
       const patterns = [...(activeTheme().patterns ?? [])];
       const at = patterns.findIndex((candidate) => candidate.name === name);
@@ -7410,6 +7794,10 @@ Publr.store("chrome", () => {
   }
 
   function cancelTemplate() {
+    if (state.templateMode === "definition" && state.patternVariantEditing) {
+      closePatternVariantEditor(false);
+      return;
+    }
     if (state.templateMode !== "primitive") {
       closeTemplateEditor();
       return;
@@ -8412,6 +8800,77 @@ Publr.store("chrome", () => {
         variationPreview = popup;
       },
       clearVariationPreview() {
+        clearVariationPreview();
+      },
+      previewPatternVariant(d: Dataset, ctx: { event: Event }) {
+        clearVariationPreview();
+        if (!d.variant) return;
+        const name = d.patternName || templateName || state.blockPattern;
+        const pattern = name ? getPattern(name) : undefined;
+        const draft =
+          state.templateMode === "definition"
+            ? patternVariantDrafts.find((variant) => variant.name === d.variant)
+            : undefined;
+        const registered = pattern?.variants?.find((variant) => variant.name === d.variant);
+        const trigger = ctx.event.currentTarget;
+        if (!name || (!draft && !registered) || !(trigger instanceof HTMLElement)) return;
+
+        let content = draft?.content ?? registered!.content;
+        if (
+          state.templateMode === "definition" &&
+          ((state.patternVariantEditing && state.patternActiveVariant === d.variant) ||
+            (!state.patternVariantEditing && state.patternDefaultVariant === d.variant))
+        )
+          content = editor.serialize();
+        const tmp = document.createElement("div");
+        tmp.innerHTML = content;
+        const baseKey = `${name}::${d.variant}`;
+        previewCache.set(baseKey, downcast(upcast(tmp)));
+        for (const key of previewCache.keys())
+          if (key.startsWith(`${baseKey}::context:`)) previewCache.delete(key);
+
+        const popup = document.createElement("div");
+        popup.className = "pbe-variant-preview-popover pbe-pattern-variant-preview-popover";
+        const header = document.createElement("header");
+        header.className = "pbe-pattern-variant-preview-popover__header";
+        const title = document.createElement("strong");
+        title.textContent = draft?.label ?? registered?.label ?? "Pattern variant";
+        const description = document.createElement("small");
+        description.textContent = draft?.description ?? registered?.description ?? "";
+        description.hidden = !description.textContent;
+        header.append(title, description);
+        const stage = document.createElement("div");
+        stage.className =
+          "pbe-variant-preview-popover__stage pbe-pattern-variant-preview-popover__stage";
+        const holder = document.createElement("span");
+        holder.className = "pbe-pattern-variant-preview-popover__preview";
+        holder.dataset.patternName = name;
+        holder.dataset.patternVariantPreview = d.variant;
+        holder.dataset.patternPreviewShape = "pattern-popover";
+        holder.dataset.patternPreviewContext =
+          state.templateMode === "definition"
+            ? state.patternDefaultColorContext
+            : state.blockPatternActiveContext;
+        stage.appendChild(holder);
+        popup.append(header, stage);
+        document.body.appendChild(popup);
+
+        const rect = trigger.getBoundingClientRect();
+        const sidebar = trigger.closest<HTMLElement>("#sidebar");
+        const sidebarLeft = sidebar?.getBoundingClientRect().left ?? rect.left;
+        const gutter = 12;
+        const pageInset = 12;
+        const width = Math.min(460, Math.max(240, sidebarLeft - gutter - pageInset));
+        popup.style.width = `${width}px`;
+        popup.style.left = `${Math.max(pageInset, sidebarLeft - width - gutter)}px`;
+        popup.style.top = `${Math.max(
+          12,
+          Math.min(rect.top, window.innerHeight - popup.offsetHeight - 12),
+        )}px`;
+        variationPreview = popup;
+        fillPatternPreviews();
+      },
+      clearPatternVariantPreview() {
         clearVariationPreview();
       },
       // Color (C2): a swatch sets the TOKEN KEY ("red-500"), re-clicking the
@@ -9695,32 +10154,139 @@ Publr.store("chrome", () => {
       },
       applyPatternColorContext(d: Dataset) {
         if (state.blockPatternRoot && d.context) {
-          const definition = state.blockPattern ? getPattern(state.blockPattern) : undefined;
-          const preserveContext = definition?.disabledColorContexts?.includes(
-            state.blockPatternActiveContext,
-          )
-            ? state.blockPatternActiveContext
-            : undefined;
-          editor.setPatternColorContext(state.blockPatternRoot, d.context, preserveContext);
+          editor.setPatternColorContext(state.blockPatternRoot, d.context);
           syncBlockPanel();
+          if (state.blockPattern) refillPatternVariantContextPreviews(state.blockPattern);
         }
+      },
+      applyPatternVariant(d: Dataset) {
+        if (!state.blockPatternRoot || !d.variant) return;
+        clearVariationPreview();
+        if (editor.setPatternVariant(state.blockPatternRoot, d.variant)) {
+          syncBlockPanel();
+          requestAnimationFrame(fillPatternPreviews);
+        }
+      },
+      addPatternVariant() {
+        if (state.templateMode !== "definition") return;
+        capturePatternVariantDraft();
+        const source = editor.serialize();
+        if (!patternVariantDrafts.length) {
+          patternVariantDrafts = [
+            {
+              name: "default",
+              label: "Default",
+              description: "",
+              content: source,
+            },
+            {
+              name: "variant-2",
+              label: "Variant 2",
+              description: "",
+              content: source,
+            },
+          ];
+          state.patternDefaultVariant = "default";
+          state.patternActiveVariant = "default";
+        } else {
+          const used = new Set(patternVariantDrafts.map((variant) => variant.name));
+          let number = patternVariantDrafts.length + 1;
+          while (used.has(`variant-${number}`)) number++;
+          patternVariantDrafts.push({
+            name: `variant-${number}`,
+            label: `Variant ${number}`,
+            description: "",
+            content: source,
+          });
+        }
+        editPatternVariant(patternVariantDrafts[patternVariantDrafts.length - 1].name);
+      },
+      editPatternVariant(d: Dataset) {
+        if (d.variant) editPatternVariant(d.variant);
+      },
+      renamePatternVariant(d: Dataset) {
+        if (state.templateMode !== "definition" || !d.variant) return;
+        const variant = patternVariantDrafts.find((candidate) => candidate.name === d.variant);
+        if (!variant) return;
+        const label = window.prompt("Rename pattern variant", variant.label)?.trim();
+        if (!label || label === variant.label) return;
+        variant.label = label;
+        syncPatternVariants();
+      },
+      describePatternVariant(d: Dataset) {
+        if (state.templateMode !== "definition" || !d.variant) return;
+        const variant = patternVariantDrafts.find((candidate) => candidate.name === d.variant);
+        if (!variant) return;
+        const description = window
+          .prompt("Short variant description", variant.description ?? "")
+          ?.trim();
+        if (description == null || description === (variant.description ?? "")) return;
+        variant.description = description;
+        syncPatternVariants();
+      },
+      setDefaultPatternVariant(d: Dataset) {
+        if (
+          state.templateMode !== "definition" ||
+          !d.variant ||
+          !patternVariantDrafts.some((variant) => variant.name === d.variant)
+        )
+          return;
+        if (state.patternVariantEditing) capturePatternVariantDraft();
+        else {
+          const currentDefault = patternVariantDrafts.find(
+            (variant) => variant.name === state.patternDefaultVariant,
+          );
+          if (currentDefault) {
+            currentDefault.content = editor.serialize();
+            cachePatternVariantDraft(currentDefault);
+          }
+        }
+        state.patternDefaultVariant = d.variant;
+        if (!state.patternVariantEditing) {
+          state.patternActiveVariant = d.variant;
+          const nextDefault = patternVariantDrafts.find((variant) => variant.name === d.variant);
+          editor.loadHtml(hydrateTemplateParts(nextDefault?.content ?? ""));
+        }
+        syncPatternVariants();
+      },
+      deletePatternVariant(d: Dataset) {
+        if (state.templateMode !== "definition" || !d.variant) return;
+        const index = patternVariantDrafts.findIndex((variant) => variant.name === d.variant);
+        if (index < 0 || !window.confirm("Delete this pattern variant?")) return;
+        capturePatternVariantDraft();
+        patternVariantDrafts.splice(index, 1);
+        if (patternVariantDrafts.length === 1) {
+          const remaining = patternVariantDrafts[0];
+          patternVariantDrafts = [];
+          state.patternActiveVariant = "";
+          state.patternDefaultVariant = "";
+          state.patternVariantEditing = false;
+          state.templateSaveLabel = "Publish pattern";
+          editor.loadHtml(hydrateTemplateParts(remaining.content));
+          syncPatternVariants();
+          return;
+        }
+        if (state.patternDefaultVariant === d.variant)
+          state.patternDefaultVariant = patternVariantDrafts[0]?.name ?? "";
+        if (state.patternActiveVariant === d.variant) {
+          const next =
+            patternVariantDrafts[Math.min(index, patternVariantDrafts.length - 1)] ??
+            patternVariantDrafts[0];
+          state.patternActiveVariant = next?.name ?? "";
+          editor.loadHtml(hydrateTemplateParts(next?.content ?? ""));
+        }
+        syncPatternVariants();
       },
       selectPatternDefaultColorContext(d: Dataset) {
         if (!state.patternColorSchemesShown || !d.context) return;
         const context = state.patternColorSchemes.find((option) => option.key === d.context);
         if (!context) return;
         if (state.templateMode === "instance") {
-          if (
-            state.patternDisabledColorContexts.includes(state.patternDefaultColorContext) &&
-            !state.patternLegacyColorContexts.includes(state.patternDefaultColorContext)
-          )
-            state.patternLegacyColorContexts = [
-              ...state.patternLegacyColorContexts,
-              state.patternDefaultColorContext,
-            ];
           state.patternDefaultColorContext = context.key;
           editor.setDocumentColorContext(context.key);
           syncBlockPanel();
+          if (state.patternDefinitionName)
+            refillPatternVariantContextPreviews(state.patternDefinitionName);
           state.sidebarTab = "document";
           return;
         }
@@ -9732,6 +10298,8 @@ Publr.store("chrome", () => {
         );
         editor.setDocumentColorContext(context.key);
         syncBlockPanel();
+        if (state.patternDefinitionName)
+          refillPatternVariantContextPreviews(state.patternDefinitionName);
         state.sidebarTab = "document";
       },
       togglePatternColorContextAvailability(d: Dataset) {
@@ -9762,6 +10330,15 @@ Publr.store("chrome", () => {
       },
       openIsolationBreadcrumb(d: Dataset) {
         const index = Number(d.index);
+        if (
+          state.templateMode === "definition" &&
+          state.patternVariantEditing &&
+          index === 0 &&
+          state.patternDefaultVariant
+        ) {
+          closePatternVariantEditor(false);
+          return;
+        }
         if (Number.isInteger(index)) navigateIsolationBreadcrumb(index);
       },
       saveTemplate,
@@ -9975,8 +10552,8 @@ Publr.store("chrome", () => {
         defaultBlock: opts.defaultBlock ?? "paragraph",
         groupBlock: opts.groupBlock ?? "group", // Cmd+G wraps the selection in one of these
         // The full product shell starts from its visible Hearth system. A
-        // customized host theme wins; the legacy neutral POC seed is upgraded
-        // and receives the contextual roles used by registered patterns.
+        // customized host theme wins; missing tokens fill from Hearth so
+        // registered patterns' contextual roles always resolve.
         theme: withHearthDefaults(opts.theme),
         styleBackend: opts.styleBackend,
         policy: opts.policy,
@@ -9997,7 +10574,10 @@ Publr.store("chrome", () => {
           // save path would replace the whole entry with the fragment.
           // The host hears again when Save/Cancel restores the page
           // (loadHtml fires onChange with the real document back).
-          if (!state.templateMode) opts.onChange?.(editor); // the host's persistence hook
+          if (!state.templateMode) {
+            opts.onChange?.(editor); // the host's persistence hook
+            schedulePersist(state.wireEditing); // the adapter's (captured now, flushed debounced)
+          }
         },
       });
       Publr.editor = editor; // poke at it from the console: Publr.editor.debug = true
@@ -10023,6 +10603,14 @@ Publr.store("chrome", () => {
       const onShellViewportResize = () => scheduleBoxEditorPosition();
       shellView.addEventListener("resize", onShellViewportResize);
       shellView.visualViewport?.addEventListener("resize", onShellViewportResize);
+      // A pending debounced save must not die with the page. localStorage
+      // (the built-in adapter) writes synchronously, so this flush lands even
+      // on unload; async host adapters get their best shot (sendBeacon-able).
+      const onPagePersistFlush = () => {
+        if (shellDocument.visibilityState === "hidden") flushPersistence();
+      };
+      shellView.addEventListener("pagehide", flushPersistence);
+      shellDocument.addEventListener("visibilitychange", onPagePersistFlush);
 
       // Breakpoint buttons are useful presets, but the iframe can be inspected
       // at every width between them. Because the canvas stays centered, a
@@ -10415,6 +11003,12 @@ Publr.store("chrome", () => {
         editor.loadHtml(opts.content);
         refreshEngineCss();
       }
+      // Arm autosave only after the boot load's notify (a microtask —
+      // editor.notify defers) has passed: the boot load is not an edit, and
+      // re-saving just-loaded content would spuriously hit a host backend.
+      queueMicrotask(() => {
+        persistenceArmed = true;
+      });
       if (opts.initialDesignOpen && !opts.openSiteDesign) refs.openSiteDesign();
 
       return () => {
@@ -10436,6 +11030,10 @@ Publr.store("chrome", () => {
         shellDocument.removeEventListener("mousedown", onShellBackgroundMouseDown);
         shellView.removeEventListener("resize", onShellViewportResize);
         shellView.visualViewport?.removeEventListener("resize", onShellViewportResize);
+        persistenceArmed = false; // before the flush: teardown must not re-schedule
+        flushPersistence();
+        shellView.removeEventListener("pagehide", flushPersistence);
+        shellDocument.removeEventListener("visibilitychange", onPagePersistFlush);
         if (boxEditorPositionFrame) shellView.cancelAnimationFrame(boxEditorPositionFrame);
         boxEditorPositionFrame = 0;
         shellRootEl = null;
@@ -10581,7 +11179,21 @@ export async function createEditorShell(options: EditorShellOptions): Promise<Ed
   }
   syncThemePatterns(initialTheme);
   syncThemeTemplates(initialTheme);
-  shellOptions = { ...options, theme: initialTheme };
+  // Resolve persistence before boot: stored content (when the adapter has
+  // any) replaces `content`, which stays the first-run seed. A failing
+  // load() falls back to the seed instead of blocking the shell.
+  persistence = resolvePersistenceAdapter(options.persistence);
+  persistenceArmed = false;
+  persistencePending = null;
+  let content = options.content;
+  if (persistence.load) {
+    try {
+      content = (await persistence.load()) ?? content;
+    } catch (err) {
+      console.warn("[publr-editor] persistence load failed; using initial content", err);
+    }
+  }
+  shellOptions = { ...options, theme: initialTheme, content };
   siteDesignSavedJson = JSON.stringify(initialTheme);
   baseCss = options.baseCss ?? "";
   siteCss = options.siteCss ?? "";

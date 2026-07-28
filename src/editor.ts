@@ -578,7 +578,7 @@ export function createEditor({
     if (!at || !canMoveBlock(id)) return false;
     if (parentId === id) return false;
     // Reordering in the slot that already owns the block is not insertion.
-    // The document may contain permissively-upcast legacy content that a
+    // The document may contain permissively-upcast foreign content that a
     // current admission policy would no longer allow as a fresh child; that
     // must not make the existing child impossible to reorder.
     if ((at.parent?.id ?? null) === parentId) return true;
@@ -745,31 +745,9 @@ export function createEditor({
     };
   };
 
-  const patternColorContextPlan = (
-    root: Block,
-    context: string,
-    preserveContext?: string,
-  ): (() => void) | null => {
+  const patternColorContextPlan = (root: Block, context: string): (() => void) | null => {
     if (!root.pattern || root.type !== PATTERN_ROOT_TYPE) return null;
-    const applyColors = colorContextPlan(root.children ?? [], context, root);
-    const legacyContexts = Array.isArray(root.settings?.legacyColorContexts)
-      ? root.settings.legacyColorContexts.filter(
-          (candidate): candidate is string => typeof candidate === "string",
-        )
-      : [];
-    const nextLegacyContexts =
-      preserveContext && !legacyContexts.includes(preserveContext)
-        ? [...legacyContexts, preserveContext]
-        : legacyContexts;
-    const legacyChanged = nextLegacyContexts.length !== legacyContexts.length;
-    if (!applyColors && !legacyChanged) return null;
-    return () => {
-      applyColors?.();
-      if (legacyChanged) {
-        root.settings ??= {};
-        root.settings.legacyColorContexts = nextLegacyContexts;
-      }
-    };
+    return colorContextPlan(root.children ?? [], context, root);
   };
 
   // A pattern stamp: upcast the registered fragment (the same path documents
@@ -1185,12 +1163,12 @@ export function createEditor({
     ensureCanvasFocus();
   });
 
-  // The legacy surface APPENDER is retained as a narrow fallback when chrome
-  // is not mounted. Container padding is primarily the container's selection
-  // surface: only the 12px strip immediately after its last child (or along
-  // an empty container's bottom edge) may append. The visible chrome inserter
-  // uses the same edge-sized target. Root canvas padding keeps its historical
-  // behavior for hosts that use the core editor without chrome.
+  // The padding-surface APPENDER is a narrow fallback for hosts that use the
+  // core editor without chrome. Container padding is primarily the container's
+  // selection surface: only the 12px strip immediately after its last child
+  // (or along an empty container's bottom edge) may append. The visible chrome
+  // inserter uses the same edge-sized target; root canvas padding appends for
+  // chrome-less hosts.
   canvas.addEventListener(
     "mousedown",
     (event) => {
@@ -1344,9 +1322,9 @@ export function createEditor({
   };
 
   // Remove pattern identity without changing published output. Current stamps
-  // use a phantom root, which unwraps into its children. Legacy/imported roots
-  // may carry provenance on a real layout block; those keep their wrapper and
-  // lose only the pattern marker.
+  // use a phantom root, which unwraps into its children. Imported/hand-authored
+  // roots may carry provenance on a real layout block; those keep their wrapper
+  // and lose only the pattern marker.
   function convertPatternToBlocks(id: string): boolean {
     if (!canConvertPattern(id)) return false;
     const at = locate(id);
@@ -1984,12 +1962,7 @@ export function createEditor({
      * upcast like any load; one commit, one undo entry; the block lands
      * selected. Refused on unknown blocks and non-containers.
      */
-    setBlockChildren(
-      id: string,
-      html: string,
-      colorContext?: string,
-      legacyColorContexts?: readonly string[],
-    ): Block | null {
+    setBlockChildren(id: string, html: string, colorContext?: string): Block | null {
       const block = findBlock(id);
       if (!block || !block.children) return null;
       const tmp = ownerDocument.createElement("div");
@@ -1998,12 +1971,6 @@ export function createEditor({
       commit(
         () => {
           block.children = children;
-          if (legacyColorContexts) {
-            block.settings ??= {};
-            if (legacyColorContexts.length)
-              block.settings.legacyColorContexts = [...legacyColorContexts];
-            else delete block.settings.legacyColorContexts;
-          }
           if (colorContext) patternColorContextPlan(block, colorContext)?.();
         },
         { label: `set children of ${id} (${children.length} blocks)` },
@@ -2116,10 +2083,10 @@ export function createEditor({
      * Pattern recipes only reference semantic roles, so remapping those role
      * keys preserves every block's intent (surface, accent, muted, border)
      * while changing the palette as one undoable operation. */
-    setPatternColorContext(id: string, context: string, preserveContext?: string): boolean {
+    setPatternColorContext(id: string, context: string): boolean {
       const root = findBlock(id);
       if (!root) return false;
-      const apply = patternColorContextPlan(root, context, preserveContext);
+      const apply = patternColorContextPlan(root, context);
       if (!apply) return false;
       commit(apply, { label: `pattern ${id} color context = ${context}` });
       // Rebuild only this copy so the root remains selected and its pattern

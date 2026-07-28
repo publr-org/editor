@@ -231,22 +231,21 @@ describe("shell host seams", () => {
     );
   });
 
-  test("standalone content CSS preserves responsive utilities over component defaults", () => {
+  test("standalone content CSS preserves utilities over component defaults", () => {
     const tag = document.createElement("style");
-    const grid = document.createElement("div");
+    const btn = document.createElement("a");
     tag.textContent = composeContentCss([preflightCss, siteCss]);
-    grid.className = "grid pbe-grid--2 grid-cols-4";
-    grid.style.width = "400px";
+    btn.className = "pbe-btn pbe-btn--solid p-0";
     document.head.appendChild(tag);
-    document.body.appendChild(grid);
+    document.body.appendChild(btn);
     try {
-      // Preview used to resolve this to two columns: the prepended preflight
-      // declared `base,utilities`, accidentally placing the site's later
-      // `components` layer above responsive utilities.
-      expect(getComputedStyle(grid).gridTemplateColumns.split(" ")).toHaveLength(4);
+      // Preview used to resolve this to the component padding: the prepended
+      // preflight declared `base,utilities`, accidentally placing the site's
+      // later `components` layer above authored utilities.
+      expect(getComputedStyle(btn).paddingLeft).toBe("0px");
     } finally {
       tag.remove();
-      grid.remove();
+      btn.remove();
     }
   });
 
@@ -911,7 +910,7 @@ describe("shell host seams", () => {
       },
     });
     destroyShell = shell.destroy;
-    const [legacyRoot] = shell.editor.insertPattern("scheme-callout")!;
+    const [priorRoot] = shell.editor.insertPattern("scheme-callout")!;
 
     host.querySelector<HTMLButtonElement>("#inserter-toggle")!.click();
     host.querySelector<HTMLButtonElement>('[data-itab="patterns"]')!.click();
@@ -1036,7 +1035,7 @@ describe("shell host seams", () => {
         disabledColorContexts: ["brand"],
       }),
     );
-    shell.editor.selectBlock(legacyRoot.id);
+    shell.editor.selectBlock(priorRoot.id);
     await vi.waitFor(() =>
       expect(
         host.querySelector('#pattern-context [data-context="brand"]')?.getAttribute("aria-pressed"),
@@ -1050,14 +1049,9 @@ describe("shell host seams", () => {
           ?.getAttribute("aria-pressed"),
       ).toBe("true"),
     );
-    expect(host.querySelector('#pattern-context [data-context="brand"]')).not.toBeNull();
-    expect(shell.editor.getBlock(legacyRoot.id)?.settings?.legacyColorContexts).toEqual(["brand"]);
-    host.querySelector<HTMLButtonElement>('#pattern-context [data-context="brand"]')!.click();
-    await vi.waitFor(() =>
-      expect(
-        host.querySelector('#pattern-context [data-context="brand"]')?.getAttribute("aria-pressed"),
-      ).toBe("true"),
-    );
+    // "brand" is disabled in the definition and no longer active on this copy,
+    // so it leaves the picker.
+    expect(host.querySelector('#pattern-context [data-context="brand"]')).toBeNull();
 
     const [root] = shell.editor.insertPattern("scheme-callout")!;
     shell.editor.selectBlock(root.id);
@@ -1141,6 +1135,195 @@ describe("shell host seams", () => {
     definitionEdit.click();
     await vi.waitFor(() => expect(shell.isIsolated()).toBe(true));
     expect(host.querySelector("#pattern-style-selector")?.classList.contains("hidden")).toBe(true);
+  });
+
+  test("pattern copies select variants and definition mode manages them", async () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    const standard = getPattern("call-to-action")!.content.replace(
+      'class="text-center"',
+      'class="bg-brand-surface text-brand-foreground text-center"',
+    );
+    const alternate = standard.replace("Ready when you are", "A different composition");
+    const shell = await createEditorShell({
+      container: host,
+      content: '<p data-pb-block="paragraph" data-pb-rich="body">Before</p>',
+      media: false,
+      theme: {
+        ...HEARTH_THEME,
+        patterns: [
+          {
+            name: "variant-callout",
+            label: "Variant callout",
+            category: "Theme",
+            content: standard,
+            variants: [
+              {
+                name: "standard",
+                label: "Standard",
+                description: "Balanced text and image.",
+                content: standard,
+              },
+              { name: "alternate", label: "Alternate", content: alternate },
+            ],
+            defaultVariant: "standard",
+          },
+        ],
+      },
+    });
+    destroyShell = shell.destroy;
+
+    const [root] = shell.editor.insertPattern("variant-callout")!;
+    shell.editor.selectBlock(root.id);
+    await vi.waitFor(() =>
+      expect(host.querySelector("#pattern-variant-selector")?.classList.contains("hidden")).toBe(
+        false,
+      ),
+    );
+    expect(host.querySelector('[data-tab="document"]')?.textContent?.trim()).toBe("Pattern");
+    expect(
+      host
+        .querySelector('#pattern-variant-selector [data-variant="standard"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      host
+        .querySelector("#pattern-variant-selector [role='group']")
+        ?.classList.contains("grid-cols-2"),
+    ).toBe(true);
+    let initialVariantPreview!: HTMLIFrameElement;
+    await vi.waitFor(() => {
+      initialVariantPreview = host.querySelector<HTMLIFrameElement>(
+        '#pattern-variant-selector [data-pattern-variant-preview="standard"] iframe',
+      )!;
+      expect(initialVariantPreview?.contentDocument?.querySelector("#canvas")).not.toBeNull();
+    });
+    host.querySelector<HTMLButtonElement>('#pattern-context [data-context="inverse"]')!.click();
+    expect(
+      host.querySelector<HTMLIFrameElement>(
+        '#pattern-variant-selector [data-pattern-variant-preview="standard"] iframe',
+      ),
+    ).toBe(initialVariantPreview);
+    expect(initialVariantPreview.isConnected).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        host.querySelector<HTMLElement>(
+          '#pattern-variant-selector [data-pattern-variant-preview="standard"]',
+        )?.dataset.patternPreviewContext,
+      ).toBe("inverse"),
+    );
+    await vi.waitFor(() => {
+      const preview = host.querySelector<HTMLIFrameElement>(
+        '#pattern-variant-selector [data-pattern-variant-preview="standard"] iframe',
+      );
+      expect(preview).not.toBe(initialVariantPreview);
+      expect(preview?.contentDocument?.querySelector(".bg-inverse-surface")).not.toBeNull();
+    });
+
+    host
+      .querySelector<HTMLButtonElement>('#pattern-variant-selector [data-variant="alternate"]')!
+      .click();
+    await vi.waitFor(() =>
+      expect(shell.editor.getBlock(root.id)?.settings?.variant).toBe("alternate"),
+    );
+    expect(shell.editor.serialize()).toContain("A different composition");
+
+    host.querySelector<HTMLButtonElement>("#inserter-toggle")!.click();
+    host.querySelector<HTMLButtonElement>('[data-itab="patterns"]')!.click();
+    host.querySelector<HTMLButtonElement>('#pattern-groups [data-group="All"]')!.click();
+    let edit!: HTMLButtonElement;
+    await vi.waitFor(() => {
+      edit = host.querySelector<HTMLButtonElement>(
+        '#pattern-flyout .pattern-edit[data-pattern="variant-callout"]',
+      )!;
+      expect(edit).not.toBeNull();
+    });
+    edit.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(true));
+    expect(host.querySelectorAll('#pattern-variants [aria-label="Rename variant"]')).toHaveLength(
+      2,
+    );
+    expect(
+      host.querySelectorAll('#pattern-variants [aria-label="Edit variant description"]'),
+    ).toHaveLength(2);
+    expect(host.querySelector("#pattern-variants")?.textContent).toContain("Standard");
+    expect(host.querySelector("#pattern-variants")?.textContent).toContain("Alternate");
+    expect(host.querySelector<HTMLButtonElement>("#template-save")?.textContent?.trim()).toBe(
+      "Publish pattern",
+    );
+    expect(
+      host.querySelector("#pattern-variants [role='group']")?.classList.contains("grid-cols-2"),
+    ).toBe(true);
+
+    host.querySelector<HTMLButtonElement>('[aria-label="Add pattern variant"]')!.click();
+    await vi.waitFor(() =>
+      expect(host.querySelectorAll('#pattern-variants [aria-label="Rename variant"]')).toHaveLength(
+        3,
+      ),
+    );
+    expect(host.querySelector("#isolation-breadcrumbs")?.textContent).toContain("Variant 3");
+    expect(host.querySelector<HTMLButtonElement>("#template-save")?.textContent?.trim()).toBe(
+      "Save variant",
+    );
+    const variantHeading = canvasQuery<HTMLElement>('[data-pb-block="heading"]')!;
+    shell.editor.setField(variantHeading.dataset.pbId!, "text", "Saved variant heading");
+
+    const hoveredVariant = host.querySelector<HTMLButtonElement>(
+      '#pattern-variants [data-variant="standard"]',
+    )!;
+    hoveredVariant.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    let standardPreviewLeft = "";
+    await vi.waitFor(() =>
+      expect(
+        (document.querySelector(".pbe-pattern-variant-preview-popover") as HTMLElement | null)
+          ?.style.left,
+      ).toBeTruthy(),
+    );
+    standardPreviewLeft = (
+      document.querySelector(".pbe-pattern-variant-preview-popover") as HTMLElement
+    ).style.left;
+    await vi.waitFor(() =>
+      expect(
+        (
+          document.querySelector(
+            ".pbe-pattern-variant-preview-popover__preview",
+          ) as HTMLElement | null
+        )?.style.height,
+      ).toBeTruthy(),
+    );
+    expect(document.querySelector(".pbe-pattern-variant-preview-popover")?.textContent).toContain(
+      "Balanced text and image.",
+    );
+    hoveredVariant.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(document.querySelector(".pbe-pattern-variant-preview-popover")).toBeNull(),
+    );
+    const secondColumnVariant = host.querySelector<HTMLButtonElement>(
+      '#pattern-variants [data-variant="alternate"]',
+    )!;
+    secondColumnVariant.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(
+        (document.querySelector(".pbe-pattern-variant-preview-popover") as HTMLElement | null)
+          ?.style.left,
+      ).toBe(standardPreviewLeft),
+    );
+    secondColumnVariant.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+
+    host.querySelector<HTMLButtonElement>("#template-save")!.click();
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLButtonElement>("#template-save")?.textContent?.trim()).toBe(
+        "Publish pattern",
+      ),
+    );
+    expect(shell.isIsolated()).toBe(true);
+    host.querySelector<HTMLButtonElement>("#template-save")!.click();
+    await vi.waitFor(() => expect(shell.isIsolated()).toBe(false));
+    expect(getPattern("variant-callout")?.variants).toHaveLength(3);
+    expect(
+      getPattern("variant-callout")?.variants?.find((variant) => variant.name === "variant-3")
+        ?.content,
+    ).toContain("Saved variant heading");
   });
 
   test("primitive buttons use the site accent while selected and while editing text", async () => {
@@ -2135,17 +2318,29 @@ describe("shell host seams", () => {
     const sourceX = 96;
     const targetX = 64;
     rangeBoundary.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, clientX: sourceX, pointerId: 1 }),
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        clientX: sourceX,
+        pointerId: 1,
+      }),
     );
     expect(rangeBoundary.getAttribute("data-dragging")).toBe("true");
     document.dispatchEvent(
-      new PointerEvent("pointermove", { bubbles: true, clientX: 80, pointerId: 1 }),
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: 80,
+        pointerId: 1,
+      }),
     );
     expect(rangeBoundary.style.flexGrow).toBe("3.5");
     expect(rangeBoundary.hasAttribute("data-preview-label")).toBe(false);
     expect(target.hasAttribute("data-drop-target")).toBe(false);
     document.dispatchEvent(
-      new PointerEvent("pointermove", { bubbles: true, clientX: targetX, pointerId: 1 }),
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: targetX,
+        pointerId: 1,
+      }),
     );
     expect(rangeBoundary.style.flexGrow).toBe("4");
     expect(rangeBoundary.getAttribute("data-preview-label")).toBe("768px");
@@ -2154,7 +2349,11 @@ describe("shell host seams", () => {
     expect(shell.editor.getStyle("G", "padding", "lg")).toBe("4");
     expect(shell.editor.getStyle("G", "padding", "md")).toBe("");
     document.dispatchEvent(
-      new PointerEvent("pointerup", { bubbles: true, clientX: targetX, pointerId: 1 }),
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: targetX,
+        pointerId: 1,
+      }),
     );
     await vi.waitFor(() => {
       expect(shell.editor.getStyle("G", "padding", "lg")).toBe("");
@@ -2305,19 +2504,31 @@ describe("shell host seams", () => {
     const sidebarField = host.querySelector<HTMLInputElement>("#sidebar input")!;
     expect(sidebarField).toBeTruthy();
     sidebarField.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }),
     );
     expect(shell.editor.selection.blocks).toEqual(["P"]);
 
-    host
-      .querySelector<HTMLButtonElement>("#tree-toggle")!
-      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    host.querySelector<HTMLButtonElement>("#tree-toggle")!.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }),
+    );
     expect(shell.editor.selection.blocks).toEqual(["P"]);
 
     const stage = host.querySelector<HTMLElement>("#editor-content")!;
     stage.setAttribute("data-isolation-stage", "");
     stage.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }),
     );
 
     await vi.waitFor(() => expect(shell.editor.selection.blocks).toEqual([]));
