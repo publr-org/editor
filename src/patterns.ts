@@ -19,6 +19,17 @@ import { upcast } from "./cast";
 import { getBlockType } from "./registry";
 import { flattenBlocks } from "./tree";
 
+/** One complete composition inside a multi-variant pattern. */
+export interface PatternVariantDefinition {
+  /** Stable, wire-safe identity. Labels may change without moving placed copies. */
+  name: string;
+  label: string;
+  /** Optional short explanatory copy for selectors and enlarged previews. */
+  description?: string;
+  /** Annotated-HTML fragment, governed by the same rules as PatternDefinition.content. */
+  content: string;
+}
+
 /** What registerPattern accepts: label + content, plus inserter metadata. */
 export interface PatternDefinition {
   label: string;
@@ -41,6 +52,14 @@ export interface PatternDefinition {
   defaultColorContext?: string;
   /** Theme color contexts hidden from this pattern instance's context picker. */
   disabledColorContexts?: readonly string[];
+  /**
+   * Complete alternative compositions. A variant collection has at least two
+   * entries; `content` remains the backwards-compatible alias of the default
+   * variant so existing inserters and hosts need no special path.
+   */
+  variants?: readonly PatternVariantDefinition[];
+  /** The variant stamped when no explicit choice is made. Defaults to the first entry. */
+  defaultVariant?: string;
 }
 
 /** A validated, frozen registry entry. */
@@ -53,6 +72,8 @@ export interface PatternType {
   readonly icon?: string;
   readonly defaultColorContext?: string;
   readonly disabledColorContexts?: readonly string[];
+  readonly variants?: readonly Readonly<PatternVariantDefinition>[];
+  readonly defaultVariant?: string;
 }
 
 /**
@@ -95,6 +116,8 @@ export function registerPattern(name: string, def: PatternDefinition): PatternTy
         "icon",
         "defaultColorContext",
         "disabledColorContexts",
+        "variants",
+        "defaultVariant",
       ].includes(key)
     )
       fail(ctx, `unknown key "${key}"`);
@@ -125,46 +148,89 @@ export function registerPattern(name: string, def: PatternDefinition): PatternTy
   if (def.defaultColorContext && disabledColorContexts.includes(def.defaultColorContext))
     fail(ctx, "defaultColorContext cannot also be disabled");
 
-  // Validate the EXPANSION, not the markup: upcast the fragment exactly the
-  // way insertPattern will and inspect what comes out.
-  const tmp = document.createElement("div");
-  tmp.innerHTML = def.content;
-  if (!tmp.children.length) fail(ctx, "content must contain at least one block element");
-  const blocks = upcast(tmp).blocks;
-  const all = flattenBlocks(blocks);
-  for (const b of all) {
-    if (b.type === RAW_TYPE) {
-      // Raw-html has two sources: markup naming a block type that isn't
-      // registered (a MISTAKE this check exists to catch — the fragment is
-      // broken), vs genuinely untagged markup (decorative SVG, an embed —
-      // LEGITIMATE, passes through verbatim, common in real sections). Tell
-      // them apart by the root: a `data-pb-block` attribute means an
-      // unregistered type was referenced.
-      const probe = document.createElement("div");
-      probe.innerHTML = str(b.fields.html);
-      if (probe.firstElementChild?.hasAttribute("data-pb-block"))
-        fail(
-          ctx,
-          "content references an unregistered block type — register the blocks before the pattern",
-        );
-      continue; // untagged raw markup is allowed
+  const validateContent = (content: string, field: string): void => {
+    if (typeof content !== "string" || !content.trim())
+      fail(ctx, `${field} (annotated-HTML fragment) is required`);
+    // Validate the EXPANSION, not the markup: upcast the fragment exactly the
+    // way insertPattern will and inspect what comes out.
+    const tmp = document.createElement("div");
+    tmp.innerHTML = content;
+    if (!tmp.children.length) fail(ctx, `${field} must contain at least one block element`);
+    const blocks = upcast(tmp).blocks;
+    const all = flattenBlocks(blocks);
+    for (const b of all) {
+      if (b.type === RAW_TYPE) {
+        const probe = document.createElement("div");
+        probe.innerHTML = str(b.fields.html);
+        if (probe.firstElementChild?.hasAttribute("data-pb-block"))
+          fail(
+            ctx,
+            `${field} references an unregistered block type — register the blocks before the pattern`,
+          );
+        continue;
+      }
+      const known = new Set(getBlockType(b.type)!.fields.map((f) => f.name));
+      for (const carriedField of Object.keys(b.fields)) {
+        if (!known.has(carriedField))
+          fail(
+            ctx,
+            `"${b.type}" does not carry a field "${carriedField}" — the fragment would drop it`,
+          );
+      }
     }
-    // A carrier naming a field the type's render doesn't declare would lose
-    // its content on the first re-render (the render never reads it back) —
-    // the silent-drift class the probe kills for renders, killed here for
-    // fragments.
-    const known = new Set(getBlockType(b.type)!.fields.map((f) => f.name));
-    for (const field of Object.keys(b.fields)) {
-      if (!known.has(field))
-        fail(ctx, `"${b.type}" does not carry a field "${field}" — the fragment would drop it`);
-    }
+    if (all.length < 2)
+      fail(
+        ctx,
+        `${field} must expand to at least two blocks — one block is a block, not a pattern`,
+      );
+  };
+  validateContent(def.content, "content");
+
+  let variants: readonly Readonly<PatternVariantDefinition>[] | undefined;
+  let defaultVariant: string | undefined;
+  if ("variants" in def) {
+    if (!Array.isArray(def.variants) || def.variants.length < 2)
+      fail(ctx, "variants must contain at least two variants");
+    const names = new Set<string>();
+    variants = Object.freeze(
+      def.variants.map((variant, index) => {
+        const vctx = `variants[${index}]`;
+        if (variant === null || typeof variant !== "object") fail(ctx, `${vctx} must be an object`);
+        for (const key of Object.keys(variant))
+          if (!["name", "label", "description", "content"].includes(key))
+            fail(ctx, `${vctx}: unknown key "${key}"`);
+        if (typeof variant.name !== "string" || !NAME.test(variant.name))
+          fail(ctx, `${vctx}.name must be a lowercase name`);
+        if (names.has(variant.name)) fail(ctx, `${vctx}: duplicate name "${variant.name}"`);
+        names.add(variant.name);
+        if (typeof variant.label !== "string" || !variant.label.trim())
+          fail(ctx, `${vctx}.label is required`);
+        if ("description" in variant && typeof variant.description !== "string")
+          fail(ctx, `${vctx}.description must be a string`);
+        validateContent(variant.content, `${vctx}.content`);
+        return Object.freeze({
+          name: variant.name,
+          label: variant.label.trim(),
+          ...(variant.description?.trim() ? { description: variant.description.trim() } : {}),
+          content: variant.content,
+        });
+      }),
+    );
+    defaultVariant = def.defaultVariant ?? variants[0].name;
+    if (!names.has(defaultVariant))
+      fail(ctx, `defaultVariant must name one of the registered variants`);
+  } else if ("defaultVariant" in def) {
+    fail(ctx, "defaultVariant requires variants");
   }
-  if (all.length < 2)
-    fail(ctx, "content must expand to at least two blocks — one block is a block, not a pattern");
+
+  // With variants, `content` is deliberately an alias of the selected
+  // default. Old consumers continue to stamp and preview the right thing.
+  const content =
+    variants?.find((variant) => variant.name === defaultVariant)?.content ?? def.content;
 
   const frozen: PatternType = Object.freeze({
     label: def.label,
-    content: def.content,
+    content,
     version: def.version ?? "1.0",
     ...(def.category != null ? { category: def.category } : {}),
     ...(def.description != null ? { description: def.description } : {}),
@@ -173,6 +239,8 @@ export function registerPattern(name: string, def: PatternDefinition): PatternTy
     ...(disabledColorContexts.length
       ? { disabledColorContexts: Object.freeze(disabledColorContexts) }
       : {}),
+    ...(variants ? { variants } : {}),
+    ...(defaultVariant ? { defaultVariant } : {}),
   });
   registry.set(name, frozen);
   return frozen;
@@ -201,23 +269,40 @@ export function patternTypes(): ({ name: string } & PatternType)[] {
 export function publishPattern(
   name: string,
   content: string,
-  colorSettings?: Pick<PatternDefinition, "defaultColorContext" | "disabledColorContexts">,
+  settings?: Pick<
+    PatternDefinition,
+    "defaultColorContext" | "disabledColorContexts" | "variants" | "defaultVariant"
+  >,
 ): { version: string; kind: "none" | "minor" | "major" } {
   const def = registry.get(name);
   if (!def) fail(`publishPattern("${name}")`, "not registered");
   const defaultColorContext =
-    colorSettings && "defaultColorContext" in colorSettings
-      ? colorSettings.defaultColorContext
+    settings && "defaultColorContext" in settings
+      ? settings.defaultColorContext
       : def.defaultColorContext;
   const disabledColorContexts =
-    colorSettings && "disabledColorContexts" in colorSettings
-      ? colorSettings.disabledColorContexts
+    settings && "disabledColorContexts" in settings
+      ? settings.disabledColorContexts
       : def.disabledColorContexts;
+  const variants = settings && "variants" in settings ? settings.variants : def.variants;
+  const defaultVariant =
+    settings && "defaultVariant" in settings ? settings.defaultVariant : def.defaultVariant;
   const colorSettingsChanged =
     defaultColorContext !== def.defaultColorContext ||
     JSON.stringify(disabledColorContexts ?? []) !== JSON.stringify(def.disabledColorContexts ?? []);
+  const variantsChanged =
+    JSON.stringify(variants ?? []) !== JSON.stringify(def.variants ?? []) ||
+    defaultVariant !== def.defaultVariant;
   const contentKind = diffPatternContent(def.content, content);
-  const kind = contentKind === "none" && colorSettingsChanged ? "minor" : contentKind;
+  const variantRemoved = !!def.variants?.some(
+    (variant) => !variants?.some((candidate) => candidate.name === variant.name),
+  );
+  const kind =
+    variantRemoved && contentKind !== "major"
+      ? "major"
+      : contentKind === "none" && (colorSettingsChanged || variantsChanged)
+        ? "minor"
+        : contentKind;
   if (kind === "none") return { version: def.version, kind };
   const version = bumpPatternVersion(def.version, kind);
   const meta = {
@@ -227,6 +312,8 @@ export function publishPattern(
     ...(def.icon != null ? { icon: def.icon } : {}),
     ...(defaultColorContext != null ? { defaultColorContext } : {}),
     ...(disabledColorContexts?.length ? { disabledColorContexts } : {}),
+    ...(variants ? { variants } : {}),
+    ...(defaultVariant ? { defaultVariant } : {}),
   };
   const superseded = archive.get(name); // unregister clears it — hold on
   registry.delete(name);

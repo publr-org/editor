@@ -355,7 +355,7 @@ export type {
   ShellDocumentRenameAction,
   ShellPanel,
 } from "./shell";
-export type { PatternDefinition, PatternType } from "./patterns";
+export type { PatternDefinition, PatternType, PatternVariantDefinition } from "./patterns";
 export type { BlockPolicy, EditorPolicy, PolicyConfig, RootPolicy } from "./policy";
 export type { InlineChromeOptions, InlineInsertionPlacement } from "./chrome-inline";
 export type { HistoryFlags } from "./history";

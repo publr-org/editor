@@ -78,6 +78,56 @@ describe("registration: the expansion is validated, not the markup", () => {
     ).toThrow(/cannot also be disabled/);
   });
 
+  test("multi-variant definitions validate, freeze, and expose the default composition", () => {
+    const alternate = `
+      <p data-pb-block="paragraph" data-pb-rich="body">Alternate one</p>
+      <p data-pb-block="paragraph" data-pb-rich="body">Alternate two</p>`;
+    const def = registerPattern("probe", {
+      label: "Probe",
+      content: TWO_PARAGRAPHS,
+      variants: [
+        { name: "standard", label: "Standard", content: TWO_PARAGRAPHS },
+        {
+          name: "alternate",
+          label: "Alternate",
+          description: "Image-first alternative.",
+          content: alternate,
+        },
+      ],
+      defaultVariant: "alternate",
+    });
+    expect(def.content).toBe(alternate);
+    expect(def.defaultVariant).toBe("alternate");
+    expect(def.variants?.[1].description).toBe("Image-first alternative.");
+    expect(def.variants).toHaveLength(2);
+    expect(Object.isFrozen(def.variants)).toBe(true);
+    expect(Object.isFrozen(def.variants![0])).toBe(true);
+  });
+
+  test("variant names and the default variant are validated", () => {
+    expect(() =>
+      registerPattern("probe", {
+        label: "Probe",
+        content: TWO_PARAGRAPHS,
+        variants: [
+          { name: "same", label: "One", content: TWO_PARAGRAPHS },
+          { name: "same", label: "Two", content: TWO_PARAGRAPHS },
+        ],
+      }),
+    ).toThrow(/duplicate name/);
+    expect(() =>
+      registerPattern("probe", {
+        label: "Probe",
+        content: TWO_PARAGRAPHS,
+        variants: [
+          { name: "one", label: "One", content: TWO_PARAGRAPHS },
+          { name: "two", label: "Two", content: TWO_PARAGRAPHS },
+        ],
+        defaultVariant: "missing",
+      }),
+    ).toThrow(/defaultVariant/);
+  });
+
   test("definition shape is validated hard", () => {
     expect(() => registerPattern("Probe!", { label: "P", content: TWO_PARAGRAPHS })).toThrow(
       /lowercase name/,
@@ -267,6 +317,44 @@ describe("stamping: independent copies through one commit", () => {
       expect(root.children![0].classes).not.toContain("bg-brand-surface");
     } finally {
       unregisterPattern("scheme-probe");
+    }
+  });
+
+  test("a copy can switch between complete pattern variants in one undo step", () => {
+    registerPattern("variant-probe", {
+      label: "Variant probe",
+      content: TWO_PARAGRAPHS,
+      variants: [
+        { name: "standard", label: "Standard", content: TWO_PARAGRAPHS },
+        {
+          name: "alternate",
+          label: "Alternate",
+          content: P("Alternate one") + P("Alternate two"),
+        },
+      ],
+      defaultVariant: "standard",
+    });
+    try {
+      setup("");
+      const root = editor.insertPattern("variant-probe")![0];
+      const originalIds = root.children!.map((block) => block.id);
+      const depth = editor.history.undoDepth;
+      expect(root.settings?.variant).toBe("standard");
+
+      expect(editor.setPatternVariant(root.id, "alternate")).toBe(true);
+      expect(root.settings?.variant).toBe("alternate");
+      expect(root.children!.map((block) => block.fields.body)).toEqual([
+        "Alternate one",
+        "Alternate two",
+      ]);
+      expect(root.children!.map((block) => block.id)).not.toEqual(originalIds);
+      expect(editor.history.undoDepth).toBe(depth + 1);
+
+      editor.undo();
+      expect(editor.getBlock(root.id)?.settings?.variant).toBe("standard");
+      expect(editor.getBlock(root.id)?.children?.[0].fields.body).toBe("One");
+    } finally {
+      unregisterPattern("variant-probe");
     }
   });
 

@@ -779,8 +779,11 @@ export function createEditor({
   function stampPattern(name: string): Block[] | null {
     const pattern = getPattern(name);
     if (!pattern) return null;
+    const variant = pattern.variants?.find(
+      (candidate) => candidate.name === pattern.defaultVariant,
+    );
     const tmp = ownerDocument.createElement("div");
-    tmp.innerHTML = pattern.content;
+    tmp.innerHTML = variant?.content ?? pattern.content;
     const blocks = upcast(tmp).blocks;
     for (const b of flattenBlocks(blocks)) b.id = mintId();
     // The stamp gets a real ROOT: the phantom pattern block carries the
@@ -797,7 +800,9 @@ export function createEditor({
       classes: "",
       children: blocks,
       pattern: name,
+      settings: {},
     };
+    if (variant) root.settings!.variant = variant.name;
     // Definitions authored before explicit scheme preferences existed keep
     // their authored colors. Once a default is chosen, every fresh stamp is
     // remapped to it.
@@ -2120,6 +2125,56 @@ export function createEditor({
       // Rebuild only this copy so the root remains selected and its pattern
       // controls stay visible after changing context.
       rerenderBlock(id);
+      return true;
+    },
+
+    /**
+     * Replace a placed pattern copy with one of its definition's complete
+     * compositions. The new composition is freshly stamped (ids never leak
+     * between variants), keeps the copy's active color context, and is one
+     * undoable operation. Subsequent edits remain local to the placed copy.
+     */
+    setPatternVariant(id: string, variantName: string): boolean {
+      const root = findBlock(id);
+      const pattern = root?.pattern ? getPattern(root.pattern) : undefined;
+      const variant = pattern?.variants?.find((candidate) => candidate.name === variantName);
+      if (!root || root.type !== PATTERN_ROOT_TYPE || !variant) return false;
+      if (root.settings?.variant === variant.name) return false;
+      const tmp = ownerDocument.createElement("div");
+      tmp.innerHTML = variant.content;
+      const children = upcast(tmp).blocks;
+      for (const block of flattenBlocks(children)) block.id = mintId();
+      const roles = semanticColorRoles(activeTheme()).sort((a, b) => b.key.length - a.key.length);
+      const inferredContext = flattenBlocks(root.children ?? [])
+        .flatMap((block) =>
+          ["backgroundColor", "textColor", "borderColor"].map(
+            (prop) => styleBackend.read(block, prop) ?? "",
+          ),
+        )
+        .map((value) => {
+          const role = roles.find(
+            (candidate) => value === candidate.key || value.endsWith(`-${candidate.key}`),
+          );
+          if (!role) return "";
+          return value === role.key ? "default" : value.slice(0, -(role.key.length + 1));
+        })
+        .find(Boolean);
+      const activeContext =
+        typeof root.settings?.colorContext === "string"
+          ? root.settings.colorContext
+          : inferredContext || pattern?.defaultColorContext;
+      commit(
+        () => {
+          root.children = children;
+          root.settings ??= {};
+          root.settings.variant = variant.name;
+          if (activeContext) patternColorContextPlan(root, activeContext)?.();
+        },
+        { label: `pattern ${id} variant = ${variant.name}` },
+      );
+      rerenderBlock(id);
+      blockSel.select(id);
+      ensureCanvasFocus();
       return true;
     },
 

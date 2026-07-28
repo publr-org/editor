@@ -26,6 +26,13 @@ export const definition: BlockDefinition = {
       default: "",
       role: "design",
     },
+    {
+      control: "text",
+      label: "Pattern variant",
+      setting: "variant",
+      default: "",
+      role: "design",
+    },
   ],
   render() {
     return `<div data-pb-block="pattern" data-pb-children></div>`;
