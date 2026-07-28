@@ -3092,16 +3092,6 @@ describe("style: universal font-size (C1)", () => {
     expect(classes).not.toContain("text-xl"); // replaced in place — no cascade roulette
   });
 
-  test("a LEGACY style island is dropped on load (classes already carry)", () => {
-    const editor = mount();
-    editor.loadHtml(
-      `<p data-pb-block="styled-p" data-pb-id="P" data-pb-rich="body" class="text-xl"><script type="application/json" data-pb-style>{"fontSize":"xl"}</script>hi</p>`,
-    );
-    expect(editor.getBlock("P")!.fields.body).toBe("hi"); // island never pollutes the carrier
-    expect(editor.getStyle("P", "fontSize")).toBe("xl"); // from the class
-    expect(editor.serialize()).not.toContain("data-pb-style");
-  });
-
   test("clearing a style removes its class (sparse)", () => {
     const editor = mount();
     editor.loadHtml(SP("P"));
@@ -3167,11 +3157,11 @@ describe("style: color (C2)", () => {
     `<p data-pb-block="color-p" data-pb-id="${id}" data-pb-rich="body">x</p>`;
 
   test("theme tokens → color utilities; raw CSS → arbitrary-value", () => {
-    expect(styleClasses({ textColor: "accent" })).toEqual(["text-accent"]); // semantic token
+    expect(styleClasses({ textColor: "accent-surface" })).toEqual(["text-accent-surface"]); // semantic token
     expect(styleClasses({ backgroundColor: "surface" })).toEqual(["bg-surface"]);
     expect(styleClasses({ textColor: "#111111" })).toEqual(["text-[#111111]"]); // raw CSS
-    expect(styleClasses({ backgroundColor: "var(--color-accent)" })).toEqual([
-      "bg-[var(--color-accent)]",
+    expect(styleClasses({ backgroundColor: "var(--color-accent-surface)" })).toEqual([
+      "bg-[var(--color-accent-surface)]",
     ]);
     expect(styleClasses({ textColor: "#f00", backgroundColor: "#fff" })).toEqual([
       "text-[#f00]",
@@ -3183,14 +3173,14 @@ describe("style: color (C2)", () => {
     const editor = mount();
     editor.loadHtml(CP("P"));
     editor.setStyle("P", "textColor", "#111111");
-    editor.setStyle("P", "backgroundColor", "var(--color-accent)");
+    editor.setStyle("P", "backgroundColor", "var(--color-accent-surface)");
     expect(editor.getStyle("P", "textColor")).toBe("#111111"); // arbitrary form reads back
-    expect(editor.getStyle("P", "backgroundColor")).toBe("accent");
+    expect(editor.getStyle("P", "backgroundColor")).toBe("accent-surface");
     const model = editor.getModel();
     expect(upcast(parse(downcast(model)))).toEqual(model); // round-trip
     const data = editor.serialize({ pipeline: "data" });
     expect(data).toContain("text-[#111111]");
-    expect(data).toContain("bg-[var(--color-accent)]");
+    expect(data).toContain("bg-[var(--color-accent-surface)]");
     expect(data).not.toContain("data-pb-style");
   });
 
@@ -3942,63 +3932,11 @@ describe("theme: token scales drive the style vocabulary (E1)", () => {
     expect(defaultsCss).toContain("var(--publr-paragraph-spacing, 1rem)");
   });
 
-  test("the Hearth workspace upgrades only the legacy neutral seed", () => {
-    const upgraded = withHearthDefaults(DEFAULT_THEME);
-    expect(upgraded.tokens.find((token) => token.name === "color-surface")?.value).toBe("#fbf8ef");
-    expect(upgraded.tokens.find((token) => token.name === "color-inverse-surface")).toBeUndefined();
-    expect(colorContexts(upgraded)).toEqual([{ key: "default", label: "Default" }]);
-    expect(upgraded.tokens.find((token) => token.name === "publr-heading-color")?.value).toBe(
-      "inherit",
-    );
-
-    const legacySevenRoleTheme = withHearthDefaults({
-      tokens: [
-        { name: "color-surface", value: "#ffffff" },
-        { name: "color-foreground", value: "#18181b" },
-        { name: "color-accent", value: "#3858e9" },
-        { name: "color-accent-foreground", value: "#ffffff" },
-        { name: "color-muted", value: "#f4f4f5" },
-        { name: "color-muted-foreground", value: "#71717a" },
-        { name: "color-border", value: "#e4e4e7" },
-      ],
-      semanticColorRoles: [
-        ["surface", "Surface"],
-        ["foreground", "Foreground"],
-        ["accent", "Accent"],
-        ["accent-foreground", "On accent"],
-        ["muted", "Muted"],
-        ["muted-foreground", "Muted text"],
-        ["border", "Border"],
-      ].map(([key, label]) => ({ key, label, description: label, value: "#000000" })),
-      colorContexts: [{ key: "default", label: "Default" }],
-    });
-    expect(semanticColorRoles(legacySevenRoleTheme).map((role) => role.key)).toEqual([
-      "surface",
-      "foreground",
-      "border",
-      "accent-surface",
-      "accent-foreground",
-      "accent-border",
-      "muted-surface",
-      "muted-foreground",
-      "muted-border",
-    ]);
-    expect(
-      legacySevenRoleTheme.tokens.find((token) => token.name === "color-accent-surface")?.value,
-    ).toBe("#294b45");
-    expect(
-      legacySevenRoleTheme.tokens.find((token) => token.name === "color-muted-border")?.value,
-    ).toBe("#cbd5cc");
-
-    const upgradedPersistedTypography = withHearthDefaults(
-      themeFromTokens({
-        "publr-heading-color": "var(--color-foreground)",
-      }),
-    );
-    expect(
-      upgradedPersistedTypography.tokens.find((token) => token.name === "publr-heading-color")
-        ?.value,
-    ).toBe("inherit");
+  test("the Hearth workspace fills missing tokens without touching authored values", () => {
+    const filled = withHearthDefaults(DEFAULT_THEME);
+    expect(filled.tokens.find((token) => token.name === "color-surface")?.value).toBe("#ffffff");
+    expect(filled.tokens.find((token) => token.name === "color-inverse-surface")).toBeUndefined();
+    expect(colorContexts(filled)).toEqual([{ key: "default", label: "Default" }]);
 
     const customized = withHearthDefaults(
       themeFromTokens({

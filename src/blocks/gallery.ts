@@ -3,7 +3,7 @@
 // caption. Columns/crop are island-canonical; the classes derived from them
 // sit on the inner grid (whitelisted tokens, regenerated every render).
 //
-// Deliberately not modeled: images + ids (a legacy
+// Deliberately not modeled: images + ids (Gutenberg's
 // attribute-array model — the slot IS the model), shortCodeTransforms,
 // randomOrder, fixedHeight, linkTo/linkTarget (per-image concerns live on
 // the image block), sizeSlug, allowResize, aspectRatio (crop covers v0).

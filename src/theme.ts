@@ -135,14 +135,6 @@ const DEFAULT_SEMANTIC_TOKENS: ThemeToken[] = SEMANTIC_COLOR_ROLES.map((role) =>
   value: role.value,
 }));
 
-/** Rendering aliases for documents authored before semantic colors became
- * complete layers. They are intentionally absent from role metadata, so new
- * controls expose only the nine canonical roles. */
-const LEGACY_SEMANTIC_ALIAS_TOKENS: ThemeToken[] = [
-  { name: "color-accent", value: "var(--color-accent-surface)" },
-  { name: "color-muted", value: "var(--color-muted-surface)" },
-];
-
 /** Reusable color inventory. Semantic roles may point at these tokens, while
  * blocks continue to consume only the semantic layer. */
 const DEFAULT_PALETTE_TOKENS: ThemeToken[] = [
@@ -346,7 +338,6 @@ export const DEFAULT_THEME: Theme = {
     ...DEFAULT_SPACING_TOKENS,
     ...DEFAULT_PALETTE_TOKENS,
     ...DEFAULT_SEMANTIC_TOKENS,
-    ...LEGACY_SEMANTIC_ALIAS_TOKENS,
     ...DEFAULT_CONTAINER_TOKENS,
     ...DEFAULT_SITE_TYPOGRAPHY_TOKENS,
   ],
@@ -400,8 +391,6 @@ export const HEARTH_THEME: Theme = {
     { name: "color-brand-muted-surface", value: "#6f8da5" },
     { name: "color-brand-muted-foreground", value: "#e7eef1" },
     { name: "color-brand-muted-border", value: "rgb(255 250 240 / 18%)" },
-    { name: "color-brand-accent", value: "var(--color-brand-accent-surface)" },
-    { name: "color-brand-muted", value: "var(--color-brand-muted-surface)" },
     { name: "color-inverse-surface", value: "#a45332" },
     { name: "color-inverse-foreground", value: "#fff7e9" },
     { name: "color-inverse-border", value: "rgb(255 247 233 / 24%)" },
@@ -411,8 +400,6 @@ export const HEARTH_THEME: Theme = {
     { name: "color-inverse-muted-surface", value: "#bd6a45" },
     { name: "color-inverse-muted-foreground", value: "#f7ddca" },
     { name: "color-inverse-muted-border", value: "rgb(255 247 233 / 18%)" },
-    { name: "color-inverse-accent", value: "var(--color-inverse-accent-surface)" },
-    { name: "color-inverse-muted", value: "var(--color-inverse-muted-surface)" },
   ],
   semanticColorRoles: SEMANTIC_COLOR_ROLES.map((role) => ({ ...role })),
   colorContexts: [
@@ -422,82 +409,14 @@ export const HEARTH_THEME: Theme = {
   ],
 };
 
-/** Prepare a host-supplied theme for the Hearth workspace.
- *
- * The first POC persisted Publr's neutral seven-role starter palette. Hosts
- * legitimately pass that document back on the next boot, so merely changing
- * the shell fallback leaves existing sites stuck on the old blue/white
- * swatches. Treat unchanged legacy values as starter data and fill missing
- * tokens only for the roles and contexts the theme actually declares. Real
- * customized values and customized semantic vocabularies always win. */
+/** Prepare a host-supplied theme for the Hearth workspace: fill missing
+ * tokens only for the roles and contexts the theme actually declares.
+ * Customized values and customized semantic vocabularies always win. */
 export function withHearthDefaults(theme: Theme = HEARTH_THEME): Theme {
-  const sourceValues = new Map(theme.tokens.map((token) => [token.name, token.value]));
-  const legacyRoleKeys = [
-    "surface",
-    "foreground",
-    "accent",
-    "accent-foreground",
-    "muted",
-    "muted-foreground",
-    "border",
-  ];
-  const authoredRoleKeys = theme.semanticColorRoles?.map((role) => role.key) ?? [];
-  const usesLegacyVocabulary =
-    authoredRoleKeys.length === legacyRoleKeys.length &&
-    legacyRoleKeys.every((key, index) => authoredRoleKeys[index] === key);
-  const declaredRoles = usesLegacyVocabulary
-    ? SEMANTIC_COLOR_ROLES.map((role) => ({ ...role }))
-    : semanticColorRoles(theme);
+  const declaredRoles = semanticColorRoles(theme);
   const declaredContexts = colorContexts(theme);
-  const legacy = new Map<string, string>([
-    ...SEMANTIC_COLOR_ROLES.map((role) => [`color-${role.key}`, role.value] as const),
-    ...DEFAULT_PALETTE_TOKENS.map((token) => [token.name, token.value] as const),
-  ]);
   const hearth = new Map(HEARTH_THEME.tokens.map((token) => [token.name, token.value]));
-  const tokens = theme.tokens.map((token) => {
-    if (token.name === "publr-heading-color" && token.value === "var(--color-foreground)") {
-      return { ...token, value: SITE_TYPOGRAPHY_DEFAULTS.headingColor };
-    }
-    return legacy.get(token.name) === token.value && HEARTH_COLOR_VALUES[token.name]
-      ? { ...token, value: HEARTH_COLOR_VALUES[token.name] }
-      : token;
-  });
-  if (usesLegacyVocabulary) {
-    const values = new Map(tokens.map((token) => [token.name, token.value]));
-    const legacyStarterValues = new Map<string, string>([
-      ["surface", "#ffffff"],
-      ["foreground", "#18181b"],
-      ["border", "#e4e4e7"],
-      ["accent", "#3858e9"],
-      ["accent-foreground", "#ffffff"],
-      ["muted", "#f4f4f5"],
-      ["muted-foreground", "#71717a"],
-    ]);
-    for (const context of declaredContexts) {
-      const prefix = context.key === "default" ? "" : `${context.key}-`;
-      const copy = (legacyRole: string, canonicalRole: string, fallbackRole?: string) => {
-        const canonicalName = `color-${prefix}${canonicalRole}`;
-        if (values.has(canonicalName)) return;
-        const legacyValue = sourceValues.get(`color-${prefix}${legacyRole}`);
-        const unchangedStarter =
-          context.key === "default" && legacyValue === legacyStarterValues.get(legacyRole);
-        const value = unchangedStarter
-          ? hearth.get(canonicalName)
-          : (legacyValue ??
-            (context.key === "default" ? hearth.get(canonicalName) : undefined) ??
-            (fallbackRole ? values.get(`color-${prefix}${fallbackRole}`) : undefined));
-        if (!value) return;
-        tokens.push({ name: canonicalName, value });
-        values.set(canonicalName, value);
-      };
-      copy("accent", "accent-surface");
-      copy("accent-foreground", "accent-foreground");
-      copy("border", "accent-border", "border");
-      copy("muted", "muted-surface");
-      copy("muted-foreground", "muted-foreground");
-      copy("border", "muted-border", "border");
-    }
-  }
+  const tokens = theme.tokens.map((token) => ({ ...token }));
   const names = new Set(tokens.map((token) => token.name));
   const hasNamedSpacing = tokens.some((token) => token.name.startsWith("spacing-"));
   const governedColorNames = new Set(
@@ -521,28 +440,12 @@ export function withHearthDefaults(theme: Theme = HEARTH_THEME): Theme {
       tokens.push({ name, value });
     }
   }
-  const finalNames = new Set(tokens.map((token) => token.name));
-  for (const context of declaredContexts) {
-    const prefix = context.key === "default" ? "" : `${context.key}-`;
-    for (const [legacyRole, canonicalRole] of [
-      ["accent", "accent-surface"],
-      ["muted", "muted-surface"],
-    ] as const) {
-      const legacyName = `color-${prefix}${legacyRole}`;
-      const canonicalName = `color-${prefix}${canonicalRole}`;
-      if (!finalNames.has(legacyName) && finalNames.has(canonicalName)) {
-        tokens.push({ name: legacyName, value: `var(--${canonicalName})` });
-        finalNames.add(legacyName);
-      }
-    }
-  }
   return {
     ...theme,
     tokens,
-    semanticColorRoles: usesLegacyVocabulary
-      ? SEMANTIC_COLOR_ROLES.map((role) => ({ ...role }))
-      : (theme.semanticColorRoles?.map((role) => ({ ...role })) ??
-        DEFAULT_THEME.semanticColorRoles?.map((role) => ({ ...role }))),
+    semanticColorRoles:
+      theme.semanticColorRoles?.map((role) => ({ ...role })) ??
+      DEFAULT_THEME.semanticColorRoles?.map((role) => ({ ...role })),
     colorContexts:
       theme.colorContexts?.map((context) => ({ ...context })) ??
       colorContexts(theme).map((context) => ({ ...context })),
@@ -559,7 +462,6 @@ export const TAILWIND_COMPAT_THEME: Theme = {
   tokens: [
     ...DEFAULT_THEME_TOKENS,
     ...DEFAULT_SEMANTIC_TOKENS,
-    ...LEGACY_SEMANTIC_ALIAS_TOKENS,
     ...DEFAULT_CONTAINER_TOKENS,
     ...DEFAULT_SITE_TYPOGRAPHY_TOKENS,
   ],
@@ -635,8 +537,8 @@ export interface ContainerWidths {
   gutter: string;
 }
 
-/** Resolve the fixed semantic container roles. Legacy themes that predate
- * these tokens receive usable defaults without mutating their document. */
+/** Resolve the fixed semantic container roles. Themes that omit these tokens
+ * receive usable defaults without mutating their document. */
 export function containerWidths(theme: Theme = activeTheme()): ContainerWidths {
   return {
     content: tokenValue(theme, "container-content") ?? CONTAINER_WIDTH_DEFAULTS.content,
@@ -802,14 +704,8 @@ export interface ColorOption extends ScaleOption {
 /** Palette: `color-*` tokens, family-and-step split per the v4 naming rule
  * (`color-<family>-<step>` where step is numeric; anything else is a bare name). */
 export function colors(theme: Theme): ColorOption[] {
-  const legacyAliases = new Set(
-    colorContexts(theme).flatMap((context) => {
-      const prefix = context.key === "default" ? "" : `${context.key}-`;
-      return [`${prefix}accent`, `${prefix}muted`];
-    }),
-  );
   return scale(theme, "color-")
-    .filter((o) => !o.key.startsWith("palette-") && !legacyAliases.has(o.key))
+    .filter((o) => !o.key.startsWith("palette-"))
     .map((o) => {
       const m = /^(.+)-(\d+)$/.exec(o.key);
       return m ? { ...o, family: m[1], step: m[2] } : { ...o, family: o.key };
@@ -826,8 +722,8 @@ const title = (value: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
-/** The semantic vocabulary owned by a theme. Legacy token-only themes receive
- * the starter roles until they are saved with explicit definitions. */
+/** The semantic vocabulary owned by a theme. Token-only themes receive the
+ * starter roles until they are saved with explicit definitions. */
 export function semanticColorRoles(theme: Theme = activeTheme()): SemanticColorRoleDefinition[] {
   return (theme.semanticColorRoles?.length ? theme.semanticColorRoles : SEMANTIC_COLOR_ROLES).map(
     (role) => ({ ...role }),
@@ -835,8 +731,8 @@ export function semanticColorRoles(theme: Theme = activeTheme()): SemanticColorR
 }
 
 /** Named semantic palettes owned by a theme. Explicit metadata is
- * authoritative—even when it intentionally exposes only Default. Legacy
- * token-only documents infer contexts from `{context}-surface` tokens. */
+ * authoritative—even when it intentionally exposes only Default. Token-only
+ * themes infer contexts from `{context}-surface` tokens. */
 export function colorContexts(theme: Theme = activeTheme()): ColorContextDefinition[] {
   if (theme.colorContexts?.length) return theme.colorContexts.map((context) => ({ ...context }));
   const roleKeys = semanticColorRoles(theme)

@@ -19,10 +19,10 @@ byte-preserving through serialize.
 
 ```html
 <p data-pb-block="paragraph" data-pb-rich="body">A real paragraph above the raw content.</p>
-<table class="legacy-table" border="1">
+<table class="plain-table" border="1">
   <tr>
     <td>Un-annotated</td>
-    <td>legacy markup</td>
+    <td>plain markup</td>
   </tr>
   <tr>
     <td>upcasts to</td>

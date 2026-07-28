@@ -9,7 +9,6 @@ import {
   PATTERN_ATTR,
   RAW_TYPE,
   SETTINGS_SELECTOR,
-  STYLE_SELECTOR,
   classList,
   escJsonScript,
   mintId,
@@ -93,11 +92,6 @@ function baselineClasses(
   return root ? classList(classTargetEl(root, def).getAttribute("class")) : [];
 }
 
-// LEGACY (pre-E2 documents): a data-pb-style island carried structured style
-// values. The class list is the carrier now — the island is simply dropped on
-// load (pre-release format, no value migration; the classes it derived are
-// already on the element).
-
 // Loading normalizes carried values (contract: downcast∘upcast is
 // SEMANTICALLY stable, not byte-stable): whitespace runs collapse to one
 // space and edges are trimmed — source-file indentation is formatting, not
@@ -124,45 +118,8 @@ function normalizeValue(value: FieldValue, kind: CarrierKind, carrier: Element):
   return tmp.innerHTML.trim();
 }
 
-/** Pre-responsive Group containers lived in the settings island and their
- * semantic classes were normally supplied by render(). Pattern source can
- * contain only that island, so lift the old values into the new responsive
- * class carrier before the undeclared island keys are discarded. */
-function legacyGroupContainerClasses(el: Element, type: string | null): string[] {
-  if (type !== "group") return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(scopedSettingsIsland(el)?.textContent ?? "{}");
-  } catch {
-    return [];
-  }
-  if (parsed === null || typeof parsed !== "object") return [];
-  const settings = parsed as Record<string, unknown>;
-  if (settings.isContainer !== true) return [];
-  const width = settings.containerWidth === "content" ? "content" : "wide";
-  const bleed =
-    settings.containerBleed === "left" ||
-    settings.containerBleed === "right" ||
-    settings.containerBleed === "both"
-      ? settings.containerBleed
-      : "none";
-  return [
-    "pbe-container--on",
-    `pbe-container--${width}`,
-    ...(bleed === "none" ? [] : [`pbe-container--bleed-${bleed}`]),
-  ];
-}
-
 function upcastElement(el: Element): Block {
-  const sourceType = el.getAttribute("data-pb-block");
-  // Pre-unified container markup remains loadable, but immediately becomes
-  // the one Group model with its former type represented as layout classes.
-  const legacyLayout =
-    !getBlockType(sourceType ?? "") &&
-    (sourceType === "row" || sourceType === "stack" || sourceType === "grid")
-      ? sourceType
-      : null;
-  const type = legacyLayout ? "group" : sourceType;
+  const type = el.getAttribute("data-pb-block");
   const def = type ? getBlockType(type) : null;
 
   if (!type || !def) {
@@ -209,9 +166,7 @@ function upcastElement(el: Element): Block {
   if (def.acceptsChildren) {
     const slot = scopedChildrenSlot(el);
     block.children = slot
-      ? [...slot.children]
-          .filter((c) => !c.matches(SETTINGS_SELECTOR) && !c.matches(STYLE_SELECTOR))
-          .map(upcastElement)
+      ? [...slot.children].filter((c) => !c.matches(SETTINGS_SELECTOR)).map(upcastElement)
       : [];
   }
 
@@ -220,18 +175,7 @@ function upcastElement(el: Element): Block {
   // <img class="h-11"> — the root matches the "img" target — or the inner img
   // of an already-rendered figure).
   const baseline = new Set(baselineClasses(def, block.fields, renderSettings(def, block.settings)));
-  const authoredClasses = classList(classTargetEl(el, def).getAttribute("class")).filter(
-    (c) => c !== "[&>*]:flex-1" && c !== "pbe-grid--2",
-  );
-  for (const cls of legacyGroupContainerClasses(el, type))
-    if (!authoredClasses.includes(cls)) authoredClasses.push(cls);
-  if (legacyLayout === "row" && !authoredClasses.includes("flex")) authoredClasses.push("flex");
-  if (legacyLayout === "row" && !authoredClasses.includes("flex-row"))
-    authoredClasses.push("flex-row");
-  if (legacyLayout === "stack" && !authoredClasses.includes("flex")) authoredClasses.push("flex");
-  if (legacyLayout === "stack" && !authoredClasses.includes("flex-col"))
-    authoredClasses.push("flex-col");
-  if (legacyLayout === "grid" && !authoredClasses.includes("grid")) authoredClasses.push("grid");
+  const authoredClasses = classList(classTargetEl(el, def).getAttribute("class"));
   block.classes = authoredClasses.filter((c) => !baseline.has(c)).join(" ");
   return block;
 }
@@ -333,10 +277,8 @@ export type DowncastPipeline = "editor" | "data";
 function stripEditingVocabulary(root: Element): void {
   // Islands first: stripping attributes would remove the markers these
   // selectors need. The universal style classes STAY (they are the published
-  // form); only the structured style island (editor metadata) is dropped.
-  for (const island of root.querySelectorAll(
-    'script[type="application/json"][data-pb-settings], script[type="application/json"][data-pb-style]',
-  )) {
+  // form).
+  for (const island of root.querySelectorAll('script[type="application/json"][data-pb-settings]')) {
     island.remove();
   }
   for (const el of [root, ...root.querySelectorAll("*")]) {

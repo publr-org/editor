@@ -172,7 +172,7 @@ describe("POC homepage registered-pattern fixture", () => {
     }
   });
 
-  test("the legacy container marker is inert and an enabled container preserves authored padding", async () => {
+  test("an enabled container preserves authored padding", async () => {
     try {
       if (!(await fetch("/__jit", { method: "POST", body: "p-1" })).ok) return;
     } catch {
@@ -187,16 +187,13 @@ describe("POC homepage registered-pattern fixture", () => {
     const tag = document.createElement("style");
     try {
       editor.loadHtml(
-        `<div data-pb-block="group" data-pb-id="marker" data-pb-children class="pbe-container px-8"></div>` +
-          `<div data-pb-block="group" data-pb-id="active" data-pb-children class="pbe-container--on pbe-container--wide px-8"></div>`,
+        `<div data-pb-block="group" data-pb-id="active" data-pb-children class="pbe-container--on pbe-container--wide px-8"></div>`,
       );
       tag.textContent = (
         await httpCssEngine("/__jit").compile(collectClasses(editor.serialize()))
       ).css;
       document.head.appendChild(tag);
-      const marker = canvas.querySelector<HTMLElement>('[data-pb-id="marker"]')!;
       const active = canvas.querySelector<HTMLElement>('[data-pb-id="active"]')!;
-      expect(marker.offsetWidth).toBe(canvas.clientWidth);
       expect(getComputedStyle(active).paddingLeft).toBe("32px");
       expect(getComputedStyle(active).paddingRight).toBe("32px");
     } finally {

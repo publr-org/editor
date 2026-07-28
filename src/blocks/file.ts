@@ -78,9 +78,9 @@ export const definition: BlockDefinition = {
     const hideBtn = settings?.showDownloadButton === false ? " hidden" : "";
     const target = settings?.linkTarget === "_blank" ? ` target="_blank" rel="noopener"` : "";
     return (
-      `<div data-pb-block="file" class="flex items-center justify-between gap-4 rounded-sm bg-muted px-4 py-3">` +
+      `<div data-pb-block="file" class="flex items-center justify-between gap-4 rounded-sm bg-muted-surface px-4 py-3">` +
       `<a data-pb-rich="name" data-pb-link="href" href="${href}"${target} class="min-w-0 font-semibold [overflow-wrap:anywhere] text-inherit no-underline">${str(fields.name)}</a>` +
-      `<a href="${href}" download data-pb-text="downloadLabel" class="flex-none rounded-sm bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-accent-foreground no-underline${hideBtn}">${escHtml(fields.downloadLabel === undefined ? "Download" : str(fields.downloadLabel))}</a></div>`
+      `<a href="${href}" download data-pb-text="downloadLabel" class="flex-none rounded-sm bg-accent-surface px-3.5 py-1.5 text-[13px] font-semibold text-accent-foreground no-underline${hideBtn}">${escHtml(fields.downloadLabel === undefined ? "Download" : str(fields.downloadLabel))}</a></div>`
     );
   },
 };

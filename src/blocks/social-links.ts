@@ -40,7 +40,7 @@ export const definition: BlockDefinition = {
       label: "Pill",
       styles: {
         borderRadius: "9999px",
-        backgroundColor: "muted",
+        backgroundColor: "muted-surface",
         paddingTop: "2",
         paddingRight: "4",
         paddingBottom: "2",

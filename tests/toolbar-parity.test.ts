@@ -794,7 +794,7 @@ describe("declared contextual toolbars", () => {
 
   test("style-bound controls use grouped descriptors and the style backend", async () => {
     setup(
-      `<div data-pb-block="row" data-pb-id="r" data-pb-tag="tag" data-pb-children>` +
+      `<div data-pb-block="group" data-pb-id="r" data-pb-tag="tag" data-pb-children class="flex flex-row">` +
         `<p data-pb-block="paragraph" data-pb-rich="body">Child</p></div>`,
     );
     editor.selectBlock("r");
@@ -1231,13 +1231,13 @@ describe("declared contextual toolbars", () => {
     expect(editor.getBlock(root.id)?.pattern).toBe("hero");
   });
 
-  test("legacy pattern provenance on a real group also replaces Ungroup", async () => {
+  test("hand-authored pattern provenance on a real group also replaces Ungroup", async () => {
     setup(
-      `<div data-pb-block="group" data-pb-id="legacy" data-pb-pattern="hero" data-pb-tag="tag" data-pb-children>` +
-        `<p data-pb-block="paragraph" data-pb-rich="body">Legacy content</p></div>`,
+      `<div data-pb-block="group" data-pb-id="seeded" data-pb-pattern="hero" data-pb-tag="tag" data-pb-children>` +
+        `<p data-pb-block="paragraph" data-pb-rich="body">Seeded content</p></div>`,
     );
     const published = editor.serialize({ pipeline: "data" });
-    editor.selectBlock("legacy");
+    editor.selectBlock("seeded");
     await vi.waitFor(() => expect(control("Options").getClientRects().length).toBeGreaterThan(0));
     control("Options").click();
 
@@ -1250,10 +1250,10 @@ describe("declared contextual toolbars", () => {
     expect(byText("Convert to blocks").hidden).toBe(false);
 
     byText("Convert to blocks").click();
-    expect(editor.getBlock("legacy")?.type).toBe("group");
-    expect(editor.getBlock("legacy")?.pattern).toBeUndefined();
+    expect(editor.getBlock("seeded")?.type).toBe("group");
+    expect(editor.getBlock("seeded")?.pattern).toBeUndefined();
     expect(editor.serialize({ pipeline: "data" })).toBe(published);
-    expect(editor.ungroupTarget("legacy")).toBe("legacy");
+    expect(editor.ungroupTarget("seeded")).toBe("seeded");
   });
 
   test("pattern descendants use the content-only toolbar variant", async () => {

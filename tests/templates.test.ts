@@ -145,7 +145,7 @@ describe("shared templates", () => {
       label: "Page template",
       content: `<div data-pb-block="template-part" data-pb-children data-publr-template-part="shell-header">
         <script type="application/json" data-pb-settings>{"name":"shell-header"}</script>
-      </div>${slotWire("title")}<div class="legacy-slot" data-pb-block="template-slot" data-publr-slot="content">
+      </div>${slotWire("title")}<div class="styled-slot" data-pb-block="template-slot" data-publr-slot="content">
         <script type="application/json" data-pb-settings>{"name":"content"}</script>
         <span>Content</span>
       </div>`,
@@ -163,7 +163,7 @@ describe("shared templates", () => {
       container: host,
       content: `<p data-pb-block="paragraph" data-pb-rich="body">Page body</p>`,
       cssEngine: { compile },
-      siteCss: ".legacy-slot{padding:32px;text-align:center}",
+      siteCss: ".styled-slot{padding:32px;text-align:center}",
       templateWidth: "content",
       document: {
         title: "Test page",

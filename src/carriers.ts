@@ -96,11 +96,6 @@ export const PATTERN_ATTR = "data-pb-pattern";
  */
 export const SETTINGS_SELECTOR = 'script[type="application/json"][data-pb-settings]';
 
-/** The RETIRED style island (Phase C carried structured values here; E2 moved
- * style storage into the class list / style attr). Kept only so upcast strips
- * legacy islands out of older documents — never emitted. */
-export const STYLE_SELECTOR = 'script[type="application/json"][data-pb-style]';
-
 /**
  * Make a JSON string safe as inline <script> text: `</` becomes `<\/` so a
  * hostile `</script>` payload can't break out of the island. `\/` is a valid
@@ -150,15 +145,6 @@ export function scopedSettingsIsland(root: Element): HTMLElement | null {
   );
 }
 
-/** The block's own STYLE island (Phase C), scoped the same way as settings. */
-export function scopedStyleIsland(root: Element): HTMLElement | null {
-  return (
-    [...root.querySelectorAll<HTMLElement>(STYLE_SELECTOR)].find(
-      (el) => el.closest("[data-pb-block]") === root,
-    ) ?? null
-  );
-}
-
 export function readCarrier(el: Element, kind: CarrierKind): FieldValue {
   if (kind === "tag") return el.tagName.toLowerCase();
   if (kind === "link") return el.getAttribute("href") ?? "";
@@ -176,10 +162,9 @@ export function readCarrier(el: Element, kind: CarrierKind): FieldValue {
   // to THIS block are stripped — one nested inside a foreign block root within
   // a rich value belongs to that root and stays content here.
   let source = el;
-  const ISLANDS = `${SETTINGS_SELECTOR},${STYLE_SELECTOR}`;
-  if (el.querySelector(ISLANDS)) {
+  if (el.querySelector(SETTINGS_SELECTOR)) {
     const clone = el.cloneNode(true) as Element;
-    for (const island of clone.querySelectorAll(ISLANDS)) {
+    for (const island of clone.querySelectorAll(SETTINGS_SELECTOR)) {
       const owner = island.closest("[data-pb-block]");
       if (!owner || owner === clone) island.remove();
     }

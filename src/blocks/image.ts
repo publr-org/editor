@@ -3,9 +3,9 @@
 // SETTING, not a field: a field's carrier must always be emitted, but the
 // <a> exists only when `href` is set — the render derives it (escaped) and
 // upcast reads it from the island, never the anchor. Aspect ratio uses
-// "/"-free tokens (square, 4-3, 16-9…). Legacy bare <img data-pb-block>
-// roots still ingest permissively (carriers found on the root itself);
-// downcast normalizes them to the figure form.
+// "/"-free tokens (square, 4-3, 16-9…). Bare <img data-pb-block> roots
+// (foreign/AI-written markup) still ingest permissively (carriers found on
+// the root itself); downcast normalizes them to the figure form.
 //
 // Deliberately not modeled: blob/id/sizeSlug (media library),
 // lightbox (interactivity runtime), title, rel/linkClass/linkDestination,

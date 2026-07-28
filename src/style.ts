@@ -33,9 +33,9 @@ export interface StyleBreakpointDefinition {
 }
 
 /** Marks a theme whose breakpoint collection has been explicitly authored.
- * Legacy/curated themes without breakpoint tokens receive the standard
- * starter collection; once this marker exists, an empty collection is
- * intentional and remains empty. */
+ * Themes without breakpoint tokens receive the standard starter collection;
+ * once this marker exists, an empty collection is intentional and remains
+ * empty. */
 export const BREAKPOINT_CONFIGURATION_TOKEN = "publr-breakpoints-configured";
 
 export const STYLE_BREAKPOINTS: readonly StyleBreakpointDefinition[] = [

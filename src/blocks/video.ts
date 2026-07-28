@@ -3,8 +3,8 @@
 // (src/alt/width/height) — zero new carrier vocabulary; the alt="" it
 // implies is non-standard on <video> but inert. Playback facts (controls,
 // autoplay, loop, muted, playsInline, preload, poster) are island-canonical;
-// the attributes are derived presentation, regenerated every render. Legacy
-// bare-video-root markup still ingests permissively.
+// the attributes are derived presentation, regenerated every render. Bare
+// video-root markup (foreign/AI-written) still ingests permissively.
 //
 // Deliberately not modeled: blob/id (media library), tracks
 // (subtitle list, deferred).

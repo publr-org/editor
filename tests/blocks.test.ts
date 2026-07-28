@@ -321,7 +321,7 @@ describe("the media-wave library (story #337)", () => {
     expect(downcast(upcast(parse(gen1)))).toBe(gen1);
   });
 
-  test("legacy bare-img image markup still ingests; downcast normalizes to the figure form", () => {
+  test("bare-img image markup still ingests; downcast normalizes to the figure form", () => {
     const m = upcast(
       parse(
         `<img data-pb-block="image" data-pb-id="b_1" data-pb-image="image" src="/x.png" alt="X">`,
@@ -449,45 +449,6 @@ describe("the design-wave library (story #338)", () => {
     ]);
   });
 
-  test("legacy Group container settings migrate to responsive semantic classes", () => {
-    const authored =
-      `<section data-pb-block="group" data-pb-id="outer" data-pb-tag="tag" data-pb-children>` +
-      `${ISLAND('{"isContainer":true,"containerWidth":"content","containerBleed":"right"}')}` +
-      `<p data-pb-block="paragraph" data-pb-id="copy" data-pb-rich="body">Copy</p>` +
-      `</section>`;
-    const model = upcast(parse(authored));
-    expect(model.blocks[0].settings).toBeUndefined();
-    expect(model.blocks[0].classes?.split(/\s+/)).toEqual([
-      "pbe-container--on",
-      "pbe-container--content",
-      "pbe-container--bleed-right",
-    ]);
-
-    const wire = downcast(model);
-    const root = parse(wire).querySelector<HTMLElement>('[data-pb-id="outer"]')!;
-    expect(root.classList).toContain("pbe-container--on");
-    expect(root.classList).toContain("pbe-container--content");
-    expect(root.classList).toContain("pbe-container--bleed-right");
-    expect(upcast(parse(wire))).toEqual(model);
-
-    const published = downcast(model, "data");
-    const publishedRoot = parse(published).querySelector<HTMLElement>("section")!;
-    expect(publishedRoot.classList).toContain("pbe-container--content");
-    expect(publishedRoot.classList).toContain("pbe-container--bleed-right");
-    expect(publishedRoot.querySelector("[data-pb-settings]")).toBeNull();
-  });
-
-  test("legacy container types load as Group layout values", () => {
-    const model = upcast(
-      parse(
-        '<div data-pb-block="row" data-pb-children class="flex flex-row [&>*]:flex-1"><p data-pb-block="paragraph" data-pb-rich="body">One</p></div>',
-      ),
-    );
-    expect(model.blocks[0].type).toBe("group");
-    expect(model.blocks[0].classes?.split(/\s+/)).toEqual(["flex", "flex-row"]);
-    expect(getBlockType("group")?.supports?.layout?.layoutMode).toBe(true);
-  });
-
   test("the round-trip law holds for the design wave, settings included", () => {
     const authored =
       `<div data-pb-block="buttons" data-pb-id="b_bs" data-pb-children>${ISLAND('{"justify":"center","gap":"lg"}')}` +
@@ -526,8 +487,8 @@ describe("the design-wave library (story #338)", () => {
     expect(gen1).toContain("justify-center");
     expect(gen1).toContain('target="_blank"');
     expect(gen1).toContain('rel="noopener nofollow"'); // _blank merges noopener into authored rel
-    expect(gen1).toContain("pbe-spacer--xl"); // legacy xl preset, utility-overridable
-    expect(gen1).toContain("pbe-column--33"); // legacy width preset, utility-overridable
+    expect(gen1).toContain("pbe-spacer--xl"); // height preset, utility-overridable
+    expect(gen1).toContain("pbe-column--33"); // width preset, utility-overridable
     expect(gen1).not.toContain("max-md:flex-col"); // stackOnMobile:false drops the derived class
     expect(gen1).toContain(" open"); // accordion item openByDefault
     expect(upcast(parse(gen1))).toEqual(m);
@@ -571,7 +532,7 @@ describe("the widgets-wave library (story #339)", () => {
       `<div data-pb-block="social-links" data-pb-id="b_s" data-pb-children>` +
       `<a data-pb-block="social-link" data-pb-id="b_s1" data-pb-link="url" href="https://github.com/x">${ISLAND('{"service":"github"}')}</a>` +
       `<a data-pb-block="social-link" data-pb-id="b_s2" data-pb-link="url" href="mailto:hi@x.io">${ISLAND('{"service":"mail"}')}</a></div>` +
-      `<div data-pb-block="html" data-pb-id="b_h" data-pb-rich="content"><marquee>legacy</marquee></div>`;
+      `<div data-pb-block="html" data-pb-id="b_h" data-pb-rich="content"><marquee>retro</marquee></div>`;
 
     const m = upcast(parse(authored));
     expect(m.blocks.map((b) => b.type)).toEqual(["embed", "social-links", "html"]);
@@ -582,7 +543,7 @@ describe("the widgets-wave library (story #339)", () => {
       height: "315",
     });
     expect(m.blocks[1].children!.map((b) => b.settings!.service)).toEqual(["github", "mail"]);
-    expect(m.blocks[2].fields.content).toBe("<marquee>legacy</marquee>");
+    expect(m.blocks[2].fields.content).toBe("<marquee>retro</marquee>");
 
     const gen1 = downcast(m);
     expect(gen1).not.toContain("aspect-video"); // responsive:false drops the ratio classes

@@ -59,7 +59,7 @@ body {
 @source inline("{p,m}-{0,1,2,4,6,8,12,16}");
 @source inline("text-{sm,base,lg,xl,2xl,3xl,4xl,5xl,6xl,7xl}");
 @source inline("font-{sans,serif}");
-@source inline("{text,bg,border}-{surface,foreground,accent,accent-foreground,muted,muted-foreground,border}");
+@source inline("{text,bg,border}-{surface,foreground,border,accent-surface,accent-foreground,accent-border,muted-surface,muted-foreground,muted-border}");
 @source inline("border border-{2,4,8}");
 @source inline("rounded-{sm,md,lg,xl}");
 @source inline("leading-{tight,normal,relaxed}");
@@ -191,7 +191,7 @@ body {
   }
   .pbe-btn--solid {
     border-radius: var(--radius-sm, 0.25rem);
-    background: var(--color-accent);
+    background: var(--color-accent-surface);
     padding: 0.5rem 1rem;
     font-weight: 500;
     color: var(--color-accent-foreground);
@@ -201,7 +201,7 @@ body {
     border: 1px solid currentColor;
     padding: 0.5rem 1rem;
     font-weight: 500;
-    color: var(--color-accent);
+    color: var(--color-accent-surface);
   }
   .pbe-columns--gap-none,
   .pbe-buttons--gap-none {
@@ -243,9 +243,6 @@ body {
   .pbe-social-link--show-label .pbe-social-label,
   .pbe-social-links--show-labels .pbe-social-label {
     display: inline;
-  }
-  .pbe-grid--2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .pbe-column--auto {
     flex: 1 1 0%;

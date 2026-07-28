@@ -72,7 +72,7 @@ export interface InlineChromeOptions {
    * Renders a "Browse all" footer in the + inserter panel — the escalation
    * slot for hosts that have a bigger block library (the demo shell opens
    * its library rail). Hover-edge insertion supplies the exact before/after
-   * placement; slash/legacy insertion supplies only the target id.
+   * placement; slash/appender insertion supplies only the target id.
    */
   onBrowseAll?: (targetId: string | null, placement?: InlineInsertionPlacement) => void;
   /**
@@ -1172,7 +1172,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     p.onClose?.();
   }
 
-  // Slash/legacy pickers transform targetId. The hover-edge inserter instead
+  // Slash/appender pickers transform targetId. The hover-edge inserter instead
   // carries an explicit sibling placement and inserts without a placeholder.
   let targetId: string | null = null;
   let insertionPlacement: InlineInsertionPlacement | null = null;

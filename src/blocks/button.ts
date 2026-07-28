@@ -40,8 +40,8 @@ export const definition: BlockDefinition = {
       label: "Outline",
       styles: {
         backgroundColor: "transparent",
-        textColor: "accent",
-        borderColor: "accent",
+        textColor: "accent-surface",
+        borderColor: "accent-surface",
         borderWidth: "1",
       },
     },
@@ -50,7 +50,7 @@ export const definition: BlockDefinition = {
       label: "Link",
       styles: {
         backgroundColor: "transparent",
-        textColor: "accent",
+        textColor: "accent-surface",
         padding: "0",
         decoration: "underline",
       },
