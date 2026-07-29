@@ -70,7 +70,17 @@ import { CORE_PATTERNS, registerCoreBlocks, registerCorePatterns } from "./block
 import { blockToElement, downcast, upcast } from "./cast";
 import { createEditor } from "./editor";
 import { attachInlineChrome } from "./chrome-inline";
-import { createEditorShell } from "./shell";
+// The full-harness shell is loaded ON DEMAND (dynamic import): shell.ts and
+// its inlined shell.html live in a separate chunk of the ES build, so hosts
+// that only embed createEditor/attachInlineChrome never ship or parse the
+// harness. The IIFE (batteries) build inlines the chunk — script-tag users
+// keep the single file. Same public signature: this API was always async.
+import type { EditorShell, EditorShellOptions } from "./shell";
+
+async function createEditorShell(options: EditorShellOptions): Promise<EditorShell> {
+  const { createEditorShell: mount } = await import("./shell");
+  return mount(options);
+}
 import { browserPersistence } from "./persistence-adapter";
 import { DEFAULT_BLOCK_POLICY, resolveBlockPolicy, resolveRootPolicy } from "./policy";
 import { ICONS, iconRef, iconSvg, mountIconSprite } from "./icons";

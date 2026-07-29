@@ -23,13 +23,15 @@ import { probeWasmCssEngine } from "./wasm-engine";
 import preflightCss from "../vendor/jit/preflight.css?raw";
 import { registerCoreBlocks } from "./blocks";
 import { HEARTH_THEME } from "./demo-theme";
+// The demo IS a shell host — static import; the index entry keeps the
+// lazy-chunk wrapper for embed consumers.
+import { createEditorShell } from "./shell";
 import { HOMEPAGE_PATTERNS, registerHomepagePatterns } from "./blocks/homepage-patterns";
 import siteCss from "./styles.css?inline";
 import "./styles.css";
 
 const {
   browserPersistence,
-  createEditorShell,
   DEFAULT_THEME,
   TAILWIND_COMPAT_THEME,
   inlineBackend,
