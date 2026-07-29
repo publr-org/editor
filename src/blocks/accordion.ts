@@ -76,6 +76,6 @@ export const definition: BlockDefinition = {
         : settings?.iconPosition === "end"
           ? " pbe-accordion--icons-end"
           : " pbe-accordion--icons-start";
-    return `<div data-pb-block="accordion" data-pb-children class="pbe-accordion flex flex-col [&>details+details]:border-t-0${icon}"></div>`;
+    return `<div data-pb-block="accordion" data-pb-children class="flex flex-col [&>details+details]:border-t-0${icon}"></div>`;
   },
 };

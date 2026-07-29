@@ -442,8 +442,8 @@ const scopeEngineCss = (css: string): string =>
 // Tailwind's standalone preflight declares only `base,utilities`, while the
 // complete site sheet also owns `theme,components`. If preflight is inlined
 // first without a complete order, CSS creates `components` *after*
-// `utilities`; component defaults such as `.pbe-btn--solid` then beat
-// authored utilities such as `p-0`. The canvas does not suffer
+// `utilities`; component defaults such as `.pbe-container--on` then beat
+// authored utilities such as `px-0`. The canvas does not suffer
 // because its complete site sheet establishes the four-layer order at load.
 // Establish it explicitly for every isolated/published document before any
 // supplied CSS is parsed so Preview and canvas share one cascade.
@@ -889,6 +889,7 @@ function fillPatternPreviews(): void {
         doc.head.appendChild(css);
         const canvas = doc.createElement("main");
         canvas.id = "canvas";
+        canvas.className = "pbe-canvas";
         // Stylesheets cross the document boundary above; inherited custom
         // properties do not. Copy the RESOLVED variable environment from the
         // real editor canvas as well as the token document. This covers hosts
@@ -2199,7 +2200,6 @@ Publr.store("chrome", () => {
   let wrapEl: HTMLElement;
   let canvasFrame: HTMLIFrameElement;
   let canvasDocument: Document;
-  let responsiveContainerStyle: HTMLStyleElement;
   let templateNodeToolbar: HTMLElement | null = null;
   let editorContentEl: HTMLElement;
   let responsiveDeckEl: HTMLElement;
@@ -5349,7 +5349,6 @@ Publr.store("chrome", () => {
     }
     syncCanvasViewport();
     syncCanvasThemeTokens();
-    responsiveContainerStyle.textContent = responsiveContainerCss(nextTheme);
     if (!state.templateMode) mountDocumentFrame();
     resetPatternPreviews();
     shellOptions?.onThemeCss?.(); // e.g. the demo's inline-backend :root vars
@@ -7887,7 +7886,7 @@ Publr.store("chrome", () => {
           cssParts.push(inlineBackend.css?.() ?? "");
           const css = composeContentCss(cssParts);
           const templateWidth = shellOptions?.templateWidth ?? "full";
-          const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Preview</title><style>${css}</style></head><body><main id="canvas" data-pbe-template-width="${templateWidth}">${html}</main></body></html>`;
+          const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Preview</title><style>${css}</style></head><body><main id="canvas" class="pbe-canvas" data-pbe-template-width="${templateWidth}">${html}</main></body></html>`;
           if (win) win.document.write(doc);
           else window.open(URL.createObjectURL(new Blob([doc], { type: "text/html" })), "_blank");
         })();
@@ -10512,10 +10511,6 @@ Publr.store("chrome", () => {
          [data-pbe-template-node-kind="slot"][data-pbe-template-node-name="content"][data-pbe-template-selected] #canvas{outline:2px solid #7c3aed!important;outline-offset:-2px}`,
       ]);
       canvasDocument.head.appendChild(contentStyle);
-      responsiveContainerStyle = canvasDocument.createElement("style");
-      responsiveContainerStyle.id = "pbe-responsive-container-css";
-      responsiveContainerStyle.textContent = responsiveContainerCss();
-      canvasDocument.head.appendChild(responsiveContainerStyle);
       engineTag = canvasDocument.createElement("style");
       engineTag.id = "pbe-engine-css";
       canvasDocument.head.appendChild(engineTag);

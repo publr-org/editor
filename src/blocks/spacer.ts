@@ -1,16 +1,16 @@
-// Spacer block — vertical gap via a settings token.
-// A settings token, not an authored class: a bare spacer must be visible
-// the moment it's inserted. Arbitrary heights via authored h-[…] utilities
-// still win over the baseline. Px height/width resizing is skipped —
-// authored classes / lenses cover it (documented scope decision).
+// Spacer block — vertical gap via a settings token. The setting maps to a
+// height utility in the render's BASELINE; an authored height (h-[…] or a
+// lens write) evicts it at downcast (style.ts evictConflictingBaseline), so
+// the wire never carries two heights. Px resizing is skipped — authored
+// classes / lenses cover it (documented scope decision).
 
 import type { BlockDefinition, Fields, Settings } from "../registry";
 
 const HEIGHT_CLASS: Record<string, string> = {
-  sm: "pbe-spacer--sm",
-  md: "pbe-spacer--md",
-  lg: "pbe-spacer--lg",
-  xl: "pbe-spacer--xl",
+  sm: "h-3",
+  md: "h-6",
+  lg: "h-12",
+  xl: "h-24",
 };
 
 export const type = "spacer";
@@ -55,6 +55,6 @@ export const definition: BlockDefinition = {
   ],
   render(_fields: Fields, settings?: Settings) {
     const height = HEIGHT_CLASS[String(settings?.height)] ?? HEIGHT_CLASS.md;
-    return `<div data-pb-block="spacer" aria-hidden="true" class="pbe-spacer block ${height}"></div>`;
+    return `<div data-pb-block="spacer" aria-hidden="true" class="block ${height}"></div>`;
   },
 };

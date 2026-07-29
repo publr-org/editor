@@ -263,6 +263,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
   const host = options.container ?? canvas.parentElement;
   if (!host) throw new Error("PublrEditor: attachInlineChrome needs a positioned container");
   if (ownerWindow.getComputedStyle(host).position === "static") host.style.position = "relative";
+  const stampedCanvasScope = !canvas.classList.contains("pbe-canvas");
   canvas.classList.add("pbe-canvas"); // scope hook for the shipped canvas-owned CSS
 
   // All floating/in-canvas chrome shares one hard cascade boundary. The host
@@ -3393,6 +3394,7 @@ export function attachInlineChrome(editor: Editor, options: InlineChromeOptions 
     disposers.forEach((d) => d());
     mounted.forEach((el) => el.remove());
     chromeHost.remove();
-    canvas.classList.remove("pbe-canvas", "pbe-block-hover-model");
+    canvas.classList.remove("pbe-block-hover-model");
+    if (stampedCanvasScope) canvas.classList.remove("pbe-canvas");
   };
 }

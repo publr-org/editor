@@ -13,10 +13,10 @@ const VALIGN_CLASS: Record<string, string> = {
 };
 
 const GAP_CLASS: Record<string, string> = {
-  none: "pbe-columns--gap-none",
-  sm: "pbe-columns--gap-sm",
-  md: "pbe-columns--gap-md",
-  lg: "pbe-columns--gap-lg",
+  none: "gap-0",
+  sm: "gap-2.5",
+  md: "gap-5",
+  lg: "gap-10",
 };
 
 export const type = "columns";

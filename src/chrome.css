@@ -13,6 +13,7 @@
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "./canvas-presets.css";
 @source "./chrome-inline.ts";
 @source "./shell.html";
 @source "./shell.ts";
@@ -20,6 +21,16 @@
    never resolved it and standalone icons rendered unsized (latent bug the
    old toolbar-media screenshot had baselined). */
 @source "./icons.ts";
+/* Block renders emitting canvas BASELINE utilities (spacer heights, gaps,
+   column flex, button bundle, cover min-height) — listed per file so the
+   pattern fixtures' content vocabulary stays the engine's business, never
+   this artifact's. */
+@source "./blocks/spacer.ts";
+@source "./blocks/columns.ts";
+@source "./blocks/buttons.ts";
+@source "./blocks/column.ts";
+@source "./blocks/button.ts";
+@source "./blocks/cover.ts";
 /* The full harness (createEditorShell): its injected markup + the host-UI
    class strings shell.ts writes imperatively (action buttons, panels). */
 
@@ -190,6 +201,17 @@
    attachInlineChrome: N instances share these, no ids. Content TYPOGRAPHY is
    deliberately absent — authored content is the host's to style. */
 
+/* Selection accent: library canvases follow the host ring; the shell's
+   #canvas keeps the fixed editor-internal indigo. One rule set, the id
+   overrides the var — preserves the pre-dedup cascade exactly. Unifying on a
+   single color is a separate design decision (story #558 notes). */
+.pbe-canvas {
+  --pbe-selection-accent: var(--color-pbe-accent);
+}
+#canvas {
+  --pbe-selection-accent: var(--color-canvas-accent);
+}
+
 .pbe-canvas:focus,
 .pbe-canvas :focus {
   outline: none;
@@ -211,7 +233,7 @@
 }
 
 .pbe-canvas [contenteditable]:focus {
-  box-shadow: 0 0 0 1px var(--color-pbe-accent);
+  box-shadow: 0 0 0 1px var(--pbe-selection-accent);
 }
 
 /* Ghost prompt on empty blocks (data-pbe-ph stamped by the editor). */
@@ -226,174 +248,6 @@
    canvas never hides content behind it. */
 .pbe-canvas details:not([open])::details-content {
   content-visibility: visible;
-}
-.pbe-accordion summary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  list-style: none;
-}
-.pbe-accordion summary::-webkit-details-marker {
-  display: none;
-}
-.pbe-accordion--icons-start summary::before,
-.pbe-accordion--icons-end summary::after {
-  content: "\203A";
-  flex: none;
-  font-size: 1.25em;
-  line-height: 1;
-  transition: transform 120ms ease;
-}
-.pbe-accordion--icons-end summary::after {
-  margin-left: auto;
-}
-.pbe-accordion--icons-start details[open] > summary::before,
-.pbe-accordion--icons-end details[open] > summary::after {
-  transform: rotate(90deg);
-}
-
-/* Icon default display (base layer so authored display utilities win): the
-   icon render emits NO `inline-block` utility (it would fight an authored
-   `flex`), so its default lives here — inline-block makes rotation/flip
-   transforms apply, and a `flex`/`block`/`grid` utility overrides it. */
-@layer base {
-  .pbe-canvas [data-pb-block="icon"] {
-    display: inline-block;
-  }
-}
-
-/* Semantic page containers must live in the same layer as the generated
-   breakpoint rules. Their sizing declarations are important so structural
-   container state wins over incidental width utilities; splitting base state
-   and responsive state across layers reverses their priority and makes
-   `pbe-container--off` beat `lg:pbe-container--on` in the editor iframe. */
-@layer components {
-  /* Mirrors src/styles.css for the distributable editor canvas. */
-  .pbe-container--on {
-    --pbe-container-width: var(--container-wide, 1340px);
-  }
-  .pbe-container--content {
-    --pbe-container-width: var(--container-content, 645px);
-  }
-  .pbe-container--wide {
-    --pbe-container-width: var(--container-wide, 1340px);
-  }
-  .pbe-container--on {
-    box-sizing: border-box;
-    width: 100% !important;
-    max-width: calc(var(--pbe-container-width) + 2 * var(--container-gutter, 24px)) !important;
-    margin-inline: auto !important;
-    padding-inline: var(--container-gutter, 24px);
-  }
-  .pbe-container--bleed-left,
-  .pbe-container--bleed-right,
-  .pbe-container--bleed-both {
-    --pbe-container-edge: max(
-      var(--container-gutter, 24px),
-      calc((100vw - var(--pbe-container-width)) / 2)
-    );
-  }
-  :is(.pbe-container--bleed-left, .pbe-container--bleed-both)
-    > :is(:first-child:not(script), script[data-pb-settings] + *) {
-    margin-inline-start: calc(-1 * var(--pbe-container-edge)) !important;
-  }
-  :is(.pbe-container--bleed-right, .pbe-container--bleed-both) > :last-child {
-    margin-inline-end: calc(-1 * var(--pbe-container-edge)) !important;
-  }
-  .pbe-container--off {
-    width: auto !important;
-    max-width: none !important;
-    margin-inline: 0 !important;
-    padding-inline: 0;
-  }
-  .pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *) {
-    margin-inline-start: 0 !important;
-  }
-  .pbe-container--off > :last-child {
-    margin-inline-end: 0 !important;
-  }
-}
-
-/* Button style presets (base layer so authored utilities win — see the layer
-   note above: `components` can land after `utilities` when a host registered
-   its layer order first): the button render emits a semantic `pbe-btn--*`
-   class, never a bundle of peer utilities — a pasted, fully-authored button
-   keeps its own look, a fresh one gets the default. Colors reference the
-   theme's accent token. */
-@layer base {
-  .pbe-btn {
-    display: inline-block;
-    text-decoration: none;
-  }
-  .pbe-btn--solid {
-    border-radius: var(--radius-sm, 0.25rem);
-    background: var(--color-accent-surface);
-    padding: 0.5rem 1rem;
-    font-weight: 500;
-    color: var(--color-accent-foreground);
-  }
-  .pbe-btn--outline {
-    border-radius: var(--radius-sm, 0.25rem);
-    border: 1px solid currentColor;
-    padding: 0.5rem 1rem;
-    font-weight: 500;
-    color: var(--color-accent-surface);
-  }
-  .pbe-columns--gap-none,
-  .pbe-buttons--gap-none {
-    gap: 0;
-  }
-  .pbe-columns--gap-sm {
-    gap: 0.625rem;
-  }
-  .pbe-columns--gap-md {
-    gap: 1.25rem;
-  }
-  .pbe-columns--gap-lg {
-    gap: 2.5rem;
-  }
-  .pbe-buttons--gap-sm {
-    gap: 0.5rem;
-  }
-  .pbe-buttons--gap-md {
-    gap: 1rem;
-  }
-  .pbe-buttons--gap-lg {
-    gap: 2rem;
-  }
-  .pbe-spacer--sm {
-    height: 0.75rem;
-  }
-  .pbe-spacer--md {
-    height: 1.5rem;
-  }
-  .pbe-spacer--lg {
-    height: 3rem;
-  }
-  .pbe-spacer--xl {
-    height: 6rem;
-  }
-  .pbe-column--auto {
-    flex: 1 1 0%;
-  }
-  .pbe-column--25 {
-    flex: 0 0 25%;
-  }
-  .pbe-column--33 {
-    flex: 0 0 33.333333%;
-  }
-  .pbe-column--50 {
-    flex: 0 0 50%;
-  }
-  .pbe-column--66 {
-    flex: 0 0 66.666667%;
-  }
-  .pbe-column--75 {
-    flex: 0 0 75%;
-  }
-  .pbe-cover {
-    min-height: 430px;
-  }
 }
 
 /* Cursor semantics follow the actual editing surface. Structural padding,
@@ -514,7 +368,7 @@
 .pbe-canvas .pbe-selected[data-pb-pattern],
 .pbe-canvas .pbe-selected[data-pb-block="pattern"] {
   background: none;
-  outline: 3px solid var(--color-pbe-accent);
+  outline: 3px solid var(--pbe-selection-accent);
   outline-offset: -3px;
 }
 
@@ -529,7 +383,7 @@
 /* Block-level multiselection: whole blocks read as selected — native text
    highlighting is hidden inside them so the block highlight is the story. */
 .pbe-canvas .pbe-selected {
-  outline: 2px solid var(--color-pbe-accent);
+  outline: 2px solid var(--pbe-selection-accent);
   outline-offset: 2px;
 }
 .pbe-canvas .pbe-selected::selection,
@@ -1531,7 +1385,7 @@
   height: 24px;
 }
 
-#canvas .pbe-template-slot {
+.pbe-canvas .pbe-template-slot {
   display: grid;
   min-height: 5rem;
   place-items: center;
@@ -1722,88 +1576,6 @@
 
 :is(#tree, #inserter, #pattern-explorer, #sidebar) :is(.bg-white, .bg-neutral-50) {
   background: var(--background);
-}
-
-/* ---------------------------------------------------------------------------
-   Canvas-owned rules. Everything below targets markup the EDITOR generates or
-   stamps at runtime (carriers, ghost prompts, selection classes, group
-   bounds) — we never author those elements, so utilities cannot ride on them.
-   This is the same opt-out boundary as the imperative canvas code: chrome is
-   Tailwind-in-markup + PublrJS, canvas internals are stylesheet rules.
---------------------------------------------------------------------------- */
-
-/* Canvas is briefly contenteditable during cross-block drags. */
-#canvas:focus,
-#canvas :focus {
-  outline: none;
-}
-#canvas [contenteditable]:hover {
-  box-shadow: 0 0 0 1px var(--color-zinc-300);
-}
-#canvas.pbe-block-hover-model [contenteditable]:hover {
-  box-shadow: none;
-}
-#canvas.pbe-block-hover-model [data-pbe-editing="content-only"] [contenteditable]:hover,
-#canvas.pbe-block-hover-model [data-pbe-editing="content-only"][contenteditable]:hover {
-  box-shadow: 0 0 0 1px var(--color-zinc-300);
-}
-#canvas [contenteditable]:focus {
-  box-shadow: 0 0 0 1px var(--color-canvas-accent);
-}
-
-/* Ghost prompt on empty default blocks (data-pbe-ph stamped by the editor). */
-#canvas [data-pbe-ph].pbe-empty::before {
-  content: attr(data-pbe-ph);
-  color: var(--color-zinc-400);
-  pointer-events: none;
-}
-
-/* Container blocks (pbe-container stamped by the editor on every block with
-   children — group/row/stack/grid alike): INVISIBLE wrappers — zero margin,
-   zero padding — so the canvas measures exactly like the published page
-   (real-world templates carry their own spacing utilities; any editor-added
-   margin visibly breaks fidelity, e.g. white stripes between the Tailwind
-   Plus fixture's dark sections). Hovering reveals the layout as a thin
-   dotted outline (outline, not border — no layout shift); the block-selection
-   outline wins over it. :empty keeps a childless container hoverable and
-   clickable — its body IS the click-to-append area. */
-#canvas .pbe-container:hover:not(.pbe-selected) {
-  outline: 1px dotted var(--color-zinc-400);
-  outline-offset: 4px;
-}
-#canvas.pbe-block-hover-model .pbe-container:hover:not(.pbe-selected) {
-  outline: none;
-}
-#canvas .pbe-container:empty {
-  min-height: 48px;
-}
-
-/* A selected pattern instance is a SECTION, not a paragraph: no tint over
-   its (often dark, full-bleed) content — just a thick inner frame. */
-#canvas .pbe-selected[data-pb-pattern],
-#canvas .pbe-selected[data-pb-block="pattern"] {
-  background: none;
-  outline: 3px solid var(--color-canvas-accent);
-  outline-offset: -3px;
-}
-
-/* Inside an OPAQUE pattern instance the structure isn't the author's to
-   touch — no hover ruler on its inner containers (the instance root keeps
-   its own). Isolation mode drops pbe-patterns-opaque and the rulers return. */
-#canvas.pbe-patterns-opaque [data-pb-pattern] .pbe-container:hover:not(.pbe-selected),
-#canvas.pbe-patterns-opaque [data-pb-block="pattern"] .pbe-container:hover:not(.pbe-selected) {
-  outline: none;
-}
-
-/* Raw-html blocks: opaque but clickable — the block is the interaction. */
-#canvas .pbe-raw {
-  cursor: pointer;
-}
-#canvas .pbe-raw:hover {
-  box-shadow: 0 0 0 1px var(--color-zinc-300);
-}
-#canvas.pbe-block-hover-model .pbe-raw:hover {
-  box-shadow: none;
 }
 
 /* Inspector controls: a compact box-model map for spatial values and a
@@ -3454,17 +3226,6 @@
   outline: none;
 }
 
-/* Block-level multiselection: whole blocks read as selected — native text
-   highlighting is hidden inside them so the block highlight is the story. */
-#canvas .pbe-selected {
-  outline: 2px solid var(--color-canvas-accent);
-  outline-offset: 2px;
-}
-#canvas .pbe-selected::selection,
-#canvas .pbe-selected *::selection {
-  background: transparent;
-}
-
 /* Clicking anywhere in a pattern instance flashes its editable units — a
    translucent accent veil over each content block that fades right out. */
 @keyframes pbe-flash {
@@ -3495,12 +3256,12 @@
    layer, so authored utility classes and inline block styles remain the
    override layer. */
 @layer base {
-  :where(#canvas, .pbe-preview) blockquote {
+  :where(.pbe-canvas, .pbe-preview) blockquote {
     color: var(--color-zinc-500);
     border-left: 3px solid var(--color-zinc-200);
     padding-left: 16px;
   }
-  :where(#canvas, .pbe-preview) pre {
+  :where(.pbe-canvas, .pbe-preview) pre {
     background: var(--color-zinc-100);
     border-radius: 6px;
     padding: 12px 16px;

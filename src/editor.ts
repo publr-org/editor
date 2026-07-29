@@ -50,7 +50,13 @@ import {
 import { getBlockType } from "./registry";
 import type { BlockType, ControlRole, SettingSpec } from "./registry";
 import { createBlockSelection } from "./selection";
-import { STYLE_PROPS, blockSupportsStyle, styleBreakpoints, variantClasses } from "./style";
+import {
+  STYLE_PROPS,
+  blockSupportsStyle,
+  responsiveContainerCss,
+  styleBreakpoints,
+  variantClasses,
+} from "./style";
 import type { StyleBreakpoint, StyleSupports } from "./style";
 import { classesBackend } from "./style-backend";
 import type { StyleBackend } from "./style-backend";
@@ -148,6 +154,21 @@ export function createEditor({
   // Site theme (E1): install when given; absent leaves the page's theme alone
   // (a second themeless instance must not clobber the first's site theme).
   if (theme) setActiveTheme(theme);
+
+  // Container recipe CSS is editor-owned and GENERATED (style.ts) — the one
+  // source for base + responsive container rules in every canvas document,
+  // shell or bare host alike. One shared tag per document, refreshed by
+  // setTheme.
+  const containerCssTag = (): HTMLStyleElement => {
+    let tag = ownerDocument.getElementById("pbe-container-css") as HTMLStyleElement | null;
+    if (!tag) {
+      tag = ownerDocument.createElement("style");
+      tag.id = "pbe-container-css";
+      ownerDocument.head.appendChild(tag);
+    }
+    return tag;
+  };
+  containerCssTag().textContent = responsiveContainerCss();
 
   // Variant carrier (E2): an `is-style-<name>` marker class + the resolved
   // recipe classes, both in block.classes — recognition survives the
@@ -2308,6 +2329,7 @@ export function createEditor({
      */
     setTheme(next: Theme): void {
       setActiveTheme(next);
+      containerCssTag().textContent = responsiveContainerCss(next);
       renderCanvas();
     },
 

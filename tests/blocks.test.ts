@@ -487,8 +487,8 @@ describe("the design-wave library (story #338)", () => {
     expect(gen1).toContain("justify-center");
     expect(gen1).toContain('target="_blank"');
     expect(gen1).toContain('rel="noopener nofollow"'); // _blank merges noopener into authored rel
-    expect(gen1).toContain("pbe-spacer--xl"); // height preset, utility-overridable
-    expect(gen1).toContain("pbe-column--33"); // width preset, utility-overridable
+    expect(gen1).toContain("h-24"); // spacer height setting → utility baseline
+    expect(gen1).toContain("flex-[0_0_33.333333%]"); // column width setting → flex shorthand
     expect(gen1).not.toContain("max-md:flex-col"); // stackOnMobile:false drops the derived class
     expect(gen1).toContain(" open"); // accordion item openByDefault
     expect(upcast(parse(gen1))).toEqual(m);
@@ -608,5 +608,27 @@ describe("the media control kind (story #366)", () => {
       expect(first.control, type).toBe("media");
       expect(first.field, type).toBe(field);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("baseline eviction (replace, never merge)", () => {
+  test("a bare authored utility evicts the same-property baseline class", () => {
+    const m = upcast(
+      parse(`<div data-pb-block="spacer" aria-hidden="true" class="block h-6 h-[80px]"></div>`),
+    );
+    expect(m.blocks[0].classes).toBe("h-[80px]");
+    const out = downcast(m);
+    expect(out).toContain('class="block h-[80px]"');
+    expect(out).not.toContain("h-6");
+    expect(downcast(upcast(parse(out)))).toBe(out);
+  });
+
+  test("variant-scoped authored classes leave the bare baseline in place", () => {
+    const m = upcast(
+      parse(`<div data-pb-block="spacer" aria-hidden="true" class="block h-6 lg:h-40"></div>`),
+    );
+    expect(downcast(m)).toContain('class="block h-6 lg:h-40"');
   });
 });

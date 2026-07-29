@@ -5,13 +5,16 @@
 import type { BlockDefinition, Fields, Settings } from "../registry";
 import { LAYOUT_SUPPORTS } from "./supports";
 
+// Widths are the flex SHORTHAND on purpose: it owns basis+grow+shrink as one
+// atom, so an authored basis evicts the whole width baseline at downcast
+// (style.ts evictConflictingBaseline) instead of leaving stray grow/shrink.
 const WIDTH_CLASS: Record<string, string> = {
-  auto: "pbe-column--auto",
-  "25": "pbe-column--25",
-  "33": "pbe-column--33",
-  "50": "pbe-column--50",
-  "66": "pbe-column--66",
-  "75": "pbe-column--75",
+  auto: "flex-1",
+  "25": "flex-[0_0_25%]",
+  "33": "flex-[0_0_33.333333%]",
+  "50": "flex-[0_0_50%]",
+  "66": "flex-[0_0_66.666667%]",
+  "75": "flex-[0_0_75%]",
 };
 
 const VALIGN_CLASS: Record<string, string> = {

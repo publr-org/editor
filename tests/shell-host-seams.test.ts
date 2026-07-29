@@ -233,19 +233,20 @@ describe("shell host seams", () => {
 
   test("standalone content CSS preserves utilities over component defaults", () => {
     const tag = document.createElement("style");
-    const btn = document.createElement("a");
+    const el = document.createElement("div");
     tag.textContent = composeContentCss([preflightCss, siteCss]);
-    btn.className = "pbe-btn pbe-btn--solid p-0";
+    el.className = "pbe-container--on px-0";
     document.head.appendChild(tag);
-    document.body.appendChild(btn);
+    document.body.appendChild(el);
     try {
       // Preview used to resolve this to the component padding: the prepended
       // preflight declared `base,utilities`, accidentally placing the site's
-      // later `components` layer above authored utilities.
-      expect(getComputedStyle(btn).paddingLeft).toBe("0px");
+      // later `components` layer above authored utilities. The container
+      // recipe is the surviving components-layer default that must yield.
+      expect(getComputedStyle(el).paddingLeft).toBe("0px");
     } finally {
       tag.remove();
-      btn.remove();
+      el.remove();
     }
   });
 

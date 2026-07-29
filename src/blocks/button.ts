@@ -11,18 +11,18 @@ import { escAttr, str } from "../carriers";
 import type { BlockDefinition, Fields, Settings } from "../registry";
 import { TEXT_SUPPORTS } from "./supports";
 
-// The style preset is a DEFEASIBLE semantic class, not a bundle of utilities:
-// a pasted button that fully styles itself (`rounded-md bg-indigo-500
-// px-3.5 …`, the Tailwind-template norm) would otherwise collide with peer
-// utilities (`rounded-sm bg-[accent] px-4 …`) and the engine's cascade order
-// picks a winner unpredictably. `.pbe-btn--*` rules live in @layer components
-// (chrome.css / styles.css), so ANY authored utility (@layer utilities)
-// cleanly overrides the default look. Fresh buttons get the preset; pasted
-// ones keep exactly their authored classes.
+// The style variants are token-backed utility bundles. A pasted button that
+// styles itself (`rounded-md bg-indigo-500 px-3.5 …`) never collides with
+// them: downcast evicts every baseline class an authored class conflicts
+// with (style.ts evictConflictingBaseline), so the wire carries exactly one
+// owner per property. Fresh buttons get the bundle; pasted ones keep
+// exactly their authored classes.
 const STYLE_CLASS: Record<string, string> = {
-  solid: "pbe-btn pbe-btn--solid",
-  outline: "pbe-btn pbe-btn--outline",
-  link: "pbe-btn pbe-btn--link",
+  solid:
+    "inline-block no-underline rounded-sm bg-[var(--color-accent-surface)] px-4 py-2 font-medium text-[var(--color-accent-foreground)]",
+  outline:
+    "inline-block no-underline rounded-sm border px-4 py-2 font-medium text-[var(--color-accent-surface)]",
+  link: "inline-block no-underline",
 };
 
 export const type = "button";

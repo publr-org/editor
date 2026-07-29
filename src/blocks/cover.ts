@@ -130,9 +130,9 @@ export const definition: BlockDefinition = {
     // of background-attachment: fixed)
     const parallax = settings?.hasParallax === true;
     const tag = typeof fields.tag === "string" && TAGS.includes(fields.tag) ? fields.tag : "div";
-    const height = settings?.fullHeight === true ? " min-h-screen" : "";
+    const height = settings?.fullHeight === true ? " min-h-screen" : " min-h-[430px]";
     return (
-      `<${tag} data-pb-block="cover" data-pb-tag="tag" class="pbe-cover relative isolate flex overflow-hidden p-4${height}${parallax ? " [clip-path:inset(0)]" : ""}">` +
+      `<${tag} data-pb-block="cover" data-pb-tag="tag" class="relative isolate flex overflow-hidden p-4${height}${parallax ? " [clip-path:inset(0)]" : ""}">` +
       `<img data-pb-image="image" src="${escAttr(img.src ?? "")}" alt="${escAttr(img.alt ?? "")}"${dims} class="${parallax ? "fixed" : "absolute"} inset-0 -z-20 h-full w-full object-cover">` +
       `<span class="absolute inset-0 -z-10 bg-foreground ${dim}" aria-hidden="true"></span>` +
       `<div data-pb-children class="relative flex flex-1 flex-col gap-3 text-surface ${pos}"></div></${tag}>`

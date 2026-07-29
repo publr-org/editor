@@ -20,6 +20,7 @@ import {
 } from "./carriers";
 import type { Block, CarrierKind, FieldValue, Model } from "./carriers";
 import { getBlockType } from "./registry";
+import { evictConflictingBaseline } from "./style";
 import type { BlockType, Settings } from "./registry";
 
 // What the render receives as its settings input: the model's SPARSE island
@@ -238,7 +239,10 @@ export function blockToElement(
   const extra = classList(block.classes);
   if (extra.length) {
     const target = classTargetEl(root, def);
-    const merged = [...classList(target.getAttribute("class"))];
+    // Replace, never merge: an authored class evicts the baseline classes
+    // owning the same property (style.ts) — the wire never carries two bare
+    // utilities fighting over one declaration.
+    const merged = evictConflictingBaseline(classList(target.getAttribute("class")), extra);
     for (const c of extra) if (!merged.includes(c)) merged.push(c);
     target.setAttribute("class", merged.join(" "));
   }

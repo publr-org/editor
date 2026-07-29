@@ -20,7 +20,7 @@ Tailwind-native Styles control over a low-priority 430px default.
 ## Fixture
 
 ```html
-<div data-pb-block="cover" class="pbe-cover relative isolate flex overflow-hidden p-4">
+<div data-pb-block="cover" class="relative isolate flex overflow-hidden p-4">
   <img
     data-pb-image="image"
     src="https://placehold.co/1200x430/png"
@@ -36,7 +36,7 @@ Tailwind-native Styles control over a low-priority 430px default.
     <p data-pb-block="paragraph" data-pb-rich="body">Supporting copy over the image.</p>
   </div>
 </div>
-<div data-pb-block="cover" class="pbe-cover relative isolate flex overflow-hidden p-4">
+<div data-pb-block="cover" class="relative isolate flex overflow-hidden p-4">
   <script type="application/json" data-pb-settings>
     { "dimRatio": 80, "contentPosition": "bottom-left" }
   </script>
@@ -54,7 +54,7 @@ Tailwind-native Styles control over a low-priority 430px default.
     <p data-pb-block="paragraph" data-pb-rich="body">Pinned bottom-left under a heavy dim.</p>
   </div>
 </div>
-<div data-pb-block="cover" class="pbe-cover relative isolate flex overflow-hidden p-4">
+<div data-pb-block="cover" class="relative isolate flex overflow-hidden p-4">
   <img
     data-pb-image="image"
     src=""

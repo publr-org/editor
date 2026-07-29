@@ -13,10 +13,10 @@ const JUSTIFY_CLASS: Record<string, string> = {
 };
 
 const GAP_CLASS: Record<string, string> = {
-  none: "pbe-buttons--gap-none",
-  sm: "pbe-buttons--gap-sm",
-  md: "pbe-buttons--gap-md",
-  lg: "pbe-buttons--gap-lg",
+  none: "gap-0",
+  sm: "gap-2",
+  md: "gap-4",
+  lg: "gap-8",
 };
 
 export const type = "buttons";

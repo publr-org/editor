@@ -96,13 +96,12 @@ export const definition: BlockDefinition = {
     },
   ],
   render(fields: Fields, settings?: Settings) {
-    // NO baseline `inline-block` utility: it would be a PEER of an authored
-    // display utility (`flex` on the fixture's icon badges), and the engine's
-    // cascade order lets the later one win unpredictably — the icon's flex
-    // centering broke. The default display is a low-specificity canvas rule
-    // instead ([data-pb-block="icon"] → inline-block, so transforms apply),
-    // which any authored display utility (@layer utilities) cleanly overrides.
+    // Baseline `inline-block` (so rotation/flip transforms apply): an
+    // authored display utility (`flex` on the fixture's icon badges) EVICTS
+    // it at downcast (style.ts evictConflictingBaseline) — the wire never
+    // carries two display owners, so no cascade-order roulette.
     const classes = [
+      "inline-block",
       ROTATE_CLASS[String(settings?.rotation)] ?? "",
       settings?.flipHorizontal === true ? "-scale-x-100" : "",
       settings?.flipVertical === true ? "-scale-y-100" : "",

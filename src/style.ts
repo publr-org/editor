@@ -145,14 +145,45 @@ export function styleBreakpoints(
  * so generate their prefixed selectors from the live theme breakpoints rather
  * than hard-coding Tailwind's starter collection. */
 export function responsiveContainerCss(theme: Theme = activeTheme()): string {
+  // Base rules are UNSCOPED like the static sheet they replaced: container
+  // recipes must reach template parts rendered OUTSIDE #canvas in the
+  // document frame. Breakpoint rules stay canvas-scoped — their :is() id
+  // specificity is what lets `lg:pbe-container--on` beat the base rule
+  // within one layer.
+  const SCOPE = ":is(#canvas, .pbe-preview, .pbe-canvas)";
+  const first = (sel: string) =>
+    `${sel} > :is(:first-child:not(script), script[data-pb-settings] + *)`;
+  const last = (sel: string) => `${sel} > :last-child`;
+  const base = (name: string) => `.${name}`;
+  const baseRules = `${base("pbe-container--on")}{--pbe-container-width:var(--container-wide,1340px);
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width) + 2 * var(--container-gutter,24px))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--container-gutter,24px);}
+${base("pbe-container--content")}{--pbe-container-width:var(--container-content,645px)}
+${base("pbe-container--wide")}{--pbe-container-width:var(--container-wide,1340px)}
+${base("pbe-container--bleed-left")},
+${base("pbe-container--bleed-right")},
+${base("pbe-container--bleed-both")}{--pbe-container-edge:max(var(--container-gutter,24px),calc((100vw - var(--pbe-container-width))/2))}
+${first(`${base("pbe-container--bleed-left")}`)},
+${first(`${base("pbe-container--bleed-both")}`)}{margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+${last(`${base("pbe-container--bleed-right")}`)},
+${last(`${base("pbe-container--bleed-both")}`)}{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+${base("pbe-container--off")}{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+${first(`${base("pbe-container--off")}`)}{margin-inline-start:0!important}
+${last(`${base("pbe-container--off")}`)}{margin-inline-end:0!important}`;
   const rules = styleBreakpoints(theme)
     .filter(({ key }) => key !== "base")
     .map(({ key, viewport }) => {
       const prefix = `${key.replace(/[^a-zA-Z0-9_-]/g, "\\$&")}\\:`;
-      const scoped = (name: string) => `:is(#canvas, .pbe-preview) .${prefix}${name}`;
-      const first = (name: string) =>
-        `${scoped(name)} > :is(:first-child:not(script), script[data-pb-settings] + *)`;
-      const last = (name: string) => `${scoped(name)} > :last-child`;
+      const scoped = (name: string) => `${SCOPE} .${prefix}${name}`;
+      const firstOf = (name: string) => first(scoped(name));
+      const lastOf = (name: string) => last(scoped(name));
       const constrain = `
   box-sizing:border-box;
   width:100%!important;
@@ -172,21 +203,21 @@ ${scoped("pbe-container--on")}{--pbe-container-width:var(--container-wide,1340px
 ${scoped("pbe-container--content")}{--pbe-container-width:var(--container-content,645px)}
 ${scoped("pbe-container--wide")}{--pbe-container-width:var(--container-wide,1340px)}
 ${scoped("pbe-container--bleed-none")}{${unbleed}}
-${first("pbe-container--bleed-none")}{margin-inline-start:0!important}
-${last("pbe-container--bleed-none")}{margin-inline-end:0!important}
+${firstOf("pbe-container--bleed-none")}{margin-inline-start:0!important}
+${lastOf("pbe-container--bleed-none")}{margin-inline-end:0!important}
 ${scoped("pbe-container--bleed-left")},
 ${scoped("pbe-container--bleed-right")},
 ${scoped("pbe-container--bleed-both")}{${bleed}}
-${first("pbe-container--bleed-left")},
-${first("pbe-container--bleed-both")}{margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
-${last("pbe-container--bleed-right")},
-${last("pbe-container--bleed-both")}{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+${firstOf("pbe-container--bleed-left")},
+${firstOf("pbe-container--bleed-both")}{margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+${lastOf("pbe-container--bleed-right")},
+${lastOf("pbe-container--bleed-both")}{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
 ${scoped("pbe-container--off")}{${reset}}
-${first("pbe-container--off")}{margin-inline-start:0!important}
-${last("pbe-container--off")}{margin-inline-end:0!important}
+${firstOf("pbe-container--off")}{margin-inline-start:0!important}
+${lastOf("pbe-container--off")}{margin-inline-end:0!important}
 }`;
     });
-  return rules.length ? `@layer components {\n${rules.join("\n")}\n}` : "";
+  return `@layer components {\n${baseRules}\n${rules.join("\n")}\n}`;
 }
 
 export interface StyleCapability {
@@ -841,6 +872,67 @@ const classAtBreakpoint = (cls: string, breakpoint: StyleBreakpoint): string | n
   if ((!prefix && cls !== body) || structure.includes(":") || structure.includes("/")) return null;
   return body.startsWith("[") ? null : body;
 };
+
+// Same-property conflict groups the FROM_CLASS lenses don't model: display
+// values outside the layout vocabulary, flex shorthands (atomic — they own
+// basis+grow+shrink together, so an authored basis evicts the whole
+// shorthand), and decoration values the controls don't write.
+const EXTRA_CONFLICT_GROUPS: { test: RegExp; groups: string[] }[] = [
+  {
+    test: /^(inline-block|inline|inline-flex|inline-grid|flow-root|contents|hidden|table|inline-table)$/,
+    groups: ["display"],
+  },
+  {
+    test: /^flex-(1|auto|initial|none)$|^flex-\[/,
+    groups: ["flexBasis", "flexGrow", "flexShrink"],
+  },
+  { test: /^(grow|grow-\d+|grow-\[[^\]]*\])$/, groups: ["flexGrow"] },
+  { test: /^(shrink|shrink-\d+|shrink-\[[^\]]*\])$/, groups: ["flexShrink"] },
+  { test: /^(no-underline|overline)$/, groups: ["decoration"] },
+];
+
+// Every conflict group a bare utility body owns. layoutMode folds into
+// "display" so `inline-block` (extra group) and `flex` (lens) collide.
+function conflictGroups(body: string, theme: Theme): Set<string> {
+  const owned = new Set<string>();
+  for (const [prop, from] of Object.entries(FROM_CLASS)) {
+    if (from(body, theme) !== null) owned.add(prop === "layoutMode" ? "display" : prop);
+  }
+  for (const extra of EXTRA_CONFLICT_GROUPS) {
+    if (extra.test.test(body)) for (const group of extra.groups) owned.add(group);
+  }
+  return owned;
+}
+
+/**
+ * Replace, never merge: class order carries no cascade meaning, so two bare
+ * utilities on one property would let the stylesheet's emission order pick
+ * the winner. At downcast the render's baseline yields — any BARE authored
+ * class evicts the baseline classes owning the same property. Variant-scoped
+ * authored classes (hover:, lg:) leave the bare baseline in place: its value
+ * still applies outside the variant.
+ */
+export function evictConflictingBaseline(
+  baseline: readonly string[],
+  authored: readonly string[],
+  theme: Theme = activeTheme(),
+): string[] {
+  const authoredOwned = new Set<string>();
+  for (const cls of authored) {
+    const body = classAtBreakpoint(cls, "base");
+    if (!body) continue;
+    for (const group of conflictGroups(body, theme)) authoredOwned.add(group);
+  }
+  if (!authoredOwned.size) return [...baseline];
+  return baseline.filter((cls) => {
+    const body = classAtBreakpoint(cls, "base");
+    if (!body) return true;
+    for (const group of conflictGroups(body, theme)) {
+      if (authoredOwned.has(group)) return false;
+    }
+    return true;
+  });
+}
 
 /** Read a prop's value out of a class list (last owner wins, like CSS). */
 export function readStyleClass(
