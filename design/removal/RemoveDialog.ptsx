@@ -1,0 +1,72 @@
+// The removal guard's dialog: where the thing is still used, and the value every usage
+// switches to before it goes.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { CountRow } from "../../../ui/src/components/CountRow/CountRow.ptsx";
+import { Modal } from "../../../ui/src/components/Modal/Modal.ptsx";
+import { NativeSelect } from "../../../ui/src/components/NativeSelect/NativeSelect.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { cancelRemoval, confirmRemoval, setReplacement } from "./actions";
+
+export function RemoveDialog() {
+  return (
+    <>
+      {state.removeOpen && (
+        <Modal
+          title={state.removeTitle}
+          size="sm"
+          footerAlign="end"
+          onClose={() => cancelRemoval()}
+          footer={
+            <>
+              <Button hierarchy="secondary" size="md" onClick={() => cancelRemoval()}>
+                <Text variant="label-md">{Publr.t("Cancel")}</Text>
+              </Button>
+              {state.removeCanSwitch && (
+                <Button hierarchy="primary" intent="destructive" size="md" onClick={() => confirmRemoval()}>
+                  <span data-remove-confirm>
+                    <Text variant="label-md-strong">{Publr.t("Switch & remove")}</Text>
+                  </span>
+                </Button>
+              )}
+            </>
+          }
+        >
+          <div data-design-remove>
+            <Text as="p" variant="body-sm" classes="mb-2">
+              {Publr.t("It is still in use:")}
+            </Text>
+            <div class="mb-4 space-y-1" data-design-remove-hits>
+              {state.removeHits.map((hit) => (
+                <CountRow label={hit.label} count={hit.count} note={hit.note} />
+              ))}
+            </div>
+            {state.removeBlocked && (
+              <Text as="p" variant="body-compact" tone="error">
+                <span role="alert">{state.removeBlocked}</span>
+              </Text>
+            )}
+            {state.removeCanSwitch && (
+              <div>
+                <Text as="label" variant="label-md" classes="mb-1.5 block">
+                  {Publr.t("Switch every usage to")}
+                </Text>
+                <NativeSelect label={Publr.t("Switch every usage to")} onChange={(event: Event) => setReplacement((event.target as HTMLSelectElement).value)}>
+                  {state.removeAlternatives.map((option) => (
+                    <option value={option.key} selected={option.key === state.removeReplacement}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <Text as="p" variant="body-xs" tone="muted" classes="mt-2">
+                  {Publr.t("The theme’s roles, type scale and other settings are updated, then it is removed.")}
+                </Text>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}

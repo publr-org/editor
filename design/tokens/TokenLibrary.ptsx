@@ -1,0 +1,80 @@
+// Library / Tokens: the reusable inventory semantic roles and defaults reference. The
+// palette as color families (each opens the color family editor), then every scale as a
+// grid of value cells with an add row.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { SampleCell } from "../../../ui/src/components/SampleGrid/SampleCell.ptsx";
+import { SampleGrid } from "../../../ui/src/components/SampleGrid/SampleGrid.ptsx";
+import { SwatchRow } from "../../../ui/src/components/SwatchRow/SwatchRow.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { ValueSample } from "../../../ui/src/components/ValueSample/ValueSample.ptsx";
+import { state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+import { addToken, newFamily, openFamily, removeToken, setDraft, updateToken } from "./actions";
+import { ColorFamilyDialog } from "./ColorFamilyDialog.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+export function TokenLibraryPage() {
+  return (
+    <div class="mx-auto w-full max-w-[980px] p-8 max-lg:p-5" data-design-page="advanced">
+      <PageHead compact crumb={Publr.t("Library / Tokens")} title={Publr.t("Token library")} description={Publr.t("Manage reusable inventory here. Semantic roles and defaults reference these values.")} />
+      <div class="divide-y divide-border border-y border-border">
+        <section class="py-5" data-design-color-palette>
+          <div class="mb-4 flex items-center justify-between">
+            <div>
+              <Text as="h3" variant="heading-2xs">
+                {Publr.t("Color palette")}
+              </Text>
+              <Text as="p" variant="body-2xs" tone="muted" classes="mt-0.5">
+                {Publr.t("Color families and standalone values")}
+              </Text>
+            </div>
+            <Button hierarchy="secondary" shape="pill" size="sm" onClick={() => newFamily()}>
+              <span data-design-add-color>
+                <Text variant="label-2xs-strong">{Publr.t("Add color")}</Text>
+              </span>
+            </Button>
+          </div>
+          <div class="overflow-hidden border-y border-border" data-design-color-families>
+            {state.familyRows.map((family) => (
+              <SwatchRow label={family.label} detail={family.detail} swatches={family.swatches} note={family.note} onClick={() => openFamily(family.id)} />
+            ))}
+          </div>
+        </section>
+        {state.tokenSections.map((section) => (
+          <section class="py-5" data-design-scale={section.ns}>
+            <div class="mb-4 flex items-center justify-between">
+              <Text as="h3" variant="heading-2xs">
+                {section.label}
+              </Text>
+              <Text variant="body-2xs" tone="muted">
+                {Publr.t("Reusable values")}
+              </Text>
+            </div>
+            {section.rows.length > 0 && (
+              <SampleGrid>
+                {section.rows.map((row) => (
+                  <SampleCell name={row.key} removeLabel={Publr.t("Remove {name}", { name: row.name })} onRemove={() => removeToken(row.name)} sample={<ValueSample kind={section.kind} value={row.sample} label={row.key} />}>
+                    <span data-token={row.name} class="contents">
+                      <Input size="micro" mono value={row.value} label={row.key} onChange={(event: Event) => updateToken(row.name, valueOf(event))} />
+                    </span>
+                  </SampleCell>
+                ))}
+              </SampleGrid>
+            )}
+            <div class="mt-3 grid grid-cols-[0.75fr_1fr_auto] gap-2 border-t border-border pt-3" data-add={section.ns}>
+              <Input size="dense" placeholder={Publr.t("Token name")} label={Publr.t("New token name")} value={state.tokenDrafts[section.ns]?.name ?? ""} onInput={(event: Event) => setDraft(section.ns, "name", valueOf(event))} />
+              <Input size="dense" mono placeholder={Publr.t("Value")} label={Publr.t("New token value")} value={state.tokenDrafts[section.ns]?.value ?? ""} onInput={(event: Event) => setDraft(section.ns, "value", valueOf(event))} />
+              <Button hierarchy="secondary" shape="pill" size="sm" onClick={() => addToken(section.ns)}>
+                <Text variant="label-2xs-strong">{Publr.t("Add")}</Text>
+              </Button>
+            </div>
+          </section>
+        ))}
+      </div>
+      <ColorFamilyDialog />
+    </div>
+  );
+}

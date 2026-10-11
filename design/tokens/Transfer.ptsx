@@ -1,0 +1,67 @@
+// Library / Portable theme: the complete token document in and out of Publr as
+// Tailwind v4 CSS. Import adds new tokens and updates matching names; semantic mappings
+// and patterns stay as they are.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Code } from "../../../ui/src/components/Code/Code.ptsx";
+import { CodeBlock } from "../../../ui/src/components/Code/CodeBlock.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { Textarea } from "../../../ui/src/components/Textarea/Textarea.ptsx";
+import { state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+import { importTheme, setImportText } from "./actions";
+
+export function TransferPage() {
+  return (
+    <div class="mx-auto w-full max-w-[980px] p-8 max-lg:p-5" data-design-page="transfer">
+      <PageHead compact crumb={Publr.t("Library / Portable theme")} title={Publr.t("Import / export")} description={Publr.t("Move the complete token document between Publr and Tailwind-compatible tools.")} />
+      <div class="grid grid-cols-2 gap-5 max-lg:grid-cols-1">
+        <section class="border-y border-border py-5" data-import>
+          <Text as="h3" variant="heading-2xs">
+            {Publr.t("Import Tailwind theme")}
+          </Text>
+          <Text as="p" variant="body-micro" tone="muted" classes="mt-1 mb-3">
+            {Publr.t("Paste CSS containing an ")}
+            <Code>@theme</Code>
+            {Publr.t(" block. New tokens are added and matching names are updated; semantic mappings and patterns stay intact.")}
+          </Text>
+          <Textarea
+            variant="code"
+            label={Publr.t("Theme CSS to import")}
+            placeholder="@theme { --color-surface: #fff; --color-palette-brand: #3858e9; }"
+            value={state.importText}
+            onInput={(event: Event) => setImportText((event.target as HTMLTextAreaElement).value)}
+          />
+          {state.importError && (
+            <Text as="p" variant="body-micro" tone="error" classes="mt-1">
+              <span role="alert">{state.importError}</span>
+            </Text>
+          )}
+          {state.importStatus && (
+            <Text as="p" variant="body-micro" tone="success" classes="mt-1">
+              <span role="status">{state.importStatus}</span>
+            </Text>
+          )}
+          <Button hierarchy="contrast" shape="pill" size="sm" classes="mt-3" onClick={() => importTheme()}>
+            <span data-import-submit>
+              <Text variant="label-xs-strong">{Publr.t("Import tokens")}</Text>
+            </span>
+          </Button>
+        </section>
+        <section class="border-y border-border py-5">
+          <div class="mb-3 flex items-center justify-between">
+            <Text as="h3" variant="heading-2xs">
+              {Publr.t("Export")}
+            </Text>
+            <Text variant="body-2xs" tone="muted">
+              Tailwind v4 CSS
+            </Text>
+          </div>
+          <CodeBlock variant="well">
+            <span data-design-export>{state.exportCss}</span>
+          </CodeBlock>
+        </section>
+      </div>
+    </div>
+  );
+}

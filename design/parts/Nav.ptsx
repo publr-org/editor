@@ -1,0 +1,190 @@
+// The left panel, "Styles": the builder's pages grouped as the system is layered
+// (library, semantic layer, defaults, system), Settings at the foot. Pages with a list
+// of their own (primitive blocks, patterns, templates) slide it in with a way back.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { GlyphTile } from "../../../ui/src/components/GlyphTile/GlyphTile.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { NavButton } from "../../../ui/src/components/NavButton/NavButton.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { open, openHome, openMoodboard, state } from "../Builder.ptsx";
+import { BlocksNav } from "../library/Blocks.ptsx";
+import { PatternsNav } from "../library/Patterns.ptsx";
+import { TemplatesNav } from "../library/Templates.ptsx";
+
+function Group({ label, first = false, children }: { label: string; first?: boolean; children?: JSX.Element }) {
+  return (
+    <div>
+      <Text as="p" variant="overline" tone="muted" classes={first ? "mb-2" : "mt-4 mb-2"}>
+        {label}
+      </Text>
+      <div class="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+function Home() {
+  return (
+    <div class="min-h-0 flex-1 overflow-y-auto p-4" data-builder-nav>
+      <div class="mb-4 space-y-0.5">
+        <NavButton label={Publr.t("Overview")} current={state.page === "overview"} glyph={<GlyphTile glyph="✦" framed />} onClick={() => open("overview")} />
+        <NavButton
+          label={Publr.t("Moodboard")}
+          trailing="external"
+          glyph={
+            <GlyphTile framed>
+              <Icon name="moodboard" size="xs" />
+            </GlyphTile>
+          }
+          onClick={() => openMoodboard()}
+        />
+      </div>
+      <Group label={Publr.t("Library")} first>
+        <NavButton
+          label={Publr.t("Token library")}
+          trailing="chevron"
+          current={state.page === "advanced"}
+          glyph={
+            <GlyphTile glyph="{ }" face="mono" />
+          }
+          onClick={() => open("advanced")}
+        />
+        <NavButton label={Publr.t("Fonts")} trailing="chevron" current={state.page === "fonts"} glyph={<GlyphTile glyph="Ag" face="serif" framed />} onClick={() => open("fonts")} />
+        <NavButton label={Publr.t("Icons")} trailing="chevron" current={state.page === "icons"} glyph={<GlyphTile glyph="◇" framed />} onClick={() => open("icons")} />
+        <NavButton
+          label={Publr.t("Container sizes")}
+          trailing="chevron"
+          current={state.page === "containers"}
+          glyph={
+            <GlyphTile>
+              <Icon name="container-sizes" size="md" />
+            </GlyphTile>
+          }
+          onClick={() => open("containers")}
+        />
+      </Group>
+      <Group label={Publr.t("Semantic layer")}>
+        <NavButton
+          label={Publr.t("Semantic colors")}
+          trailing="chevron"
+          current={state.page === "foundations"}
+          glyph={
+            <GlyphTile framed>
+              <Icon name="swatch-grid" size="xs" />
+            </GlyphTile>
+          }
+          onClick={() => open("foundations")}
+        />
+        <NavButton label={Publr.t("Typography")} trailing="chevron" current={state.page === "typography"} glyph={<GlyphTile glyph="Aa" framed />} onClick={() => open("typography")} />
+        <NavButton
+          label={Publr.t("Type scale")}
+          trailing="chevron"
+          current={state.page === "type-scale"}
+          glyph={
+            <GlyphTile framed>
+              <Icon name="scale-bars" size="xs" />
+            </GlyphTile>
+          }
+          onClick={() => open("type-scale")}
+        />
+      </Group>
+      <Group label={Publr.t("Defaults")}>
+        <NavButton
+          label={Publr.t("Primitive blocks")}
+          trailing="chevron"
+          current={state.page === "components"}
+          glyph={
+            <GlyphTile framed>
+              <Icon name="pill" size="xs" />
+            </GlyphTile>
+          }
+          onClick={() => open("components")}
+        />
+      </Group>
+      <Group label={Publr.t("System")}>
+        <NavButton
+          label={Publr.t("Breakpoints")}
+          trailing="chevron"
+          current={state.page === "breakpoints"}
+          glyph={
+            <GlyphTile>
+              <Icon name="device-desktop" size="md" />
+            </GlyphTile>
+          }
+          onClick={() => open("breakpoints")}
+        />
+        <NavButton
+          label={Publr.t("Patterns")}
+          trailing="chevron"
+          current={state.page === "patterns"}
+          glyph={
+            <GlyphTile framed>
+              <Icon name="layout-grid" size="xs" />
+            </GlyphTile>
+          }
+          onClick={() => open("patterns")}
+        />
+        <NavButton
+          label={Publr.t("Templates")}
+          trailing="chevron"
+          current={state.page === "templates"}
+          glyph={
+            <GlyphTile framed>
+              <Icon name="layout-rows" size="xs" />
+            </GlyphTile>
+          }
+          onClick={() => open("templates")}
+        />
+      </Group>
+    </div>
+  );
+}
+
+function SectionHead() {
+  return (
+    <div class="flex shrink-0 items-start gap-2 border-b border-border p-4" data-builder-section-head>
+      <Button hierarchy="secondary" size="sm" label={Publr.t("Back to styles")} onClick={() => openHome()}>
+        <Icon name="chevron-left" size="sm" />
+      </Button>
+      <div class="min-w-0 pt-0.5">
+        <Text as="h3" variant="heading-2xs">
+          {state.page === "components" ? Publr.t("Primitive blocks") : state.page === "patterns" ? Publr.t("Patterns") : Publr.t("Templates")}
+        </Text>
+        <Text as="p" variant="body-2xs" tone="muted" classes="mt-1">
+          {state.page === "components" ? Publr.t("Set the starting recipe for each content block.") : state.page === "patterns" ? Publr.t("Review and govern reusable compositions.") : Publr.t("Edit the structure of each content type and the parts they share.")}
+        </Text>
+      </div>
+    </div>
+  );
+}
+
+export function Nav() {
+  return (
+    <aside class="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-border bg-card max-sm:hidden" aria-label={Publr.t("Styles")} data-design-styles-panel>
+      <div class="flex h-14 shrink-0 items-center border-b border-border px-4">
+        <Text as="h2" variant="heading-sm">
+          {Publr.t("Styles")}
+        </Text>
+      </div>
+      {state.home && <Home />}
+      {!state.home && (
+        <div class="flex min-h-0 flex-1 flex-col" data-design-styles-section>
+          <SectionHead />
+          {state.page === "components" && <BlocksNav />}
+          {state.page === "patterns" && <PatternsNav />}
+          {state.page === "templates" && <TemplatesNav />}
+        </div>
+      )}
+      {state.home && (
+        <div class="shrink-0 border-t border-border p-3">
+          <NavButton
+            label={Publr.t("Settings")}
+            current={state.page === "settings"}
+            glyph={<Icon name="settings" size="sm" classes="text-muted-foreground" />}
+            onClick={() => open("settings")}
+          />
+        </div>
+      )}
+    </aside>
+  );
+}

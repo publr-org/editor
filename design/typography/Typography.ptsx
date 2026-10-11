@@ -1,0 +1,149 @@
+// Typography (Semantic layer › Typography): how the site uses the font library. The
+// default font per kind of element, retargeted at library families in one edit; a full
+// specimen of every family in use; and the pairing set in a real layout, drawn with the
+// editor's own blocks.
+import { Publr } from "publr-jsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { NativeSelect } from "../../../ui/src/components/NativeSelect/NativeSelect.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+import { attachInUse, retargetRole } from "./actions";
+
+const DIGITS = "0123456789 & @ # $ % ( ) [ ] { } ? ! * , . : ; — “ ” ‘ ’ / \\ + =";
+
+export function TypographyPage() {
+  return (
+    <div class="mx-auto w-full max-w-[980px] p-8 max-lg:p-5" data-design-page="typography">
+      <PageHead crumb={Publr.t("Semantic layer / Typography")} title={Publr.t("Typography")} description={Publr.t("How the site uses the fonts library: default fonts for elements, full specimens, and the pairing in use.")} />
+      {state.typeRoles.length > 0 && (
+        <section class="border-t border-border py-6" data-part="font-roles">
+          <header class="mb-6">
+            <Heading level={3} size="sm">
+              {Publr.t("Default fonts")}
+            </Heading>
+            <Text as="p" variant="body-sm" tone="muted" classes="mt-1">
+              {Publr.t("The font each kind of element uses unless a block picks its own — retarget one to swap the site's fonts in a single edit.")}
+            </Text>
+          </header>
+          <div class="mb-10" data-part="font-pairing">
+            <p class="m-0 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+              {state.pairing.map((part) => (
+                <Text variant="display" tone={part.plus ? "muted" : "default"} style={part.style}>
+                  {part.text}
+                </Text>
+              ))}
+            </p>
+            <Text as="p" variant="body-md" tone="muted" classes="mt-3">
+              {state.pairingSentence}
+            </Text>
+          </div>
+          <div class="divide-border max-md:divide-y md:-mx-8 md:flex md:divide-x">
+            {state.typeRoles.map((role) => (
+              <div class="min-w-0 max-md:py-6 md:flex md:flex-1 md:flex-col md:px-8" data-part="font-role" data-role={role.name}>
+                <Text as="p" variant="eyebrow-sm" tone="muted">
+                  {role.label}
+                </Text>
+                <Text as="p" variant="body-md" classes="mt-4" style={`${role.style}; font-size: 26px; line-height: 1.375`}>
+                  {role.family}
+                </Text>
+                <Text as="p" variant="body-xl" classes="mt-1" style={`${role.style}; opacity: 0.8`}>
+                  Handgloves &amp; quick brown foxes
+                </Text>
+                <div class="mt-5 border-t border-border pt-4 md:pb-5">
+                  {role.purpose && (
+                    <Text as="p" variant="body-sm" tone="muted">
+                      {role.purpose}
+                    </Text>
+                  )}
+                  {role.source && (
+                    <Text as="p" variant="body-sm" tone="muted" classes="mt-1">
+                      {role.source}
+                    </Text>
+                  )}
+                  {role.weights && (
+                    <Text as="p" variant="body-sm" tone="muted" classes="mt-1">
+                      {role.weights}
+                    </Text>
+                  )}
+                </div>
+                <NativeSelect size="sm" label={role.selectLabel} classes="mt-5 md:mt-auto" onChange={(event: Event) => retargetRole(role.name, event)}>
+                  {role.choices.map((choice) => (
+                    <option value={choice.name} selected={choice.selected}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {state.specimens.map((specimen) => (
+        <section class="border-t border-border py-6" data-part="type-specimen" data-family={specimen.key}>
+          <div class="flex items-baseline justify-between gap-4">
+            <Text as="p" variant="eyebrow-sm" tone="muted">
+              {specimen.eyebrow}
+            </Text>
+            {specimen.source && (
+              <Text variant="body-sm" tone="muted">
+                {specimen.source}
+              </Text>
+            )}
+          </div>
+          <Text as="p" variant="body-md" classes="mt-6" style={`${specimen.style}; font-size: 44px; line-height: 1`}>
+            {specimen.family}
+          </Text>
+          <div class="mt-6 border-t border-border pt-6">
+            <Text as="p" variant="body-md" classes="break-words" style={`${specimen.style}; font-size: 27px; line-height: 1.4`}>
+              ABCDEFGHIJKLMNOPQRSTUVWXYZ
+            </Text>
+            <Text as="p" variant="body-md" classes="break-words" style={`${specimen.style}; font-size: 27px; line-height: 1.4`}>
+              abcdefghijklmnopqrstuvwxyz
+            </Text>
+            <Text as="p" variant="body-md" tone="muted" classes="mt-1 break-words" style={`${specimen.style}; font-size: 21px; line-height: 1.5`}>
+              {DIGITS}
+            </Text>
+          </div>
+          <div class="mt-8 max-md:space-y-8 md:flex">
+            <div class="min-w-0 md:flex-1 md:pr-10">
+              <Text as="p" variant="eyebrow-sm" tone="muted">
+                {Publr.t("Weights")}
+              </Text>
+              <div class="mt-5 grid gap-3">
+                {specimen.weights.map((weight) => (
+                  <div class="flex items-baseline gap-6">
+                    <Text variant="label-sm" tone="muted" classes="w-28 shrink-0">
+                      {weight.label}
+                    </Text>
+                    <Text as="p" variant="body-md" classes="truncate" style={`${weight.style}; font-size: 24px; line-height: 2rem`}>
+                      {Publr.t("Typography that works")}
+                    </Text>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div class="flex items-end justify-end md:w-[260px] md:border-l md:border-border md:pl-10">
+              <Text variant="body-md" style={`${specimen.style}; font-size: 140px; line-height: 1`}>
+                Aa
+              </Text>
+            </div>
+          </div>
+        </section>
+      ))}
+      {state.typeRoles.length > 0 && (
+        <section class="border-t border-border py-6" data-part="type-in-use">
+          <header class="mb-6">
+            <Text as="p" variant="eyebrow-sm" tone="muted">
+              {Publr.t("In use")}
+            </Text>
+            <Text as="p" variant="body-sm" tone="muted" classes="mt-2 max-w-xl">
+              {Publr.t("How the pairing reads at real sizes, in a real layout.")}
+            </Text>
+          </header>
+          <div ref={(element: Element | null) => attachInUse(element)} data-type-in-use data-preview-stamp={state.inUseStamp}></div>
+        </section>
+      )}
+    </div>
+  );
+}

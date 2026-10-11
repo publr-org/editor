@@ -1,0 +1,86 @@
+// The overview: the Site theme's front door. A wash in the site's own colors, one
+// question and one ask: describe the site and Publr's AI builds the whole theme from it
+// and the moodboard. Under it, what the theme holds, a row per page.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { GradientHero } from "../../../ui/src/components/GradientHero/GradientHero.ptsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { Link } from "../../../ui/src/components/Link/Link.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { PromptBox } from "../../../ui/src/components/PromptBox/PromptBox.ptsx";
+import { RowButton } from "../../../ui/src/components/RowButton/RowButton.ptsx";
+import { Status } from "../../../ui/src/components/Status/Status.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { askKeys, build, open, openMoodboard, setPrompt, state } from "../Builder.ptsx";
+
+const PLACEHOLDER = Publr.t("Ask for a look — a small-batch coffee roaster, warm and a little editorial…");
+
+export function Overview() {
+  return (
+    <div class="flex flex-col" data-design-page="overview">
+      <GradientHero gradient={state.overviewGradient}>
+        {state.agentShown && (
+          <Button hierarchy="secondary" shape="pill" size="sm" title={Publr.t("Your own agent")} onClick={() => open("settings")}>
+            <span data-part="theme-agent-pill" class="inline-flex items-center gap-2">
+              <Status tone="success" label="plain">
+                <Text variant="label-md">{Publr.t("Your agent can build this too")}</Text>
+              </Status>
+              <Text variant="label-md">→</Text>
+            </span>
+          </Button>
+        )}
+        <Heading level={2} size="hero" classes="mt-6 text-center">
+          {Publr.t("What should this site feel like?")}
+        </Heading>
+        <PromptBox
+          variant="hero"
+          classes="mt-7"
+          placeholder={PLACEHOLDER}
+          label={Publr.t("Describe the site")}
+          value={state.prompt}
+          disabled={state.buildBusy}
+          onInput={(event: Event) => setPrompt((event.target as HTMLTextAreaElement).value)}
+          onKeyDown={(event: KeyboardEvent) => askKeys(event)}
+          start={
+            <Button hierarchy="tertiary" shape="pill" size="sm" title={Publr.t("Open the moodboard")} onClick={() => openMoodboard()}>
+              <span data-part="theme-open-moodboard" class="inline-flex items-center gap-1.5">
+                <Text variant="label-lg">+</Text>
+                <Text variant="label-md">{state.moodboardLabel}</Text>
+              </span>
+            </Button>
+          }
+        >
+          <Button hierarchy="contrast" shape="pill" size="md" label={Publr.t("Build the style guide")} shortcut={state.buildBusy ? "" : "⌘↵"} disabled={state.buildBusy || !state.aiReady} onClick={() => build()}>
+            <span data-part="style-guide-build">
+              <Text variant="label-lg">{state.buildBusy ? Publr.t("Starting…") : Publr.t("Build")}</Text>
+            </span>
+          </Button>
+        </PromptBox>
+        {!state.aiReady && (
+          <Text as="p" variant="body-sm" tone="muted" classes="mt-4 text-center">
+            <span data-part="style-guide-needs-key">
+              {Publr.t("Set up an AI provider in ")}
+              <Link href={state.aiSettingsHref} variant="body-sm" tone="accent">
+                {Publr.t("Settings › AI")}
+              </Link>
+              {state.agentShown ? Publr.t(" to build here, or point your own agent at this site.") : Publr.t(" to build here.")}
+            </span>
+          </Text>
+        )}
+        {state.buildError && <Notice classes="mt-4">{state.buildError}</Notice>}
+      </GradientHero>
+      <section class="px-8 py-8 max-lg:px-5" data-part="theme-pages">
+        <div class="mx-auto max-w-[980px]">
+          <Text as="p" variant="eyebrow-sm" tone="muted">
+            {Publr.t("In the theme")}
+          </Text>
+          <div class="mt-3 grid gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
+            {state.overviewRows.map((row) => (
+              <RowButton label={row.label} detail={row.detail} onClick={() => open(row.page)} />
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

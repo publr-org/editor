@@ -1,0 +1,49 @@
+// A builder page's opening: where it sits ("Library / Fonts"), its name and what it is
+// for, with an optional action at the end of the description row.
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+
+export type PageHeadProps = {
+  crumb: string;
+  title: string;
+  description: string;
+  /** Beside the description, at its end: an add form, a button. */
+  action?: JSX.Element;
+  /** The inventory pages' smaller crumb and description (token library, colors, patterns). */
+  compact?: boolean;
+};
+
+export function PageHead({ crumb, title, description, action, compact = false }: PageHeadProps) {
+  return (
+    <div class="mb-7" data-page-head>
+      {compact ? (
+        <Text as="p" variant="label-sm" tone="muted" classes="mb-1">
+          {crumb}
+        </Text>
+      ) : (
+        <Text as="p" variant="label-md" tone="muted" classes="mb-1">
+          {crumb}
+        </Text>
+      )}
+      <Heading level={2} size="title">
+        {title}
+      </Heading>
+      {action ? (
+        <div class="flex items-end justify-between gap-4">
+          <Text as="p" variant="body-md" tone="muted" classes="mt-1.5 max-w-xl">
+            {description}
+          </Text>
+          {action}
+        </div>
+      ) : compact ? (
+        <Text as="p" variant="body-compact" tone="muted" classes="mt-1.5 max-w-xl">
+          {description}
+        </Text>
+      ) : (
+        <Text as="p" variant="body-md" tone="muted" classes="mt-1.5 max-w-xl">
+          {description}
+        </Text>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,559 @@
+// Fonts (Library › Fonts): the families this site may use, Google Fonts style. A search
+// over the library, one preview sentence at one size, a specimen row per family; the Add
+// font dialog brings families in from system stacks, Google Fonts or uploaded files, and
+// Edit font decides which faces the site loads.
+import { Publr } from "publr-jsx";
+import { Badge } from "../../../ui/src/components/Badge/Badge.ptsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Card } from "../../../ui/src/components/Card/Card.ptsx";
+import { CardBody } from "../../../ui/src/components/Card/CardBody.ptsx";
+import { Checkbox } from "../../../ui/src/components/Checkbox/Checkbox.ptsx";
+import { CheckboxField } from "../../../ui/src/components/CheckboxField/CheckboxField.ptsx";
+import { DropZone } from "../../../ui/src/components/DropZone/DropZone.ptsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { ListOption } from "../../../ui/src/components/ListOption/ListOption.ptsx";
+import { Modal } from "../../../ui/src/components/Modal/Modal.ptsx";
+import { NativeSelect } from "../../../ui/src/components/NativeSelect/NativeSelect.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { RangePicker } from "../../../ui/src/components/RangePicker/RangePicker.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { TextToggle } from "../../../ui/src/components/TextToggle/TextToggle.ptsx";
+import { state } from "../Builder.ptsx";
+import { FONT_FILE_ACCEPT } from "../model/font-file";
+import { PageHead } from "../parts/PageHead.ptsx";
+import {
+  addFaces,
+  addGoogleFont,
+  addSystemFont,
+  cancelFontEdit,
+  commitUpload,
+  editFont,
+  focusGoogle,
+  googleScrolled,
+  pickFontFiles,
+  previewStackWeight,
+  removeFace,
+  removeFamily,
+  removeUpload,
+  saveFont,
+  searchGoogle,
+  setEditName,
+  setFontQuery,
+  setFontSource,
+  setGoogleCategory,
+  setPreviewSize,
+  setPreviewText,
+  setStackSize,
+  setStackView,
+  setUploadFamily,
+  setUploadWeight,
+  toggleAddFont,
+  toggleFaceItalic,
+  toggleFontItalic,
+  toggleFontWeight,
+  toggleGoogleItalic,
+  toggleGoogleWeight,
+  toggleUploadItalic,
+} from "./actions";
+import { SPECIMEN } from "./view";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+function SourceTabs() {
+  return (
+    <span class="flex gap-1" role="group" aria-label={Publr.t("Where the font comes from")}>
+      <Button hierarchy={state.fontSource === "system" ? "primary" : "tertiary"} size="sm" label={Publr.t("Add from system font stacks")} pressed={state.fontSource === "system"} onClick={() => setFontSource("system")}>
+        <span data-source="system">
+          <Text variant="label-lg">{Publr.t("System fonts")}</Text>
+        </span>
+      </Button>
+      <Button hierarchy={state.fontSource === "google" ? "primary" : "tertiary"} size="sm" label={Publr.t("Add from Google Fonts")} pressed={state.fontSource === "google"} onClick={() => setFontSource("google")}>
+        <span data-source="google">
+          <Text variant="label-lg">{Publr.t("Google Fonts")}</Text>
+        </span>
+      </Button>
+      <Button hierarchy={state.fontSource === "upload" ? "primary" : "tertiary"} size="sm" label={Publr.t("Add from uploaded files")} pressed={state.fontSource === "upload"} onClick={() => setFontSource("upload")}>
+        <span data-source="upload">
+          <Text variant="label-lg">{Publr.t("Upload font files")}</Text>
+        </span>
+      </Button>
+    </span>
+  );
+}
+
+function StackControls() {
+  return (
+    <div class="ml-auto flex items-center gap-3" data-part="font-stack-controls">
+      <label class="flex items-center gap-2">
+        <Text variant="label-xs" tone="muted" classes="w-9 text-right tabular-nums">
+          {state.stackSizeLabel}
+        </Text>
+        <RangePicker value={state.stackSize} min={14} max={48} step={1} label={Publr.t("Specimen size")} classes="w-28" onInput={(event: Event) => setStackSize(valueOf(event))} />
+      </label>
+      <span class="flex gap-1" role="group" aria-label={Publr.t("Layout")}>
+        <Button hierarchy="tertiary" size="sm" label={Publr.t("Grid view")} pressed={state.stackView === "grid"} onClick={() => setStackView("grid")}>
+          <Icon name="grid" size="sm" />
+        </Button>
+        <Button hierarchy="tertiary" size="sm" label={Publr.t("List view")} pressed={state.stackView === "list"} onClick={() => setStackView("list")}>
+          <Icon name="list" size="sm" />
+        </Button>
+      </span>
+    </div>
+  );
+}
+
+function SystemSource() {
+  return (
+    <div data-part="font-system-source">
+      <Text as="p" variant="body-md" classes="max-w-2xl">
+        {Publr.t("System font stack CSS organized by typeface classification for every modern OS")}
+      </Text>
+      <Text as="p" variant="body-sm" tone="muted" classes="mt-1 max-w-2xl">
+        {Publr.t("The fastest fonts available. No downloading, no layout shifts, no flashes — just instant renders. Stacks from Modern Font Stacks.")}
+      </Text>
+      {state.stackView === "grid" ? (
+        <div class="mt-5 grid grid-cols-3 gap-3 pb-2 max-xl:grid-cols-2 max-md:grid-cols-1" data-part="font-stacks" data-view="grid">
+          {state.stackCards.map((card) => (
+            <Card size="compact">
+              <div class="grid content-start gap-3 p-4" data-part="font-stack" data-stack={card.key}>
+                <span class="flex items-center justify-between gap-3">
+                  <Text variant="label-md" classes="min-w-0 truncate">
+                    {card.label}
+                  </Text>
+                  <Button hierarchy="secondary" size="xs" label={Publr.t("Add {name}", { name: card.label })} onClick={() => addSystemFont(card.key)}>
+                    <span data-preset={card.key}>
+                      <Text variant="label-md">{Publr.t("Add")}</Text>
+                    </span>
+                  </Button>
+                </span>
+                <span class="grid gap-0.5 py-1 text-center" data-part="font-stack-specimen">
+                  <Text variant="body-md" classes="block truncate leading-snug" style={card.specimenStyle}>
+                    ABCDEFGHIJKLM
+                  </Text>
+                  <Text variant="body-md" classes="block truncate leading-snug" style={card.specimenStyle}>
+                    abcdefghijklm
+                  </Text>
+                  <Text variant="body-md" classes="block truncate leading-snug" style={card.specimenStyle}>
+                    1234567890
+                  </Text>
+                </span>
+                <span class="flex flex-wrap justify-center gap-x-1.5 gap-y-0.5" style={card.familyStyle}>
+                  {card.weights.map((weight) => (
+                    <TextToggle label={weight.label} description={Publr.t("Preview {name} at weight {weight}", { name: card.label, weight: weight.label })} pressed={weight.pressed} style={weight.style} onClick={() => previewStackWeight(card.key, weight.weight)} />
+                  ))}
+                </span>
+                <Text variant="mono-3xs" tone="muted" classes="block truncate">
+                  {card.stack}
+                </Text>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div class="mt-5 grid grid-cols-1 gap-2 pb-2" data-part="font-stacks" data-view="list">
+          {state.stackCards.map((card) => (
+            <Card size="compact">
+              <div class="flex items-center gap-5 px-4 py-3" data-part="font-stack" data-stack={card.key}>
+                <span class="w-56 min-w-0 shrink-0">
+                  <Text as="span" variant="label-md" classes="block truncate">
+                    {card.label}
+                  </Text>
+                  <Text as="span" variant="mono-3xs" tone="muted" classes="mt-0.5 block truncate">
+                    {card.stack}
+                  </Text>
+                </span>
+                <Text variant="body-md" classes="block min-w-0 flex-1 truncate leading-snug" style={card.specimenStyle}>
+                  {SPECIMEN}
+                </Text>
+                <span class="flex shrink-0 flex-wrap gap-x-1.5 gap-y-0.5" style={card.familyStyle}>
+                  {card.weights.map((weight) => (
+                    <TextToggle label={weight.label} description={Publr.t("Preview {name} at weight {weight}", { name: card.label, weight: weight.label })} pressed={weight.pressed} style={weight.style} onClick={() => previewStackWeight(card.key, weight.weight)} />
+                  ))}
+                </span>
+                <Button hierarchy="secondary" size="xs" label={Publr.t("Add {name}", { name: card.label })} onClick={() => addSystemFont(card.key)}>
+                  <span data-preset={card.key}>
+                    <Text variant="label-md">{Publr.t("Add")}</Text>
+                  </span>
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GoogleSource() {
+  return (
+    <div class="grid h-full min-h-0 grid-cols-[minmax(0,5fr)_minmax(0,4fr)] gap-6 max-lg:grid-cols-1" data-part="font-google-source">
+      <div class="flex min-h-0 flex-col">
+        <Input type="search" size="sm" placeholder={Publr.t("Search Google Fonts")} label={Publr.t("Search Google Fonts")} classes="shrink-0" value={state.googleQuery} onInput={(event: Event) => searchGoogle(valueOf(event))} />
+        <div class="mt-2 flex shrink-0 flex-wrap gap-1" role="group" aria-label={Publr.t("Category")}>
+          {state.googleCategories.map((category) => (
+            <Button hierarchy={category.pressed ? "primary" : "secondary"} size="xs" label={Publr.t("{category} fonts", { category: category.label })} pressed={category.pressed} onClick={() => setGoogleCategory(category.key)}>
+              <span data-category={category.key}>
+                <Text variant="label-md">{category.label}</Text>
+              </span>
+            </Button>
+          ))}
+        </div>
+        <div class="mt-3 grid min-h-0 flex-1 content-start gap-0.5 overflow-y-auto pr-1" data-part="font-google-list" onScroll={(event: Event) => googleScrolled(event)}>
+          {state.googleResults.map((hit) => (
+            <ListOption label={Publr.t("Preview {name}", { name: hit.family })} pressed={hit.pressed} onClick={() => focusGoogle(hit.family, hit.category)}>
+              <span class="flex items-baseline justify-between gap-3" data-part="font-google-hit" data-family={hit.family}>
+                <Text variant="label-md">{hit.family}</Text>
+                <Text variant="mono-3xs" tone="muted">
+                  {hit.category}
+                </Text>
+              </span>
+              <Text variant="body-xl" classes="block truncate leading-tight" style={hit.style}>
+                {SPECIMEN}
+              </Text>
+            </ListOption>
+          ))}
+          {state.googleHasMore && (
+            <Text as="p" variant="label-xs" tone="muted" classes="py-2 text-center">
+              {Publr.t("Scroll for more fonts…")}
+            </Text>
+          )}
+          {state.googleQueryTrimmed && (
+            <div class="mt-2 flex items-center gap-2 border-t border-border pt-3">
+              <Text as="p" variant="body-sm" tone="muted" classes="min-w-0 flex-1">
+                {Publr.t("Not listed? Google's catalog is far larger than this list — any exact family name can be added directly.")}
+              </Text>
+              <Button hierarchy="secondary" size="sm" title={Publr.t("Add the family you typed even if it is not listed")} disabled={state.fontBusy} onClick={() => addGoogleFont(true)}>
+                <span data-part="font-google-add-typed">
+                  <Text variant="label-md">{state.googleAddTyped}</Text>
+                </span>
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+      <Card tone="muted" classes="min-h-0 overflow-y-auto">
+        <CardBody classes="flex min-h-full flex-col">
+          {state.googleFocus ? (
+            <div data-part="font-google-detail">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <Heading level={3} size="sm" classes="truncate">
+                    {state.googleFocus}
+                  </Heading>
+                  <Text as="p" variant="label-xs" tone="muted" classes="mt-1">
+                    {state.googleFocusMeta}
+                  </Text>
+                </div>
+                <Button hierarchy="primary" size="sm" label={Publr.t("Add {name}", { name: state.googleFocus })} disabled={state.fontBusy || state.googleFocusLoading} onClick={() => addGoogleFont(false)}>
+                  <span data-part="font-google-add">
+                    <Text variant="label-lg">{Publr.t("Add font")}</Text>
+                  </span>
+                </Button>
+              </div>
+              {state.googleFocusLoading && (
+                <Text as="p" variant="body-sm" tone="muted" classes="mt-6">
+                  {Publr.t("Checking what Google serves…")}
+                </Text>
+              )}
+              {!state.googleFocusLoading && state.googleFocusWeights.length > 0 && (
+                <div class="mt-5">
+                  <Text as="p" variant="eyebrow-xs" tone="muted" classes="mb-1">
+                    {Publr.t("Weights to load")}
+                  </Text>
+                  <div class="grid" data-part="font-google-weights">
+                    {state.googleFocusWeights.map((row) => (
+                      <label class="flex cursor-pointer items-center gap-4 border-b border-border py-3 last:border-b-0" data-part="font-google-weight" data-weight={row.value}>
+                        <Checkbox checked={row.enabled} onChange={() => toggleGoogleWeight(row.weight)} />
+                        <Text variant="body-xl" classes="min-w-0 flex-1 truncate leading-snug" style={row.style}>
+                          {SPECIMEN}
+                        </Text>
+                        {row.italicTag && (
+                          <Badge shape="tag">
+                            <Text variant="label-xs" classes="italic">
+                              {Publr.t("+ Italic")}
+                            </Text>
+                          </Badge>
+                        )}
+                        <Badge shape="tag">{row.tag}</Badge>
+                      </label>
+                    ))}
+                  </div>
+                  {state.googleFocusItalic && (
+                    <CheckboxField id="design-google-italic" name="italic" framed classes="mt-4" checked={state.googleFocusItalicEnabled} label={Publr.t("Include italics")} description={Publr.t("Also loads the italic companion of every selected weight.")} onChange={() => toggleGoogleItalic()} />
+                  )}
+                  <Text as="p" variant="body-sm" tone="muted" classes="mt-3">
+                    Fewer weights load faster; change them any time from Edit font.
+                  </Text>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div class="flex flex-1 items-center justify-center">
+              <Text as="p" variant="body-md" tone="muted" classes="max-w-60 text-center">
+                {Publr.t("Pick a family on the left to preview it here before adding it.")}
+              </Text>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function UploadSource() {
+  return (
+    <div class="flex h-full min-h-0 flex-col gap-4" data-part="font-upload-source">
+      {state.fontCanUpload ? (
+        <div class={state.fontUploads.length ? "shrink-0" : "flex min-h-0 flex-1 flex-col"}>
+          <DropZone
+            title={Publr.t("Drag and drop font files")}
+            description={Publr.t("…or click to browse. Fonts you own or bought (.woff2, .woff, .ttf, .otf) — add every weight you want to use; the editor reads each file's weight and style.")}
+            accept={FONT_FILE_ACCEPT}
+            disabled={state.fontBusy}
+            grow={state.fontUploads.length === 0}
+            onChange={(event: Event) => {
+              const input = event.currentTarget as HTMLInputElement;
+              pickFontFiles(input.files);
+              input.value = "";
+            }}
+          />
+        </div>
+      ) : (
+        <Text as="p" variant="body-sm" tone="muted">
+          {Publr.t("This site has nowhere to store font files yet — connect a media library first.")}
+        </Text>
+      )}
+      {state.fontUploads.length > 0 && (
+        <div class="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto" data-part="font-upload-staging">
+          <label class="grid gap-1.5">
+            <Text variant="label-md">{Publr.t("Family name")}</Text>
+            <Input size="sm" placeholder={Publr.t("e.g. Söhne")} classes="max-w-sm" value={state.fontUploadFamily} onInput={(event: Event) => setUploadFamily(valueOf(event))} />
+          </label>
+          {state.fontUploads.map((face) => (
+            <div class="flex items-center gap-4 border-b border-border py-3 last:border-b-0" data-part="font-upload-face" data-face={face.id}>
+              <div class="min-w-0 flex-1">
+                <Text as="span" variant="body-xl" classes="block truncate leading-snug" style={face.style}>
+                  {SPECIMEN}
+                </Text>
+                <Text as="span" variant="mono-3xs" tone="muted" classes="mt-0.5 block truncate">
+                  {face.file}
+                </Text>
+              </div>
+              <NativeSelect size="sm" label={Publr.t("Weight")} classes="w-auto" onChange={(event: Event) => setUploadWeight(face.id, valueOf(event))}>
+                {face.choices.map((choice) => (
+                  <option value={choice.key} selected={choice.selected}>
+                    {choice.label}
+                  </option>
+                ))}
+              </NativeSelect>
+              <Button hierarchy="secondary" size="sm" label={Publr.t("Italic")} title={Publr.t("This file is an italic face")} pressed={face.italic} onClick={() => toggleUploadItalic(face.id)}>
+                <Icon name="italic" size="sm" />
+              </Button>
+              <Button hierarchy="secondary" intent="destructive" size="sm" label={Publr.t("Remove file")} title={Publr.t("Remove this file")} onClick={() => removeUpload(face.id)}>
+                <Icon name="trash" size="sm" />
+              </Button>
+            </div>
+          ))}
+          <div>
+            <Button hierarchy="primary" size="sm" disabled={state.fontBusy} onClick={() => commitUpload()}>
+              <span data-part="font-upload-commit">
+                <Text variant="label-lg">{Publr.t("Add family")}</Text>
+              </span>
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddFontDialog() {
+  return (
+    <Modal title={Publr.t("Add a font")} description={Publr.t("Use instant system font stacks, browse Google Fonts, or upload files you own.")} size="full" closeLabel={Publr.t("Close add font")} onClose={() => toggleAddFont()}>
+      <div class="flex h-full min-h-0 flex-col" data-part="font-add-dialog">
+        <div class="mb-4 flex shrink-0 items-center gap-1">
+          <SourceTabs />
+          {state.fontSource === "system" && <StackControls />}
+        </div>
+        {state.fontError && <Notice classes="mb-3 shrink-0">{state.fontError}</Notice>}
+        {state.fontBusy && (
+          <Text as="p" variant="body-sm" tone="muted" classes="mb-3 shrink-0">
+            {state.fontBusyLabel}
+          </Text>
+        )}
+        {state.fontSource === "google" && (
+          <div class="min-h-0 flex-1">
+            <GoogleSource />
+          </div>
+        )}
+        {state.fontSource === "upload" && (
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <UploadSource />
+          </div>
+        )}
+        {state.fontSource === "system" && (
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <SystemSource />
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function EditFontDialog() {
+  return (
+    <Modal
+      title={state.fontEdit?.editTitle ?? ""}
+      description={state.fontEdit?.editDescription ?? ""}
+      size="xl"
+      closeLabel={Publr.t("Close font editor")}
+      onClose={() => cancelFontEdit()}
+      footer={
+        <>
+          <Button hierarchy="secondary" intent="destructive" size="sm" title={Publr.t("Remove this family; anything using it switches to the first remaining family")} disabled={!state.fontEdit?.removable} onClick={() => removeFamily(state.fontEditing)}>
+            <span data-part="font-remove">
+              <Text variant="label-lg">{Publr.t("Remove family")}</Text>
+            </span>
+          </Button>
+          <div class="flex items-center gap-2">
+            <Button hierarchy="secondary" size="sm" label={Publr.t("Cancel editing")} onClick={() => cancelFontEdit()}>
+              <span data-part="font-cancel">
+                <Text variant="label-lg">{Publr.t("Cancel")}</Text>
+              </span>
+            </Button>
+            <Button hierarchy="primary" size="sm" label={Publr.t("Save name")} onClick={() => saveFont()}>
+              <span data-part="font-save">
+                <Text variant="label-lg">{Publr.t("Save")}</Text>
+              </span>
+            </Button>
+          </div>
+        </>
+      }
+    >
+      <div class="grid gap-5" data-part="font-edit-dialog">
+        <label class="grid gap-1.5">
+          <Text variant="label-md">{Publr.t("Family name")}</Text>
+          <Input size="sm" placeholder={Publr.t("Family name")} label={Publr.t("Family name")} value={state.fontEditName} onInput={(event: Event) => setEditName(valueOf(event))} />
+        </label>
+        {state.fontError && <Notice>{state.fontError}</Notice>}
+        <div>
+          <Text as="p" variant="eyebrow-xs" tone="muted" classes="mb-1">
+            {state.fontEdit?.weightsNote ?? ""}
+          </Text>
+          {state.fontEdit?.provider === "files" ? (
+            <div class="grid" data-part="font-faces">
+              {(state.fontEdit?.faces ?? []).map((face) => (
+                <div class="flex items-center gap-4 border-b border-border py-3" data-part="font-face" data-face={face.index}>
+                  <div class="min-w-0 flex-1">
+                    <Text as="span" variant="body-xl" classes="block truncate leading-snug" style={face.style}>
+                      {SPECIMEN}
+                    </Text>
+                    <Text as="span" variant="mono-3xs" tone="muted" classes="mt-0.5 block truncate">
+                      {face.file}
+                    </Text>
+                  </div>
+                  <Badge shape="tag">{face.label}</Badge>
+                  <Button hierarchy="secondary" size="sm" label={Publr.t("Italic")} title={Publr.t("This file is an italic face")} pressed={face.italic} onClick={() => toggleFaceItalic(state.fontEditing, face.index)}>
+                    <Icon name="italic" size="sm" />
+                  </Button>
+                  <Button hierarchy="secondary" intent="destructive" size="sm" label={Publr.t("Remove face")} title={Publr.t("Remove this file")} disabled={!face.removable} onClick={() => removeFace(state.fontEditing, face.index)}>
+                    <Icon name="trash" size="sm" />
+                  </Button>
+                </div>
+              ))}
+              <div class="pt-3">
+                <input id="design-font-add-faces" type="file" class="sr-only" multiple accept={FONT_FILE_ACCEPT} aria-label={Publr.t("Add font files")} onChange={(event: Event) => addFaces(state.fontEditing, event)} />
+                <Button hierarchy="secondary" size="sm" label={Publr.t("Add more files")} onClick={() => (document.getElementById("design-font-add-faces") as HTMLInputElement | null)?.click()}>
+                  <span data-part="font-face-add">
+                    <Text variant="label-lg">{Publr.t("Add more files…")}</Text>
+                  </span>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div class="grid" data-part="font-weights">
+              {(state.fontEdit?.weights ?? []).map((row) => (
+                <label class="flex cursor-pointer items-center gap-4 border-b border-border py-3 last:border-b-0" data-part="font-weight" data-weight={row.value}>
+                  <Checkbox checked={row.enabled} onChange={() => toggleFontWeight(state.fontEditing, row.weight)} />
+                  <Text variant="body-xl" classes="min-w-0 flex-1 truncate leading-snug" style={row.style}>
+                    {SPECIMEN}
+                  </Text>
+                  {row.italicTag && (
+                    <Badge shape="tag">
+                      <Text variant="label-xs" classes="italic">
+                        {Publr.t("+ Italic")}
+                      </Text>
+                    </Badge>
+                  )}
+                  <Badge shape="tag">{row.tag}</Badge>
+                </label>
+              ))}
+              {state.fontEdit?.italicShown && (
+                <CheckboxField id="design-font-italic" name="italic" framed classes="mt-4" checked={state.fontEdit?.italic ?? false} label={Publr.t("Include italics")} description={Publr.t("Also loads the italic companion of every selected weight.")} onChange={() => toggleFontItalic(state.fontEditing)} />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function FontsPage() {
+  return (
+    <div class="mx-auto w-full max-w-[980px] p-8 max-lg:p-5" data-design-page="fonts">
+      <PageHead crumb={Publr.t("Library / Fonts")} title={Publr.t("Fonts")} description={Publr.t("The font families this site may use — the only vocabulary typography controls and generated content draw from.")} />
+      <div class="-mt-1 flex items-center gap-2" data-part="font-toolbar">
+        <Input type="search" size="sm" placeholder={Publr.t("Search fonts")} label={Publr.t("Search fonts")} classes="flex-1" value={state.fontQuery} onInput={(event: Event) => setFontQuery(valueOf(event))} />
+        <Button hierarchy={state.fontAddOpen ? "secondary" : "primary"} size="sm" label={state.fontAddOpen ? Publr.t("Close the add-font form") : Publr.t("Add font")} onClick={() => toggleAddFont()}>
+          <span data-part="font-add-toggle">
+            <Text variant="label-lg">{state.fontAddOpen ? Publr.t("Cancel") : Publr.t("Add font")}</Text>
+          </span>
+        </Button>
+      </div>
+      <div class="mt-2 mb-4 flex items-center gap-4" data-part="font-preview-controls">
+        <Input size="sm" placeholder={Publr.t("Type something to preview it")} label={Publr.t("Preview text")} classes="flex-1" value={state.fontPreviewText} onInput={(event: Event) => setPreviewText(valueOf(event))} />
+        <label class="flex shrink-0 items-center gap-2">
+          <Text variant="label-xs" tone="muted" classes="w-10 text-right tabular-nums">
+            {state.fontPreviewSizeLabel}
+          </Text>
+          <RangePicker value={state.fontPreviewSize} min={12} max={96} step={1} label={Publr.t("Preview size")} classes="w-36" onInput={(event: Event) => setPreviewSize(valueOf(event))} />
+        </label>
+        <Text variant="label-xs" tone="muted" classes="shrink-0">
+          <span data-part="font-count">{state.fontCountLabel}</span>
+        </Text>
+      </div>
+      {state.fontAddOpen && <AddFontDialog />}
+      {!state.fontAddOpen && !state.fontEditing && state.fontError && <Notice classes="mb-4">{state.fontError}</Notice>}
+      {state.fontVisible.map((row) => (
+        <article class="border-t border-border py-6 last:pb-0" data-part="font-family" data-font={row.name}>
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex min-w-0 items-baseline gap-3">
+              <Heading level={3} size="xs" classes="truncate">
+                {row.label}
+              </Heading>
+              <Text variant="label-xs" tone="muted" classes="shrink-0">
+                {row.meta}
+              </Text>
+            </div>
+            <div class="flex shrink-0 gap-1.5">
+              <Button hierarchy="secondary" size="sm" label={Publr.t("Edit {name}", { name: row.label })} title={Publr.t("Edit font")} onClick={() => editFont(row.name)}>
+                <Icon name="edit" size="sm" />
+              </Button>
+              <Button hierarchy="secondary" intent="destructive" size="sm" label={Publr.t("Remove {name}", { name: row.label })} title={Publr.t("Remove this family; anything using it switches to the first remaining family")} disabled={!row.removable} onClick={() => removeFamily(row.name)}>
+                <Icon name="trash" size="sm" />
+              </Button>
+            </div>
+          </div>
+          <Text as="p" variant="heading-2xl" classes="mt-4 break-words leading-tight" style={row.specimenStyle}>
+            <span data-part="font-specimen">{state.fontSpecimenText}</span>
+          </Text>
+        </article>
+      ))}
+      {state.fontEditing && <EditFontDialog />}
+    </div>
+  );
+}

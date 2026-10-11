@@ -1,0 +1,112 @@
+// Container sizes (Library › Container sizes): every container on one canvas, drawn with
+// the editor's Group block at the site's width; pick one to set its label, maximum width
+// and box (padding, margin, border) per breakpoint, or add and remove containers.
+import { Publr } from "publr-jsx";
+import { Badge } from "../../../ui/src/components/Badge/Badge.ptsx";
+import { BoxModel } from "../../../ui/src/components/BoxModel/BoxModel.ptsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { DropdownMenu } from "../../../ui/src/components/Dropdown/Dropdown.ptsx";
+import { DropdownMenuContent } from "../../../ui/src/components/Dropdown/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "../../../ui/src/components/Dropdown/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "../../../ui/src/components/Dropdown/DropdownMenuTrigger.ptsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { addContainer, canvasRef, pickPart, removeContainer, renameContainer, resetDimensions, setContainerBreakpoint, setMaxWidth, setSideValue } from "./actions";
+import { SurfaceHead } from "./SurfaceHead.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+function Inspector() {
+  return (
+    <aside class="flex w-[320px] shrink-0 flex-col overflow-y-auto border-l border-border bg-card max-lg:w-[264px]" aria-label={Publr.t("Container")} data-container-inspector>
+      <div class="grid gap-3 border-b border-border p-4">
+        <div class="flex items-center gap-3">
+          <Icon name="group" size="lg" />
+          <Input size="control" label={Publr.t("Container name")} value={state.containerLabel} onChange={(event: Event) => renameContainer(valueOf(event))} />
+          <Badge shape="tag">{Publr.t("Container")}</Badge>
+        </div>
+        <Text as="p" variant="body-sm" tone="muted" classes="pl-9">
+          {Publr.t("A site container. Its maximum width and horizontal padding apply wherever a Group uses it.")}
+        </Text>
+        <div class="flex items-center gap-3 pl-9">
+          <Text variant="label-md" tone="muted">
+            {Publr.t("Maximum width")}
+          </Text>
+          <div class="w-24">
+            <Input size="control" label={Publr.t("Maximum width")} value={state.containerMaxWidth} onChange={(event: Event) => setMaxWidth(valueOf(event))} />
+          </div>
+        </div>
+        <div class="pl-9">
+          <Button hierarchy="secondary" intent="destructive" size="sm" label={Publr.t("Remove container")} disabled={!state.containerRemovable} onClick={() => removeContainer()}>
+            <span data-container-remove>{Publr.t("Remove container")}</span>
+          </Button>
+        </div>
+      </div>
+      <section class="grid gap-3 p-4" data-container-dimensions>
+        <div class="flex items-center justify-between">
+          <Heading level={3} size="md">
+            {Publr.t("Dimensions")}
+          </Heading>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button hierarchy="tertiary" size="sm" label={Publr.t("Dimensions options")}>
+                <Icon name="more" size="sm" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="right">
+              <DropdownMenuItem onClick={() => resetDimensions()}>Reset dimensions</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div class="flex flex-wrap gap-1" role="group" aria-label={Publr.t("Breakpoint")}>
+          {state.containerBreakpoints.map((breakpoint) => (
+            <Button hierarchy="tertiary" size="xs" pressed={breakpoint.current} onClick={() => setContainerBreakpoint(breakpoint.key)}>
+              <span data-container-breakpoint={breakpoint.key}>{breakpoint.label}</span>
+            </Button>
+          ))}
+        </div>
+        <BoxModel margin={state.containerMargin} border={state.containerBorder} padding={state.containerPadding} radius={state.containerRadius} onPick={(event: MouseEvent) => pickPart(event)} />
+        {state.containerPart && (
+          <label class="grid gap-1.5" data-container-side-editor>
+            <Text variant="label-md" tone="muted">
+              {state.containerPartLabel}
+            </Text>
+            <Input size="control" label={state.containerPartLabel} placeholder={Publr.t("e.g. 24px")} value={state.containerPartValue} onChange={(event: Event) => setSideValue(valueOf(event))} />
+          </label>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+export function ContainersPage() {
+  return (
+    <div class="flex h-full min-h-0 flex-1 flex-col" data-design-page="containers">
+      <SurfaceHead
+        title={Publr.t("Container sizes")}
+        description={Publr.t("Every container at every breakpoint. Select one to set its label, maximum width, padding, margin, and border; add or remove containers with the buttons.")}
+        action={
+          <Button hierarchy="secondary" shape="pill" size="sm" label={Publr.t("Add container")} onClick={() => addContainer()}>
+            <span data-container-add>
+              <Text variant="label-xs-strong">{Publr.t("+ Add container")}</Text>
+            </span>
+          </Button>
+        }
+      />
+      <div class="flex min-h-0 flex-1">
+        <div class="flex min-w-0 flex-1 flex-col">
+          <div class="min-h-0 flex-1 overflow-y-auto" style={{ background: state.containerSurface }} data-container-canvas ref={canvasRef}></div>
+          <div class="flex h-6 shrink-0 items-center border-t border-border bg-card px-4">
+            <Text variant="body-sm" tone="muted">
+              {state.containerLabel ? Publr.t("Containers › {name}", { name: state.containerLabel }) : Publr.t("Containers")}
+            </Text>
+          </div>
+        </div>
+        <Inspector />
+      </div>
+    </div>
+  );
+}

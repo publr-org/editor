@@ -1,0 +1,173 @@
+// Icons (Library › Icons): the approved set, the only icons the Icon block and generated
+// content may use. Categories on the left, search and the grid on the right, an add panel
+// (upload SVG files or paste markup) and an editor per icon with a live preview.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Card } from "../../../ui/src/components/Card/Card.ptsx";
+import { Empty } from "../../../ui/src/components/Empty/Empty.ptsx";
+import { EmptyDescription } from "../../../ui/src/components/Empty/EmptyDescription.ptsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { Modal } from "../../../ui/src/components/Modal/Modal.ptsx";
+import { NavButton } from "../../../ui/src/components/NavButton/NavButton.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { Textarea } from "../../../ui/src/components/Textarea/Textarea.ptsx";
+import { TileButton } from "../../../ui/src/components/TileButton/TileButton.ptsx";
+import { state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+import {
+  addPastedIcon,
+  cancelIconEdit,
+  editIcon,
+  removeEditedIcon,
+  removeIconNamed,
+  saveEditedIcon,
+  searchIcons,
+  selectIconCategory,
+  setIconEditSvg,
+  toggleIconAdd,
+  uploadIcons,
+} from "./actions";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+function chooseFiles(event: MouseEvent): void {
+  const panel = (event.currentTarget as HTMLElement).closest("[data-part=icon-add-panel]");
+  panel?.querySelector<HTMLInputElement>("input[type=file]")?.click();
+}
+
+function AddPanel() {
+  return (
+    <Card tone="muted" classes="mb-6">
+      <div class="grid grid-cols-2 gap-6 p-4 max-md:grid-cols-1" data-part="icon-add-panel">
+        <div>
+          <Heading level={3} size="xs">
+            {Publr.t("Upload SVG files")}
+          </Heading>
+          <Text as="p" variant="body-sm" tone="muted" classes="mt-1 mb-3">
+            {Publr.t("Each file becomes one icon, named after the file. Scripts and sizes are stripped so icons scale and stay safe.")}
+          </Text>
+          <input type="file" class="sr-only" multiple accept=".svg,image/svg+xml" aria-label={Publr.t("Choose SVG files")} onChange={(event: Event) => void uploadIcons(event)} />
+          <Button hierarchy="secondary" size="md" label={Publr.t("Choose SVG files")} onClick={chooseFiles}>
+            <span data-part="icon-upload">{Publr.t("Choose SVG files…")}</span>
+          </Button>
+        </div>
+        <div class="grid content-start gap-2">
+          <Heading level={3} size="xs">
+            {Publr.t("Paste SVG")}
+          </Heading>
+          <Input size="control" placeholder={Publr.t("Icon name, e.g. arrow-right")} label={Publr.t("Icon name")} value={state.iconPasteName} onInput={(event: Event) => (state.iconPasteName = valueOf(event))} />
+          <Textarea mono label={Publr.t("SVG markup")} spellcheck={false} placeholder="<svg viewBox='0 0 24 24'>…</svg>" value={state.iconPasteSvg} onInput={(event: Event) => (state.iconPasteSvg = valueOf(event))} />
+          <div>
+            <Button hierarchy="primary" size="md" label={Publr.t("Add pasted icon")} onClick={() => addPastedIcon()}>
+              <span data-part="icon-paste-add">{Publr.t("Add icon")}</span>
+            </Button>
+          </div>
+        </div>
+        {state.iconError && <Notice classes="col-span-full">{state.iconError}</Notice>}
+      </div>
+    </Card>
+  );
+}
+
+function EditDialog() {
+  return (
+    <Modal
+      title={Publr.t("Edit icon")}
+      description={Publr.t("Rename it or replace the SVG markup; the preview follows as you type.")}
+      closeLabel={Publr.t("Close icon editor")}
+      size="md"
+      onClose={() => cancelIconEdit()}
+      media={
+        <span class="flex size-12 shrink-0 items-center justify-center rounded-full border border-border bg-muted/40 shadow-sm">
+          <img src={state.iconEditImage} alt="" class="size-6" data-part="icon-edit-preview" />
+        </span>
+      }
+      footer={
+        <>
+          <Button hierarchy="secondary" intent="destructive" size="md" label={Publr.t("Remove icon")} onClick={() => removeEditedIcon()}>
+            <span data-part="icon-remove">{Publr.t("Remove icon")}</span>
+          </Button>
+          <div class="flex items-center gap-2">
+            <Button hierarchy="secondary" size="md" label={Publr.t("Cancel editing")} onClick={() => cancelIconEdit()}>
+              <span data-part="icon-cancel">{Publr.t("Cancel")}</span>
+            </Button>
+            <Button hierarchy="primary" size="md" label={Publr.t("Save icon")} onClick={() => saveEditedIcon()}>
+              <span data-part="icon-save">{Publr.t("Save icon")}</span>
+            </Button>
+          </div>
+        </>
+      }
+    >
+      <div class="grid gap-4" data-part="icon-editor" data-icon={state.iconEditing}>
+        <label class="grid gap-1.5">
+          <Text variant="label-md">{Publr.t("Name")}</Text>
+          <Input size="control" value={state.iconEditName} placeholder={Publr.t("Icon name")} onInput={(event: Event) => (state.iconEditName = valueOf(event))} />
+        </label>
+        <label class="grid gap-1.5">
+          <Text variant="label-md">{Publr.t("SVG markup")}</Text>
+          <Textarea mono rows={6} label={Publr.t("SVG markup")} spellcheck={false} value={state.iconEditSvg} onInput={(event: Event) => setIconEditSvg(valueOf(event))} />
+        </label>
+        {state.iconEditError && <Notice>{state.iconEditError}</Notice>}
+      </div>
+    </Modal>
+  );
+}
+
+export function IconsPage() {
+  return (
+    <div class="mx-auto w-full max-w-[1100px] p-8 max-lg:p-5" data-design-page="icons">
+      <PageHead crumb={Publr.t("Library / Icons")} title={Publr.t("Icons")} description={Publr.t("Only approved icons appear in the Icon block and in generated content.")} />
+      <div class="grid grid-cols-[200px_1fr] gap-8 max-md:grid-cols-1">
+        <nav class="grid content-start gap-0.5" aria-label={Publr.t("Icon categories")} data-part="icon-categories">
+          {state.iconCategories.map((category) => (
+            <NavButton size="md" label={category.label} count={category.count} current={category.active} onClick={() => selectIconCategory(category.key)} />
+          ))}
+        </nav>
+        <div class="min-w-0">
+          <div class="mb-6 flex gap-2">
+            <Input type="search" size="control" placeholder={Publr.t("Search icons")} label={Publr.t("Search icons")} value={state.iconQuery} onInput={(event: Event) => searchIcons(valueOf(event))} />
+            <Button hierarchy="secondary" size="md" label={Publr.t("Clear search")} onClick={() => searchIcons("")}>
+              <span data-part="icon-clear">{Publr.t("Clear")}</span>
+            </Button>
+            {state.iconAddOpen ? (
+              <Button hierarchy="secondary" size="md" label={Publr.t("Close the add-icons panel")} onClick={() => toggleIconAdd()}>
+                <span data-part="icon-add-toggle">{Publr.t("Cancel")}</span>
+              </Button>
+            ) : (
+              <Button hierarchy="primary" size="md" label={Publr.t("Add icons")} onClick={() => toggleIconAdd()}>
+                <span data-part="icon-add-toggle">{Publr.t("Add icons")}</span>
+              </Button>
+            )}
+          </div>
+          {state.iconAddOpen && <AddPanel />}
+          {state.iconRows.length > 0 ? (
+            <div class="grid grid-cols-6 gap-4 max-lg:grid-cols-4 max-sm:grid-cols-3" data-part="icon-grid">
+              {state.iconRows.map((icon) => (
+                <div data-part="icon-card" data-icon={icon.name}>
+                  <TileButton
+                    caption={icon.name}
+                    label={Publr.t("Edit {name}", { name: icon.label })}
+                    title={Publr.t("Rename or update the SVG")}
+                    actionLabel={Publr.t("Remove {name}", { name: icon.label })}
+                    actionTitle={Publr.t("Remove from the library")}
+                    onClick={() => editIcon(icon.name)}
+                    onAction={() => removeIconNamed(icon.name)}
+                  >
+                    <img src={icon.image} alt="" class="size-7" />
+                  </TileButton>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty compact>
+              <EmptyDescription>{state.iconEmpty}</EmptyDescription>
+            </Empty>
+          )}
+        </div>
+      </div>
+      {state.iconEditing && <EditDialog />}
+    </div>
+  );
+}

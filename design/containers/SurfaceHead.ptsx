@@ -1,0 +1,28 @@
+// The head of a builder page that is a live surface (Container sizes, Breakpoints): its
+// name with a Live mark, what it shows, and its actions at the end.
+import { Publr } from "publr-jsx";
+import { Badge } from "../../../ui/src/components/Badge/Badge.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+
+export type SurfaceHeadProps = { title: string; description: string; action?: JSX.Element };
+
+export function SurfaceHead({ title, description, action }: SurfaceHeadProps) {
+  return (
+    <header class="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-5 py-3" data-surface-head>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <Text as="h3" variant="heading-xs">
+            {title}
+          </Text>
+          <Badge tone="success" size="xs">
+            {Publr.t("Live")}
+          </Badge>
+        </div>
+        <Text as="p" variant="body-2xs" tone="muted" classes="mt-1 truncate">
+          {description}
+        </Text>
+      </div>
+      {action && <div class="flex shrink-0 items-center gap-3">{action}</div>}
+    </header>
+  );
+}

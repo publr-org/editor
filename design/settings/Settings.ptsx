@@ -1,0 +1,92 @@
+// Settings (the foot of the left panel): how the theme gets built. Builds run through
+// Publr's AI, set up once for the site; a person's own agent reaches the site through the
+// Publr CLI and publishes the same document the builder does.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Code } from "../../../ui/src/components/Code/Code.ptsx";
+import { CodeBlock } from "../../../ui/src/components/Code/CodeBlock.ptsx";
+import { Link } from "../../../ui/src/components/Link/Link.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { copyText, state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+
+export function SettingsPage() {
+  return (
+    <div class="mx-auto w-full max-w-[980px] p-8 max-lg:p-5" data-design-page="settings">
+      <PageHead crumb={Publr.t("Site theme")} title={Publr.t("Settings")} description={Publr.t("How the style guide builder reaches a model.")} />
+      <section class="border-t border-border py-6" data-part="theme-settings-builder">
+        <Text as="p" variant="eyebrow-sm" tone="muted">
+          {Publr.t("Style guide builder")}
+        </Text>
+        <Text as="p" variant="body-md" tone="muted" classes="mt-3 max-w-xl">
+          {state.aiReady ? Publr.t("Builds run through this site's own AI — no key needed here. ") : Publr.t("Builds run through this site's own AI, which is not set up yet. ")}
+          {state.aiSettingsHref && (
+            <Link href={state.aiSettingsHref} variant="body-md" tone="accent">
+              {state.aiReady ? Publr.t("Change the provider in Settings › AI.") : Publr.t("Set it up in Settings › AI.")}
+            </Link>
+          )}
+        </Text>
+      </section>
+      {state.agentShown && (
+        <section class="border-t border-border py-6" data-part="theme-settings-agent">
+          <Text as="p" variant="eyebrow-sm" tone="muted">
+            {Publr.t("Your own agent")}
+          </Text>
+          <Text as="p" variant="body-md" tone="muted" classes="mt-3 max-w-xl">
+            {Publr.t("Sign your agent in to this site and it reads the theme and the moodboard, and publishes a style guide, out of the box — the same document the builder here produces. Ask it to \"make the style guide\"; ")}
+            <Code>publr agents</Code>
+            {Publr.t(" prints the guide it works from.")}
+          </Text>
+          <div class="mt-5 grid gap-5 md:grid-cols-2">
+            <div>
+              <div class="mb-1.5 flex items-center justify-between gap-2">
+                <Text variant="label-sm" tone="muted">
+                  {Publr.t("Sign in from the terminal")}
+                </Text>
+                <Button hierarchy="secondary" size="sm" label={Publr.t("Copy the sign-in command")} onClick={() => copyText(state.agentLogin)}>
+                  <Text variant="label-sm">{Publr.t("Copy")}</Text>
+                </Button>
+              </div>
+              <CodeBlock variant="command">
+                <span data-part="theme-agent-login">{state.agentLogin}</span>
+              </CodeBlock>
+            </div>
+            <div>
+              <div class="mb-1.5 flex items-center justify-between gap-2">
+                <Text variant="label-sm" tone="muted">
+                  {Publr.t("Then ask")}
+                </Text>
+                <Button hierarchy="secondary" size="sm" label={Publr.t("Copy the request")} onClick={() => copyText(state.agentAsk)}>
+                  <Text variant="label-sm">{Publr.t("Copy")}</Text>
+                </Button>
+              </div>
+              <CodeBlock variant="command">
+                <span data-part="theme-agent-ask">{state.agentAsk}</span>
+              </CodeBlock>
+            </div>
+          </div>
+          <Text as="p" variant="body-sm" tone="muted" classes="mt-4">
+            {Publr.t("Operations: design.moodboard, design.save_system. The device signs in once and you approve it in ")}
+            {state.agentDevicesHref ? (
+              <Link href={state.agentDevicesHref} variant="body-sm" tone="accent">
+                {Publr.t("Settings › Devices")}
+              </Link>
+            ) : (
+              Publr.t("Settings › Devices")
+            )}
+            .
+          </Text>
+          {state.agentGuideHref && (
+            <Text as="p" variant="body-sm" tone="muted" classes="mt-2">
+              {Publr.t("Working from this computer's project folder instead? ")}
+              <Link href={state.agentGuideHref} variant="body-sm" tone="accent">
+                {Publr.t("Set your agent up from the Overview")}
+              </Link>
+              .
+            </Text>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}

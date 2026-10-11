@@ -1,0 +1,323 @@
+// The design system builder ("Site theme"): its own app, built around the editor. It
+// edits an app's design system, the theme document in design/model/system.ts, through a
+// page per part of it, and gives it back whole: `onChange` on every change, `save` on
+// Publish. The working copy that is not published yet is the draft; the browser keeps it
+// (under `draftKey`) until it is published or reset.
+//
+// The store is the frame's slice plus one per area (design/state.ts). After every change
+// `refresh` writes each area's view of the document into it, and the pages read only
+// `state.*`. Area actions take this instance with `builder()`.
+import { Publr } from "publr-jsx";
+import { Badge } from "../../ui/src/components/Badge/Badge.ptsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { Status } from "../../ui/src/components/Status/Status.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { completeSystem } from "./model/system";
+import type { DesignSystem } from "./model/system";
+import { LEAF_PAGES } from "./state";
+import type { BuilderInstance, BuilderProps, FrameState, Page, State } from "./state";
+import { Nav } from "./parts/Nav.ptsx";
+import * as overview from "./overview/view";
+import * as tokens from "./tokens/view";
+import * as removal from "./removal/view";
+import * as colors from "./colors/view";
+import * as fonts from "./fonts/view";
+import * as typography from "./typography/view";
+import * as typescale from "./typescale/view";
+import * as icons from "./icons/view";
+import * as containers from "./containers/view";
+import * as breakpoints from "./breakpoints/view";
+import * as library from "./library/view";
+import { Overview } from "./overview/Overview.ptsx";
+import { SettingsPage } from "./settings/Settings.ptsx";
+import { TokenLibraryPage } from "./tokens/TokenLibrary.ptsx";
+import { TransferPage } from "./tokens/Transfer.ptsx";
+import { RemoveDialog } from "./removal/RemoveDialog.ptsx";
+import { SemanticColorsPage } from "./colors/SemanticColors.ptsx";
+import { FontsPage } from "./fonts/Fonts.ptsx";
+import { TypographyPage } from "./typography/Typography.ptsx";
+import { TypeScalePage } from "./typescale/TypeScale.ptsx";
+import { IconsPage } from "./icons/Icons.ptsx";
+import { ContainersPage } from "./containers/Containers.ptsx";
+import { BreakpointsPage } from "./breakpoints/Breakpoints.ptsx";
+import { PatternsPage } from "./library/Patterns.ptsx";
+import { TemplatesPage } from "./library/Templates.ptsx";
+import { BlocksPage } from "./library/Blocks.ptsx";
+
+const AREAS = [overview, tokens, removal, colors, fonts, typography, typescale, icons, containers, breakpoints, library];
+
+const FRAME: FrameState = {
+  page: "overview",
+  home: true,
+  transfer: false,
+  dirty: false,
+  saving: false,
+  status: Publr.t("Saved to site"),
+  publishLabel: Publr.t("Publish theme"),
+  problem: "",
+  modal: false,
+};
+
+export const state = Publr.reactive({
+  ...FRAME,
+  ...overview.initial(),
+  ...tokens.initial(),
+  ...removal.initial(),
+  ...colors.initial(),
+  ...fonts.initial(),
+  ...typography.initial(),
+  ...typescale.initial(),
+  ...icons.initial(),
+  ...containers.initial(),
+  ...breakpoints.initial(),
+  ...library.initial(),
+}) as State;
+
+let system: DesignSystem = completeSystem({});
+let published = "";
+let base: DesignSystem = system;
+let props: BuilderProps = { system };
+
+/** A short, stable fingerprint of a document, to tell a draft's base apart. */
+function fingerprint(document: DesignSystem): string {
+  const text = JSON.stringify(document);
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+  return `${text.length}:${(hash >>> 0).toString(36)}`;
+}
+
+function readDraft(): DesignSystem | null {
+  if (!props.draftKey) return null;
+  try {
+    const stored = JSON.parse(localStorage.getItem(props.draftKey) ?? "null") as { base: string; system: DesignSystem } | null;
+    return stored && stored.base === published ? completeSystem(stored.system) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(): void {
+  if (!props.draftKey) return;
+  try {
+    if (state.dirty) localStorage.setItem(props.draftKey, JSON.stringify({ base: published, system }));
+    else localStorage.removeItem(props.draftKey);
+  } catch {
+    // Privacy mode: the draft lives until the page closes.
+  }
+}
+
+/** Writes every area's view of the document into the store. */
+export function refresh(): void {
+  for (const area of AREAS) Object.assign(state, area.view(system, state, props));
+  state.status = state.dirty ? (props.draftKey ? Publr.t("Saved locally") : Publr.t("Not published")) : Publr.t("Saved to site");
+}
+
+export function change(next: DesignSystem): void {
+  system = next;
+  state.dirty = fingerprint(system) !== published;
+  writeDraft();
+  refresh();
+  props.onChange?.(structuredClone(system));
+}
+
+export function start(given: BuilderProps): void {
+  props = given;
+  base = completeSystem(given.system);
+  published = fingerprint(base);
+  const draft = readDraft();
+  system = draft ?? base;
+  state.dirty = !!draft;
+  refresh();
+  given.onReady?.(builder());
+}
+
+/** The instance an area's action runs under (see design/state.ts). */
+export function builder(): BuilderInstance {
+  return { state, props, system: () => system, change, refresh, open };
+}
+
+export function currentSystem(): DesignSystem {
+  return structuredClone(system);
+}
+
+// ── the frame ───────────────────────────────────────────────────────────
+
+/** Opens a page from the nav: leaf pages keep the nav, the others slide in their list. */
+export function open(page: Page): void {
+  state.page = page;
+  state.transfer = false;
+  state.home = LEAF_PAGES.has(page);
+  refresh();
+}
+
+export function openHome(): void {
+  state.home = true;
+  state.transfer = false;
+}
+
+export function openTransfer(): void {
+  state.page = "advanced";
+  state.home = true;
+  state.transfer = true;
+  refresh();
+}
+
+export function copyText(text: string): void {
+  void navigator.clipboard?.writeText(text);
+}
+
+export function openEditor(): void {
+  props.openEditor?.();
+}
+
+export function openMoodboard(): void {
+  props.openMoodboard?.();
+}
+
+export async function publish(): Promise<void> {
+  if (state.saving) return;
+  state.saving = true;
+  state.problem = "";
+  state.publishLabel = Publr.t("Publishing…");
+  const error = props.save ? await props.save(structuredClone(system)) : null;
+  state.saving = false;
+  if (error) {
+    state.problem = error;
+    state.publishLabel = Publr.t("Try again");
+    return;
+  }
+  published = fingerprint(system);
+  base = structuredClone(system);
+  state.dirty = false;
+  writeDraft();
+  refresh();
+  state.publishLabel = Publr.t("Published");
+  setTimeout(() => (state.publishLabel = Publr.t("Publish theme")), 1800);
+}
+
+/** Back to what is published: the draft goes. */
+export function reset(): void {
+  system = structuredClone(base);
+  state.dirty = false;
+  writeDraft();
+  refresh();
+  props.onChange?.(structuredClone(system));
+}
+
+// ── the overview's ask ──────────────────────────────────────────────────
+
+export function setPrompt(text: string): void {
+  state.prompt = text;
+  state.buildError = "";
+}
+
+export function askKeys(event: KeyboardEvent): void {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    void build();
+  }
+}
+
+/** The brief Publr's AI works from: the ask, and where the rest is. */
+function brief(ask: string): string {
+  const app = props.app ? ` for the app "${props.app}"` : "";
+  const references = props.moodboardCount ? ` Its moodboard holds ${props.moodboardCount} reference${props.moodboardCount === 1 ? "" : "s"}: read them first (design.moodboard).` : "";
+  return `Build the design system${app}: ${ask.trim()}${references} Decide the palette, the semantic color roles in every color context, the fonts and font roles, the type scale and the radii, then publish it with design.save_system.`;
+}
+
+export async function build(): Promise<void> {
+  if (state.buildBusy) return;
+  if (!state.prompt.trim()) {
+    state.buildError = Publr.t("Describe what the site should feel like first.");
+    return;
+  }
+  if (!props.build) {
+    state.buildError = Publr.t("Builds run through Publr's AI, which this page has not been given.");
+    return;
+  }
+  state.buildBusy = true;
+  const error = await props.build(brief(state.prompt));
+  state.buildBusy = false;
+  if (error) state.buildError = error;
+}
+
+// ── the frame's parts ───────────────────────────────────────────────────
+
+function TopBar() {
+  return (
+    <header data-builder-bar class="flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-3">
+      <div class="flex min-w-0 items-center gap-2 pl-1">
+        <Text as="h1" variant="heading-sm" classes="truncate">
+          {Publr.t("Site theme")}
+        </Text>
+        <Badge>
+          <span data-builder-draft>{state.dirty ? Publr.t("Draft") : Publr.t("Published")}</span>
+        </Badge>
+      </div>
+      <div class="flex items-center gap-2">
+        {state.problem && (
+          <span data-builder-status>
+            <Status tone="error">
+              <Text variant="label-sm">{state.problem}</Text>
+            </Status>
+          </span>
+        )}
+        {state.dirty && (
+          <Button hierarchy="secondary" size="md" disabled={state.saving} onClick={() => reset()}>
+            <span data-builder-reset>
+              <Text variant="label-md">{Publr.t("Reset")}</Text>
+            </span>
+          </Button>
+        )}
+        <nav class="flex items-center gap-0.5" aria-label={Publr.t("Publr apps")} data-app-nav="design">
+          <Button hierarchy="quiet" size="md" title={Publr.t("Editor")} label={Publr.t("Open editor")} onClick={() => openEditor()}>
+            <Icon name="edit" size="sm" />
+          </Button>
+          <Button hierarchy="quiet" size="md" title={Publr.t("Moodboard")} label={Publr.t("Open moodboard")} onClick={() => openMoodboard()}>
+            <Icon name="moodboard" size="sm" />
+          </Button>
+        </nav>
+        <Button hierarchy="secondary" size="md" pressed={state.transfer} onClick={() => openTransfer()}>
+          <span data-builder-transfer-open>
+            <Text variant="label-md">{Publr.t("Import / export")}</Text>
+          </span>
+        </Button>
+        <Button hierarchy="primary" size="md" disabled={state.saving} onClick={() => publish()}>
+          <span data-builder-publish>
+            <Text variant="label-md-strong">{state.publishLabel}</Text>
+          </span>
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+export function DesignSystemBuilder(given: BuilderProps) {
+  start(given);
+  return (
+    <div data-design-builder class="flex h-full min-h-0 flex-col bg-card text-foreground">
+      <TopBar />
+      <div class="flex min-h-0 flex-1">
+        <Nav />
+        <main data-builder-main class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-card">
+          {state.page === "overview" && <Overview />}
+          {state.page === "advanced" && !state.transfer && <TokenLibraryPage />}
+          {state.page === "advanced" && state.transfer && <TransferPage />}
+          {state.page === "fonts" && <FontsPage />}
+          {state.page === "icons" && <IconsPage />}
+          {state.page === "containers" && <ContainersPage />}
+          {state.page === "foundations" && <SemanticColorsPage />}
+          {state.page === "typography" && <TypographyPage />}
+          {state.page === "type-scale" && <TypeScalePage />}
+          {state.page === "components" && <BlocksPage />}
+          {state.page === "breakpoints" && <BreakpointsPage />}
+          {state.page === "patterns" && <PatternsPage />}
+          {state.page === "templates" && <TemplatesPage />}
+          {state.page === "settings" && <SettingsPage />}
+        </main>
+      </div>
+      <RemoveDialog />
+    </div>
+  );
+}

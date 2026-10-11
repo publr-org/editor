@@ -1,0 +1,95 @@
+// Templates: one structure per content type, each drawn with its shared parts in place,
+// and the parts themselves. Edit opens the template or the part in the full editor.
+import { Publr } from "publr-jsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { NavButton } from "../../../ui/src/components/NavButton/NavButton.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { PreviewCard } from "../../../ui/src/components/PreviewCard/PreviewCard.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+import { cardKeys, editPart, editTemplate } from "./actions";
+import { previewInto } from "./previews";
+
+export function TemplatesPage() {
+  return (
+    <div class="w-full p-8 max-lg:p-5" data-design-page="Templates">
+      <PageHead compact
+        crumb={Publr.t("Templates / Library")}
+        title={Publr.t("One structure per content type")}
+        description={Publr.t("Every page of a content type shares its template; the document fills the slots. Shared parts change everywhere at once.")}
+      />
+      {state.libraryError && <Notice classes="mb-5">{state.libraryError}</Notice>}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5" data-design-template-grid>
+        {state.templateItems.map((template) => (
+          <PreviewCard
+            label={template.label}
+            description={template.description}
+            onClick={(event: MouseEvent) => editTemplate(template.name, event)}
+            onKeyDown={(event: KeyboardEvent) => cardKeys(event, (opened: Event) => editTemplate(template.name, opened))}
+          >
+            <div data-template-preview={template.name} class="w-full" ref={(element: Element | null) => previewInto(element, template.html)}></div>
+          </PreviewCard>
+        ))}
+      </div>
+      <Text as="p" variant="label-sm" tone="muted" classes="mt-10 mb-1">
+        {Publr.t("Templates / Parts")}
+      </Text>
+      <Heading level={3} size="md">
+        {Publr.t("Shared parts")}
+      </Heading>
+      <Text as="p" variant="body-compact" tone="muted" classes="mt-1.5 mb-6 max-w-xl">
+        {Publr.t("Headers, footers and other regions referenced by templates. Editing a part updates every template that uses it.")}
+      </Text>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5" data-design-template-part-grid>
+        {state.partItems.map((part) => (
+          <PreviewCard
+            label={part.label}
+            onClick={(event: MouseEvent) => editPart(part.name, event)}
+            onKeyDown={(event: KeyboardEvent) => cardKeys(event, (opened: Event) => editPart(part.name, opened))}
+          >
+            <div data-template-part-preview={part.name} class="w-full" ref={(element: Element | null) => previewInto(element, part.html)}></div>
+          </PreviewCard>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The left panel's list while this page is open: content types, then template parts. */
+export function TemplatesNav() {
+  return (
+    <div class="min-h-0 flex-1 overflow-y-auto p-4" data-design-controls="templates">
+      <div class="mb-3 flex items-center justify-between">
+        <Text as="p" variant="overline" tone="muted">
+          {Publr.t("Content types")}
+        </Text>
+        <Text variant="label-3xs" tone="muted">
+          {String(state.templateCount)}
+        </Text>
+      </div>
+      <div class="space-y-1">
+        {state.templateItems.map((template) => (
+          <div data-design-template={template.name}>
+            <NavButton size="xs" label={template.label} trailing="chevron" onClick={(event: MouseEvent) => editTemplate(template.name, event)} />
+          </div>
+        ))}
+      </div>
+      <div class="mt-6 mb-3 flex items-center justify-between">
+        <Text as="p" variant="overline" tone="muted">
+          {Publr.t("Template parts")}
+        </Text>
+        <Text variant="label-3xs" tone="muted">
+          {String(state.partCount)}
+        </Text>
+      </div>
+      <div class="space-y-1">
+        {state.partItems.map((part) => (
+          <div data-design-template-part={part.name}>
+            <NavButton size="xs" label={part.label} badge={part.area} onClick={(event: MouseEvent) => editPart(part.name, event)} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

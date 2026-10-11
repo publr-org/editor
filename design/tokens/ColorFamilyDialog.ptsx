@@ -1,0 +1,110 @@
+// The color family editor: rename a family and edit each reusable shade, add shades or
+// generate a 50–950 OKLCH scale from the base, delete the family.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { ColorSwatchInput } from "../../../ui/src/components/ColorSwatchInput/ColorSwatchInput.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { Modal } from "../../../ui/src/components/Modal/Modal.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { addShade, closeFamily, deleteFamily, generateScale, removeShade, saveFamily, setFamilyName, updateShade } from "./actions";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+export function ColorFamilyDialog() {
+  return (
+    <>
+      {state.familyOpen && (
+        <Modal
+          title={Publr.t("Edit color family")}
+          description={Publr.t("Rename the color or edit each reusable shade.")}
+          size="lg"
+          density="compact"
+          closeLabel={Publr.t("Close color editor")}
+          onClose={() => closeFamily()}
+          media={<span class="h-12 w-12 shrink-0 rounded-xl border border-black/10 shadow-sm" style={{ backgroundColor: state.familyMainValue }} data-family-main></span>}
+          footer={
+            <>
+              {state.familyId ? (
+                <Button hierarchy="tertiary" intent="destructive" size="md" onClick={() => deleteFamily()}>
+                  <span data-family-delete>
+                    <Text variant="label-xs-strong">{Publr.t("Delete family")}</Text>
+                  </span>
+                </Button>
+              ) : (
+                <span></span>
+              )}
+              <div class="flex items-center gap-2">
+                <Button hierarchy="secondary" size="md" onClick={() => closeFamily()}>
+                  <Text variant="label-xs-strong">{Publr.t("Cancel")}</Text>
+                </Button>
+                <Button hierarchy="primary" size="md" onClick={() => saveFamily()}>
+                  <span data-family-save>
+                    <Text variant="label-xs-strong">{Publr.t("Save color")}</Text>
+                  </span>
+                </Button>
+              </div>
+            </>
+          }
+        >
+          <div data-design-color-family>
+            <label class="mb-5 block" data-design-color-family-name>
+              <Text variant="overline" classes="mb-1.5 block">
+                {Publr.t("Color name")}
+              </Text>
+              <Input size="field" placeholder="ocean" autocomplete="off" value={state.familyName} label={Publr.t("Color name")} onInput={(event: Event) => setFamilyName(valueOf(event))} />
+            </label>
+            <div class="mb-3 flex items-end justify-between gap-4">
+              <div>
+                <Text as="p" variant="label-sm-strong">
+                  {Publr.t("Shades")}
+                </Text>
+                <Text as="p" variant="body-3xs" tone="muted" classes="mt-0.5">
+                  {Publr.t("Named variants stay in the family. Numeric shades form its reusable scale.")}
+                </Text>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <Button hierarchy="secondary" size="sm" onClick={() => addShade()}>
+                  <span data-family-add-shade>
+                    <Text variant="label-2xs-strong">{Publr.t("Add shade")}</Text>
+                  </span>
+                </Button>
+                <Button hierarchy="contrast" size="sm" title={Publr.t("Generate a 50–950 OKLCH scale from Base or 500")} onClick={() => generateScale()}>
+                  <span class="inline-flex items-center gap-2" data-family-generate>
+                    <Icon name="scale-bars" size="sm" />
+                    <Text variant="label-2xs-strong">{Publr.t("Generate 50–950")}</Text>
+                  </span>
+                </Button>
+              </div>
+            </div>
+            <div class="overflow-hidden rounded-xl border border-border">
+              {state.familyShades.map((shade) => (
+                <div class="grid grid-cols-[48px_100px_minmax(0,1fr)_32px] items-center gap-3 border-b border-border p-3 last:border-b-0" data-design-color-shade={String(shade.index)}>
+                  <ColorSwatchInput value={shade.value} label={shade.key || Publr.t("Base")} onInput={(event: Event) => updateShade(shade.index, "value", valueOf(event))} />
+                  <label class="block">
+                    <Text variant="overline-xs" tone="muted" classes="mb-1 block">
+                      {Publr.t("Shade")}
+                    </Text>
+                    <Input size="dense" mono placeholder={Publr.t("Base")} value={shade.key} label={Publr.t("Shade")} onInput={(event: Event) => updateShade(shade.index, "key", valueOf(event))} />
+                  </label>
+                  <label class="block min-w-0">
+                    <Text variant="overline-xs" tone="muted" classes="mb-1 block">
+                      {Publr.t("Color value")}
+                    </Text>
+                    <Input size="dense" mono value={shade.value} label={Publr.t("Color value")} onInput={(event: Event) => updateShade(shade.index, "value", valueOf(event))} />
+                  </label>
+                  <Button hierarchy="tertiary" size="sm" label={Publr.t("Remove shade")} classes="mt-3" onClick={() => removeShade(shade.index)}>
+                    <Text variant="label-md">×</Text>
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {state.familyError && <Notice classes="mt-3">{state.familyError}</Notice>}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}

@@ -1,0 +1,55 @@
+// The bar over the block-default editor: the list view toggle, the block, its state, and
+// Cancel / Save default. Drawn inside the embedded editor (its `header`), so the toggle
+// reaches that editor; the builder's store and actions come in as props, since the
+// editor is mounted on its own.
+import { Publr } from "publr-jsx";
+import { Badge } from "../../../ui/src/components/Badge/Badge.ptsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state as shell, toggleLeft } from "../../shell/Shell.ptsx";
+/** The part of the builder's store the bar reads. */
+export type BlockHeaderModel = { blockLabel: string; blockStatus: string; blockDescription: string };
+
+export type BlockHeaderProps = {
+  model: BlockHeaderModel;
+  onCancel: () => void;
+  onSave: () => void;
+};
+
+export function BlockHeader({ model, onCancel, onSave }: BlockHeaderProps) {
+  return (
+    <header data-block-default-head class="flex min-h-16 shrink-0 items-center justify-between border-b border-border bg-card px-5 py-3">
+      <div class="flex min-w-0 items-center gap-3">
+        <Button hierarchy="secondary" shape="pill" size="md" label={Publr.t("Toggle tree view")} title={Publr.t("Tree view")} pressed={shell.left === "list"} onClick={() => toggleLeft("list")}>
+          <Icon name="list-view" size="sm" />
+        </Button>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <Text as="h3" variant="heading-xs">
+              {model.blockLabel}
+            </Text>
+            <Badge tone="success">
+              <span data-block-default-status>{model.blockStatus}</span>
+            </Badge>
+          </div>
+          <Text as="p" variant="body-2xs" tone="muted" classes="mt-1 truncate">
+            {model.blockDescription}
+          </Text>
+        </div>
+      </div>
+      <div class="flex shrink-0 items-center gap-3">
+        <Button hierarchy="secondary" shape="pill" size="sm" onClick={() => onCancel()}>
+          <span data-block-default-cancel>
+            <Text variant="label-xs-strong">{Publr.t("Cancel")}</Text>
+          </span>
+        </Button>
+        <Button hierarchy="secondary" shape="pill" size="sm" onClick={() => onSave()}>
+          <span data-block-default-save>
+            <Text variant="label-xs-strong">{Publr.t("Save default")}</Text>
+          </span>
+        </Button>
+      </div>
+    </header>
+  );
+}

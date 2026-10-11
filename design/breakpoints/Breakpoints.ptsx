@@ -1,0 +1,178 @@
+// Breakpoints (System › Breakpoints): the document drawn at every breakpoint, smallest to
+// largest, and the sidebar's device groups where each breakpoint's minimum width is set.
+// A group's first or last breakpoint can be dragged to the neighbouring device.
+import { Publr } from "publr-jsx";
+import { Badge } from "../../../ui/src/components/Badge/Badge.ptsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { InputGroup } from "../../../ui/src/components/InputGroup/InputGroup.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { SurfaceHead } from "../containers/SurfaceHead.ptsx";
+import { addBreakpoint, cancelAdding, dragEnd, dragLeave, dragOver, dragStart, drop, frameRef, removeBreakpoint, resetBreakpoints, setWidth, startAdding } from "./actions";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+function Frames() {
+  return (
+    <div class="flex min-h-0 flex-1 items-start overflow-auto px-[43px] py-14" data-breakpoint-frames>
+      {state.breakpointFrames.map((frame) => (
+        <div class="flex shrink-0 items-stretch self-stretch">
+        {frame.deviceFirst && <div class="mx-10 w-0 shrink-0 self-stretch border-l border-dashed border-muted-foreground/60" aria-hidden="true"></div>}
+        {!frame.deviceFirst && frame.key !== "base" && <div class="w-10 shrink-0" aria-hidden="true"></div>}
+        <section class="flex w-[360px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg" data-breakpoint-frame={frame.key}>
+          <header class="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3">
+            <Badge tone="outline" size="xs">
+              <span class="inline-flex items-center gap-1 uppercase">
+                <Icon name={frame.deviceIcon} size="xs" />
+                {frame.device}
+              </span>
+            </Badge>
+            <Text variant="label-sm-strong">{frame.label}</Text>
+            <Text variant="label-2xs" tone="muted">
+              {frame.range}
+            </Text>
+            <Text variant="mono-3xs" tone="muted" classes="ml-auto">
+              {frame.inner}
+            </Text>
+          </header>
+          <div class="h-[675px] overflow-hidden" ref={(element: Element | null) => frameRef(element, frame.width)}></div>
+        </section>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Sidebar() {
+  return (
+    <aside class="flex w-[320px] shrink-0 flex-col overflow-y-auto border-l border-border bg-card p-4 max-lg:w-[264px]" aria-label={Publr.t("Breakpoints")} data-breakpoints-sidebar>
+      <div class="mb-4 flex items-center justify-between gap-3 border-b border-border pb-2">
+        <Text as="h3" variant="eyebrow-sm" tone="muted">
+          {Publr.t("Breakpoints")}
+        </Text>
+        <Button hierarchy="secondary" size="xs" onClick={() => resetBreakpoints()}>
+          <span data-breakpoints-reset>
+            <Text variant="label-2xs-strong">{Publr.t("Reset")}</Text>
+          </span>
+        </Button>
+      </div>
+      {!state.breakpointOrderValid && (
+        <Notice tone="warning" classes="mb-5">
+          {Publr.t("Breakpoint widths must increase from sm through 2xl.")}
+        </Notice>
+      )}
+      {state.breakpointError && <Notice classes="mb-5">{state.breakpointError}</Notice>}
+      <div class="divide-y divide-border">
+        {state.breakpointDevices.map((device) => (
+          <section
+            class={["min-w-0 py-5 transition-colors", device.over ? "bg-ui-accent ring-1 ring-ring ring-inset" : ""]}
+            data-breakpoint-device-drop={device.key}
+            onDragOver={(event: DragEvent) => dragOver(device.key, event)}
+            onDragLeave={(event: DragEvent) => dragLeave(event)}
+            onDrop={(event: DragEvent) => drop(device.key, event)}
+          >
+            <div class="flex items-center gap-2 px-2 py-1">
+              <Icon name={device.icon} size="sm" />
+              <Text as="h3" variant="label-lg">
+                {device.label}
+              </Text>
+            </div>
+            <div class="mt-3 divide-y divide-border">
+              {device.rows.map((row) => (
+                <div class="flex min-h-12 items-center gap-2 px-2 py-1.5" data-breakpoint-row={row.key}>
+                  {row.movable ? (
+                    <span
+                      class="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+                      draggable="true"
+                      role="button"
+                      aria-label={row.dragLabel}
+                      title={row.dragLabel}
+                      data-breakpoint-grip={row.key}
+                      onDragStart={(event: DragEvent) => dragStart(row.key, event)}
+                      onDragEnd={() => dragEnd()}
+                    >
+                      <Icon name="grip-vertical" size="sm" />
+                    </span>
+                  ) : (
+                    <span class="w-6 shrink-0"></span>
+                  )}
+                  <div class="min-w-0 flex-1">
+                    <Text as="p" variant="label-sm-strong">
+                      {row.label}
+                    </Text>
+                    {row.mediaQuery ? (
+                      <Text as="p" variant="mono-3xs" tone="muted">
+                        {row.key}
+                      </Text>
+                    ) : (
+                      <Text as="p" variant="body-3xs" tone="muted">
+                        {Publr.t("Any width below the next breakpoint · preview at")}
+                      </Text>
+                    )}
+                  </div>
+                  <div class="w-[78px] shrink-0">
+                    <InputGroup size="dense" trailing_text="px">
+                      <Input inset size="dense" type="number" min="1" step="10" numeric strong label={row.widthLabel} value={row.numeric} onChange={(event: Event) => setWidth(row.key, valueOf(event))} />
+                    </InputGroup>
+                  </div>
+                  {row.locked ? (
+                    <span class="w-8 shrink-0"></span>
+                  ) : (
+                    <Button hierarchy="tertiary" size="sm" label={row.removeLabel} title={Publr.t("Remove breakpoint")} onClick={() => removeBreakpoint(row.key)}>
+                      <Icon name="trash" size="sm" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {device.adding ? (
+                <div class="flex min-h-14 items-center gap-2 border-t border-primary/50 bg-ui-accent px-3 py-2 max-md:flex-wrap" data-add-breakpoint={device.key}>
+                  <Input size="dense" label={Publr.t("Breakpoint name")} placeholder={Publr.t("Name, e.g. wide")} value={state.breakpointAddName} onInput={(event: Event) => (state.breakpointAddName = valueOf(event))} />
+                  <Input size="dense" mono label={Publr.t("Breakpoint width")} placeholder={Publr.t("Width, e.g. 1440px")} value={state.breakpointAddWidth} onInput={(event: Event) => (state.breakpointAddWidth = valueOf(event))} />
+                  <Button hierarchy="secondary" size="sm" onClick={() => cancelAdding()}>
+                    <Text variant="label-xs-strong">{Publr.t("Cancel")}</Text>
+                  </Button>
+                  <Button hierarchy="primary" size="sm" onClick={() => addBreakpoint(device.key)}>
+                    <span data-add-breakpoint-submit>
+                      <Text variant="label-xs-strong">{Publr.t("Add")}</Text>
+                    </span>
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  class="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 border-0 border-t border-dashed border-input bg-transparent px-3 py-2 text-muted-foreground hover:bg-ui-accent hover:text-primary"
+                  aria-label={Publr.t("Add breakpoint")}
+                  data-breakpoint-add={device.key}
+                  onClick={() => startAdding(device.key)}
+                >
+                  <Icon name="plus" size="sm" />
+                  <Text variant="label-xs-strong">{Publr.t("Add breakpoint")}</Text>
+                </button>
+              )}
+            </div>
+          </section>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+export function BreakpointsPage() {
+  return (
+    <div class="flex h-full min-h-0 flex-1 flex-col" data-design-page="breakpoints">
+      <SurfaceHead
+        title={Publr.t("Breakpoints")}
+        description={Publr.t("The current document at every breakpoint, smallest to largest. Edit the minimum widths in the sidebar; a group's first or last breakpoint can move to the neighbouring device.")}
+      />
+      <div class="flex min-h-0 flex-1">
+        <div class="flex min-w-0 flex-1 flex-col" style={{ background: state.breakpointSurface }}>
+          <Frames />
+        </div>
+        <Sidebar />
+      </div>
+    </div>
+  );
+}

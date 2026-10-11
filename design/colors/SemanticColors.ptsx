@@ -1,0 +1,209 @@
+// Semantic colors: intent defined once. The storefront preview is drawn with the
+// editor's own blocks in the chosen color context; the right panel lists the contexts,
+// then the chosen one's roles, each pointed at a palette color.
+import { Publr } from "publr-jsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { ColorDot } from "../../../ui/src/components/ColorDot/ColorDot.ptsx";
+import { TextButton } from "../../../ui/src/components/TextButton/TextButton.ptsx";
+import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
+import { DisclosureRow } from "../../../ui/src/components/DisclosureRow/DisclosureRow.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { PreviewFrame } from "../../../ui/src/components/PreviewFrame/PreviewFrame.ptsx";
+import { SelectCard } from "../../../ui/src/components/SelectCard/SelectCard.ptsx";
+import { SpecimenTile } from "../../../ui/src/components/SpecimenTile/SpecimenTile.ptsx";
+import { StatCell } from "../../../ui/src/components/StatCell/StatCell.ptsx";
+import { SwatchButton } from "../../../ui/src/components/SwatchButton/SwatchButton.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import {
+  attachPreview,
+  editRole,
+  manageColors,
+  removeCurrentContext,
+  removeRoleNamed,
+  renameCurrentContext,
+  selectContext,
+  setColorField,
+  setSemanticToken,
+  showContexts,
+  submitContext,
+  submitRole,
+  toggleContextForm,
+  toggleRoleForm,
+  toggleSemantic,
+} from "./actions";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+function Contexts() {
+  return (
+    <div class="p-4" data-design-color-contexts>
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <Text as="p" variant="heading-2xs">
+            {Publr.t("Color contexts")}
+          </Text>
+          <Text as="p" variant="body-2xs" tone="muted" classes="mt-0.5 whitespace-nowrap">
+            {Publr.t("Named semantic palettes. Pick one to edit its roles.")}
+          </Text>
+        </div>
+        <Button hierarchy="secondary" size="mini" onClick={() => toggleContextForm()}>
+          <span data-context-add-toggle>{Publr.t("+ Add")}</span>
+        </Button>
+      </div>
+      {state.contextFormOpen && (
+        <div class="mb-3 grid grid-cols-[1fr_1fr_auto] gap-1.5" data-context-add>
+          <Input size="dense" placeholder={Publr.t("Name")} label={Publr.t("New context name")} value={state.contextName} onInput={(event: Event) => setColorField("contextName", valueOf(event))} />
+          <Input size="dense" mono placeholder="key" label={Publr.t("New context key")} value={state.contextKey} onInput={(event: Event) => setColorField("contextKey", valueOf(event))} />
+          <Button hierarchy="contrast" size="sm" onClick={() => submitContext()}>
+            <Text variant="label-2xs-strong">{Publr.t("Add")}</Text>
+          </Button>
+        </div>
+      )}
+      {state.colorError && (
+        <Text as="p" variant="body-3xs" tone="error" classes="mb-2">
+          <span data-color-error>{state.colorError}</span>
+        </Text>
+      )}
+      <div class="space-y-2">
+        {state.colorContextRows.map((context) => (
+          <div data-context={context.key}>
+            <SelectCard
+              label={context.label}
+              detail={context.key}
+              selected={context.selected}
+              leading={<SpecimenTile size="lg" surface={context.surfaceCss} foreground={context.foregroundCss} dots={[context.accentCss, context.mutedCss, context.foregroundCss]} />}
+              onClick={() => selectContext(context.key)}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Roles() {
+  return (
+    <div class="p-4" data-design-color-roles>
+      <Button hierarchy="tertiary" size="mini" classes="mb-3" onClick={() => showContexts()}>
+        <span data-color-back>
+          <Text variant="label-xs">{Publr.t("‹ Color contexts")}</Text>
+        </span>
+      </Button>
+      <div class="mb-4 flex items-center gap-2 rounded-xl border border-border p-2" data-color-context-head>
+        <SpecimenTile surface={state.currentContext.surfaceCss} foreground={state.currentContext.foregroundCss} />
+        <span class="min-w-0 flex-1">
+          <Input inset size="title" label={Publr.t("Context name")} value={state.currentContext.label} onChange={(event: Event) => renameCurrentContext(valueOf(event))} />
+          <Text as="p" variant="mono-2xs" tone="muted">
+            {state.currentContext.key}
+          </Text>
+        </span>
+        {state.currentContext.removable && (
+          <Button hierarchy="tertiary" size="mini" label={state.currentContext.removeLabel} title={state.currentContext.removeLabel} onClick={() => removeCurrentContext()}>
+            <span data-color-context-remove>
+              <Text variant="label-lg">×</Text>
+            </span>
+          </Button>
+        )}
+      </div>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <div>
+          <Text as="p" variant="label-xs-strong">
+            {Publr.t("Semantic roles")}
+          </Text>
+          <Text as="p" variant="body-3xs" tone="muted" classes="mt-0.5">
+            {Publr.t("Intent names available in every color context.")}
+          </Text>
+        </div>
+        <Button hierarchy="secondary" size="mini" onClick={() => toggleRoleForm()}>
+          <span data-role-add-toggle>{Publr.t("+ Add")}</span>
+        </Button>
+      </div>
+      {state.roleFormOpen && (
+        <div class="mb-3 grid grid-cols-[1fr_1fr_auto] gap-1.5" data-role-add>
+          <Input size="dense" placeholder={Publr.t("Name")} label={Publr.t("New semantic role name")} value={state.roleName} onInput={(event: Event) => setColorField("roleName", valueOf(event))} />
+          <Input size="dense" mono placeholder="key" label={Publr.t("New semantic role key")} value={state.roleKey} onInput={(event: Event) => setColorField("roleKey", valueOf(event))} />
+          <Button hierarchy="contrast" size="sm" onClick={() => submitRole()}>
+            <Text variant="label-2xs-strong">{Publr.t("Add")}</Text>
+          </Button>
+        </div>
+      )}
+      {state.colorError && (
+        <Text as="p" variant="body-3xs" tone="error" classes="mb-2">
+          <span data-color-error>{state.colorError}</span>
+        </Text>
+      )}
+      {state.semanticRows.map((role) => (
+        <div class="mb-2" data-semantic-role={role.key}>
+          <DisclosureRow
+            label={role.label}
+            description={role.description}
+            open={role.open}
+            leading={<ColorDot color={role.resolved} />}
+            onClick={() => toggleSemantic(role.name)}
+          />
+          {role.open && (
+            <div class="mt-1 rounded-xl border border-border bg-muted/30 p-3" data-semantic-panel>
+              <div class="mb-3 grid grid-cols-[1fr_auto] gap-2">
+                <div class="space-y-1.5">
+                  <Input size="dense" strong label={Publr.t("Semantic role name")} value={role.label} onChange={(event: Event) => editRole(role.key, "label", valueOf(event))} />
+                  <Input size="dense" label={Publr.t("Semantic role description")} value={role.description} onChange={(event: Event) => editRole(role.key, "description", valueOf(event))} />
+                </div>
+                <Button hierarchy="secondary" size="sm" onClick={() => removeRoleNamed(role.key)}>
+                  <span data-role-remove>
+                    <Text variant="label-3xs">{Publr.t("Remove")}</Text>
+                  </span>
+                </Button>
+              </div>
+              <div class="mb-2 flex items-center justify-between">
+                <Text variant="label-2xs-strong">{Publr.t("Palette")}</Text>
+                <TextButton onClick={() => manageColors()}>
+                  <Text variant="label-3xs">{Publr.t("Manage colors")}</Text>
+                </TextButton>
+              </div>
+              <div class="grid grid-cols-7 gap-2" data-semantic-choices>
+                {role.choices.map((choice) => (
+                  <SwatchButton color={choice.value} label={choice.label} selected={choice.selected} onClick={() => setSemanticToken(role.name, choice.reference)} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SemanticColorsPage() {
+  return (
+    <div class="flex min-h-0 flex-1" data-design-page="foundations">
+      <div class="min-w-0 flex-1 overflow-y-auto">
+        <div class="mx-auto max-w-[980px] p-8 max-lg:p-5" data-design-preview="foundations">
+          <div class="mb-7">
+            <Text as="p" variant="label-sm" tone="muted" classes="mb-1">
+              {Publr.t("Semantic layer / Colors")}
+            </Text>
+            <Heading level={2} size="title">
+              {Publr.t("Semantic colors")}
+            </Heading>
+            <Text as="p" variant="body-compact" tone="muted" classes="mt-1.5 max-w-xl">
+              {Publr.t("Define intent once. Blocks and patterns consume these roles instead of hard-coded colors.")}
+            </Text>
+          </div>
+          <PreviewFrame>
+            <div ref={(element: Element | null) => attachPreview(element)} data-color-preview data-preview-stamp={state.colorPreviewStamp}></div>
+          </PreviewFrame>
+          <div class="mt-5 grid grid-cols-3 border-y border-black/10" data-color-summary>
+            <StatCell label={Publr.t("Color roles")} value={state.roleSummary} note={Publr.t("Mapped from the brand palette")} />
+            <StatCell ruled label={Publr.t("Type system")} value={state.typeSummary} note={Publr.t("Display and body share a rhythm")} />
+            <StatCell ruled label={Publr.t("Contexts")} value={state.contextSummary} note={state.contextListSummary} />
+          </div>
+        </div>
+      </div>
+      <aside class="flex min-h-0 w-[304px] shrink-0 flex-col overflow-y-auto border-l border-border bg-card max-lg:w-[264px] max-md:hidden" data-design-colors>
+        {state.colorLevel === "contexts" && <Contexts />}
+        {state.colorLevel === "roles" && <Roles />}
+      </aside>
+    </div>
+  );
+}

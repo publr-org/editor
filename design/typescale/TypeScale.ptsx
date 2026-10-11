@@ -1,0 +1,156 @@
+// Type scale (Semantic layer › Type scale): the named styles a site is set in, from
+// display headlines to fine print. Every row draws itself in its own style; opening one
+// edits its spec: font role, weight, transform, and size, line height and letter spacing
+// as named-or-arbitrary values over the theme's scales.
+import { Publr } from "publr-jsx";
+import { BoxValueControl } from "../../../ui/src/components/BoxValueControl/BoxValueControl.ptsx";
+import { BoxValueControlIcon } from "../../../ui/src/components/BoxValueControl/BoxValueControlIcon.ptsx";
+import { BoxValueControlRangePicker } from "../../../ui/src/components/BoxValueControl/BoxValueControlRangePicker.ptsx";
+import { BoxValueControlRangeScalePicker } from "../../../ui/src/components/BoxValueControl/BoxValueControlRangeScalePicker.ptsx";
+import { BoxValueControlRangeScalePickerOption } from "../../../ui/src/components/BoxValueControl/BoxValueControlRangeScalePickerOption.ptsx";
+import type { BoxValue } from "../../../ui/src/components/BoxValueControl/BoxValueControl.ptsx";
+import { Button } from "../../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { InlineInput } from "../../../ui/src/components/InlineInput/InlineInput.ptsx";
+import { Input } from "../../../ui/src/components/Input/Input.ptsx";
+import { NativeSelect } from "../../../ui/src/components/NativeSelect/NativeSelect.ptsx";
+import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
+import { state } from "../Builder.ptsx";
+import { PageHead } from "../parts/PageHead.ptsx";
+import type { ScaleField, ScaleRow } from "./view";
+import { addNewStyle, deleteStyle, describeStyle, renameStyle, setNewStyle, setStyleProp, setStyleValue, toggleStyle } from "./actions";
+
+const startValue = (field: ScaleField): BoxValue => (field.custom ? ([field.custom.value, field.custom.unit] as unknown as BoxValue) : field.selected);
+
+function ValueField({ row, prop, label, empty, glyph, min, max, step, field }: { row: ScaleRow; prop: "size" | "lineHeight" | "letterSpacing"; label: string; empty: string; glyph: string; min: number; max: number; step: number; field: ScaleField }) {
+  return (
+    <div class="grid min-w-0 content-start gap-1.5">
+      <Text variant="label-xs" tone="muted">
+        {label}
+      </Text>
+      <BoxValueControl label={Publr.t("{style} {setting}", { style: row.label, setting: label })} defaultValue={startValue(field)} onChange={(value: BoxValue) => setStyleValue(row.key, prop, value as string | readonly [number, string])}>
+        <BoxValueControlIcon>
+          <Text variant="label-md-strong" tone="muted">
+            {glyph}
+          </Text>
+        </BoxValueControlIcon>
+        <BoxValueControlRangeScalePicker>
+          {empty && <BoxValueControlRangeScalePickerOption value="">{empty}</BoxValueControlRangeScalePickerOption>}
+          {field.choices.map((choice) => (
+            <BoxValueControlRangeScalePickerOption value={choice.key}>{choice.key}</BoxValueControlRangeScalePickerOption>
+          ))}
+        </BoxValueControlRangeScalePicker>
+        <BoxValueControlRangePicker min={min} max={max} step={step} label={Publr.t("Custom {style} {setting}", { style: row.label, setting: label })} />
+      </BoxValueControl>
+    </div>
+  );
+}
+
+function Details({ row }: { row: ScaleRow }) {
+  return (
+    <div class="grid grid-cols-3 items-start gap-x-6 gap-y-5 pb-6 max-lg:grid-cols-2 max-md:grid-cols-1" data-part="type-scale-details">
+      <div class="grid min-w-0 content-start gap-1.5">
+        <Text variant="label-xs" tone="muted">
+          {Publr.t("Font")}
+        </Text>
+        <NativeSelect size="sm" label={Publr.t("{style} font", { style: row.label })} onChange={(event: Event) => setStyleProp(row.key, "fontRole", event)}>
+          {row.fonts.map((choice) => (
+            <option value={choice.key} selected={choice.selected}>
+              {choice.label}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div class="grid min-w-0 content-start gap-1.5">
+        <Text variant="label-xs" tone="muted">
+          {Publr.t("Weight")}
+        </Text>
+        <NativeSelect size="sm" label={Publr.t("{style} weight", { style: row.label })} onChange={(event: Event) => setStyleProp(row.key, "weight", event)}>
+          {row.weights.map((choice) => (
+            <option value={choice.key} selected={choice.selected}>
+              {choice.label}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div class="grid min-w-0 content-start gap-1.5">
+        <Text variant="label-xs" tone="muted">
+          {Publr.t("Text transform")}
+        </Text>
+        <NativeSelect size="sm" label={Publr.t("{style} text transform", { style: row.label })} onChange={(event: Event) => setStyleProp(row.key, "textTransform", event)}>
+          {row.transforms.map((choice) => (
+            <option value={choice.key} selected={choice.selected}>
+              {choice.label}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <ValueField row={row} prop="size" label={Publr.t("Size")} empty="" glyph="Aa" min={0} max={160} step={1} field={row.size} />
+      <ValueField row={row} prop="lineHeight" label={Publr.t("Line height")} empty={Publr.t("Auto")} glyph="↕" min={0} max={4} step={0.05} field={row.lineHeight} />
+      <ValueField row={row} prop="letterSpacing" label={Publr.t("Letter spacing")} empty={Publr.t("None")} glyph="↔" min={-5} max={10} step={0.05} field={row.letterSpacing} />
+    </div>
+  );
+}
+
+export function TypeScalePage() {
+  return (
+    <div class="mx-auto w-full max-w-[980px] p-8 max-lg:p-5" data-design-page="type-scale">
+      <PageHead
+        crumb={Publr.t("Semantic layer / Type scale")}
+        title={Publr.t("Type scale")}
+        description={Publr.t("The named styles your site is set in, from display headlines to fine print. These start as the Material scale — retune, rename, remove or add styles to make it yours.")}
+        action={
+          <div class="flex items-center gap-2" data-part="type-scale-add">
+            <Input size="sm" placeholder={Publr.t("e.g. Display")} label={Publr.t("New style name")} classes="w-44" value={state.scaleNewLabel} onInput={(event: Event) => setNewStyle((event.target as HTMLInputElement).value)} />
+            <Button hierarchy="primary" size="sm" label={Publr.t("Add style")} onClick={() => addNewStyle()}>
+              <span data-part="type-scale-add-commit">
+                <Text variant="label-lg">{Publr.t("Add")}</Text>
+              </span>
+            </Button>
+          </div>
+        }
+      />
+      {state.scaleError && <Notice classes="mb-4">{state.scaleError}</Notice>}
+      <div class="border-t border-border">
+        {state.scaleRows.map((row) => (
+          <article class={row.open ? "-mx-8 border-b border-border bg-muted/40 px-8 max-lg:-mx-5 max-lg:px-5" : "border-b border-border"} data-part="type-scale-row" data-style={row.key}>
+            {row.open ? (
+              <div class="flex cursor-pointer items-center justify-between gap-4 py-5" data-part="type-scale-row-head" onClick={() => toggleStyle(row.key)}>
+                <div class="min-w-0 flex-1">
+                  <InlineInput value={row.label} label={Publr.t("Style name")} style={row.css} onClick={(event: MouseEvent) => event.stopPropagation()} onChange={(event: Event) => renameStyle(row.key, event)} />
+                  <InlineInput value={row.description} tone="muted" placeholder={Publr.t("Where is this style used?")} label={Publr.t("Where the style is used")} classes="mt-1.5" onClick={(event: MouseEvent) => event.stopPropagation()} onChange={(event: Event) => describeStyle(row.key, event)} />
+                </div>
+                <Button
+                  hierarchy="tertiary"
+                  intent="destructive"
+                  size="sm"
+                  label={Publr.t("Remove {name}", { name: row.label })}
+                  title={Publr.t("Remove this style")}
+                  onClick={(event: MouseEvent) => {
+                    event.stopPropagation();
+                    deleteStyle(row.key);
+                  }}
+                >
+                  <Icon name="trash" size="sm" />
+                </Button>
+              </div>
+            ) : (
+              <button type="button" class="block w-full cursor-pointer border-0 bg-transparent p-0 py-5 text-left" aria-expanded="false" data-part="type-scale-toggle" onClick={() => toggleStyle(row.key)}>
+                <Text as="span" variant="body-md" classes="block truncate" style={row.css}>
+                  {row.label}
+                </Text>
+                {row.description && (
+                  <Text as="span" variant="body-sm" tone="muted" classes="mt-1.5 block">
+                    {row.description}
+                  </Text>
+                )}
+              </button>
+            )}
+            {row.open && <Details row={row} />}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
