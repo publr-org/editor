@@ -25,7 +25,7 @@ splits a block, Backspace at the start merges into the previous one.
 <p data-pb-block="paragraph" data-pb-rich="body">
   Second paragraph — Backspace at my start merges me up.
 </p>
-<pre data-pb-block="code" data-pb-rich="content">
+<pre data-pb-block="code" data-pb-text="code">
 function demo() {
   return "whitespace matters";
 }</pre

@@ -1,0 +1,28 @@
+.{
+    .name = .publr_editor,
+    .fingerprint = 0xf974407d042739a3,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // Build-time only: the compiler that lowers every module, the jit engine the
+        // canvas compiles live classes with, and the http server the harness is served by.
+        .pjsx = .{ .path = "../pjsx" },
+        .publr_jit = .{ .path = "../jit" },
+        .http_server = .{ .path = "../lib/http" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "scripts",
+        "model",
+        "blocks",
+        "canvas",
+        "shell",
+        "host",
+        "design",
+        "moodboard",
+        "harness",
+        "tests",
+        "README.md",
+    },
+}

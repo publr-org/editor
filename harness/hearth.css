@@ -1,0 +1,204 @@
+/* The Hearth & Home site's stylesheet: its body type and the container classes its
+   patterns use (\`pbe-container--*\`, a content or wide column, bleeding to an edge, per
+   breakpoint), as the old editor's site design compiled them. */
+@layer base {
+  body {
+    margin: 0;
+    background: var(--color-surface);
+    color: var(--color-foreground);
+    font-family: var(--font-body, ui-sans-serif, system-ui, sans-serif);
+  }
+}
+@property --pbe-container-width{syntax:"*";inherits:false}
+@property --pbe-container-gutter{syntax:"*";inherits:false}
+@layer components {
+.pbe-container--on{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+.pbe-container--content{--pbe-container-width:var(--container-content,645px);--pbe-container-gutter:var(--container-content-padding,24px)}
+.pbe-container--wide{--pbe-container-width:var(--container-wide,1340px);--pbe-container-gutter:var(--container-wide-padding,24px)}
+.pbe-container--bleed-left,
+.pbe-container--bleed-right,
+.pbe-container--bleed-both{
+  --pbe-container-edge:max(var(--pbe-container-gutter,var(--container-content-padding,24px)),calc((100vw - var(--pbe-container-width,var(--container-content,645px)))/2));}
+.pbe-container--bleed-left > :is(:first-child:not(script), script[data-pb-settings] + *),
+.pbe-container--bleed-both > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+.pbe-container--bleed-right > :last-child,
+.pbe-container--bleed-both > :last-child{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+.pbe-container--off{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+.pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+.pbe-container--off > :last-child{margin-inline-end:0!important}
+
+@media (min-width:640px) {
+html .sm\:pbe-container--on{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .sm\:pbe-container--content{--pbe-container-width:var(--container-content,645px);--pbe-container-gutter:var(--container-content-padding,24px)}
+html .sm\:pbe-container--wide{--pbe-container-width:var(--container-wide,1340px);--pbe-container-gutter:var(--container-wide-padding,24px)}
+html .sm\:pbe-container--bleed-none{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .sm\:pbe-container--bleed-none > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .sm\:pbe-container--bleed-none > :last-child{margin-inline-end:0!important}
+html .sm\:pbe-container--bleed-left,
+html .sm\:pbe-container--bleed-right,
+html .sm\:pbe-container--bleed-both{
+  --pbe-container-edge:max(var(--pbe-container-gutter,var(--container-content-padding,24px)),calc((100vw - var(--pbe-container-width,var(--container-content,645px)))/2));}
+html .sm\:pbe-container--bleed-left > :is(:first-child:not(script), script[data-pb-settings] + *),
+html .sm\:pbe-container--bleed-both > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+html .sm\:pbe-container--bleed-right > :last-child,
+html .sm\:pbe-container--bleed-both > :last-child{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+html .sm\:pbe-container--off{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+html .sm\:pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .sm\:pbe-container--off > :last-child{margin-inline-end:0!important}
+}
+@media (min-width:768px) {
+html .md\:pbe-container--on{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .md\:pbe-container--content{--pbe-container-width:var(--container-content,645px);--pbe-container-gutter:var(--container-content-padding,24px)}
+html .md\:pbe-container--wide{--pbe-container-width:var(--container-wide,1340px);--pbe-container-gutter:var(--container-wide-padding,24px)}
+html .md\:pbe-container--bleed-none{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .md\:pbe-container--bleed-none > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .md\:pbe-container--bleed-none > :last-child{margin-inline-end:0!important}
+html .md\:pbe-container--bleed-left,
+html .md\:pbe-container--bleed-right,
+html .md\:pbe-container--bleed-both{
+  --pbe-container-edge:max(var(--pbe-container-gutter,var(--container-content-padding,24px)),calc((100vw - var(--pbe-container-width,var(--container-content,645px)))/2));}
+html .md\:pbe-container--bleed-left > :is(:first-child:not(script), script[data-pb-settings] + *),
+html .md\:pbe-container--bleed-both > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+html .md\:pbe-container--bleed-right > :last-child,
+html .md\:pbe-container--bleed-both > :last-child{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+html .md\:pbe-container--off{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+html .md\:pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .md\:pbe-container--off > :last-child{margin-inline-end:0!important}
+}
+@media (min-width:1024px) {
+html .lg\:pbe-container--on{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .lg\:pbe-container--content{--pbe-container-width:var(--container-content,645px);--pbe-container-gutter:var(--container-content-padding,24px)}
+html .lg\:pbe-container--wide{--pbe-container-width:var(--container-wide,1340px);--pbe-container-gutter:var(--container-wide-padding,24px)}
+html .lg\:pbe-container--bleed-none{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .lg\:pbe-container--bleed-none > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .lg\:pbe-container--bleed-none > :last-child{margin-inline-end:0!important}
+html .lg\:pbe-container--bleed-left,
+html .lg\:pbe-container--bleed-right,
+html .lg\:pbe-container--bleed-both{
+  --pbe-container-edge:max(var(--pbe-container-gutter,var(--container-content-padding,24px)),calc((100vw - var(--pbe-container-width,var(--container-content,645px)))/2));}
+html .lg\:pbe-container--bleed-left > :is(:first-child:not(script), script[data-pb-settings] + *),
+html .lg\:pbe-container--bleed-both > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+html .lg\:pbe-container--bleed-right > :last-child,
+html .lg\:pbe-container--bleed-both > :last-child{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+html .lg\:pbe-container--off{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+html .lg\:pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .lg\:pbe-container--off > :last-child{margin-inline-end:0!important}
+}
+@media (min-width:1280px) {
+html .xl\:pbe-container--on{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .xl\:pbe-container--content{--pbe-container-width:var(--container-content,645px);--pbe-container-gutter:var(--container-content-padding,24px)}
+html .xl\:pbe-container--wide{--pbe-container-width:var(--container-wide,1340px);--pbe-container-gutter:var(--container-wide-padding,24px)}
+html .xl\:pbe-container--bleed-none{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .xl\:pbe-container--bleed-none > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .xl\:pbe-container--bleed-none > :last-child{margin-inline-end:0!important}
+html .xl\:pbe-container--bleed-left,
+html .xl\:pbe-container--bleed-right,
+html .xl\:pbe-container--bleed-both{
+  --pbe-container-edge:max(var(--pbe-container-gutter,var(--container-content-padding,24px)),calc((100vw - var(--pbe-container-width,var(--container-content,645px)))/2));}
+html .xl\:pbe-container--bleed-left > :is(:first-child:not(script), script[data-pb-settings] + *),
+html .xl\:pbe-container--bleed-both > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+html .xl\:pbe-container--bleed-right > :last-child,
+html .xl\:pbe-container--bleed-both > :last-child{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+html .xl\:pbe-container--off{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+html .xl\:pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .xl\:pbe-container--off > :last-child{margin-inline-end:0!important}
+}
+@media (min-width:1536px) {
+html .2xl\:pbe-container--on{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .2xl\:pbe-container--content{--pbe-container-width:var(--container-content,645px);--pbe-container-gutter:var(--container-content-padding,24px)}
+html .2xl\:pbe-container--wide{--pbe-container-width:var(--container-wide,1340px);--pbe-container-gutter:var(--container-wide-padding,24px)}
+html .2xl\:pbe-container--bleed-none{
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:calc(var(--pbe-container-width,var(--container-content,645px)) + 2 * var(--pbe-container-gutter,var(--container-content-padding,24px)))!important;
+  margin-inline:auto!important;
+  padding-inline:var(--pbe-container-gutter,var(--container-content-padding,24px));}
+html .2xl\:pbe-container--bleed-none > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .2xl\:pbe-container--bleed-none > :last-child{margin-inline-end:0!important}
+html .2xl\:pbe-container--bleed-left,
+html .2xl\:pbe-container--bleed-right,
+html .2xl\:pbe-container--bleed-both{
+  --pbe-container-edge:max(var(--pbe-container-gutter,var(--container-content-padding,24px)),calc((100vw - var(--pbe-container-width,var(--container-content,645px)))/2));}
+html .2xl\:pbe-container--bleed-left > :is(:first-child:not(script), script[data-pb-settings] + *),
+html .2xl\:pbe-container--bleed-both > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:calc(-1 * var(--pbe-container-edge))!important}
+html .2xl\:pbe-container--bleed-right > :last-child,
+html .2xl\:pbe-container--bleed-both > :last-child{margin-inline-end:calc(-1 * var(--pbe-container-edge))!important}
+html .2xl\:pbe-container--off{
+  width:auto!important;
+  max-width:none!important;
+  margin-inline:0!important;
+  padding-inline:0;}
+html .2xl\:pbe-container--off > :is(:first-child:not(script), script[data-pb-settings] + *){margin-inline-start:0!important}
+html .2xl\:pbe-container--off > :last-child{margin-inline-end:0!important}
+}
+}
