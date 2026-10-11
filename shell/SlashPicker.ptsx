@@ -1,0 +1,30 @@
+// The slash picker: "/" in an empty default block, 6px under it. At rest it offers
+// "Pattern" (the way to the patterns explorer) and the most used blocks; what follows the
+// slash filters them. The caret stays in the block; the highlight follows the arrows.
+import { Publr } from "publr-jsx";
+import { MenuOption } from "../../ui/src/components/MenuOption/MenuOption.ptsx";
+import { MenuOptionLabel } from "../../ui/src/components/MenuOptionLabel/MenuOptionLabel.ptsx";
+import { pickSlash, pickSlashPattern, state } from "./Shell.ptsx";
+
+export function SlashPicker() {
+  return (
+    <>
+      {state.slashOpen && (state.slashPattern || state.slashItems.length > 0) && (
+        <div
+          data-slash-picker
+          role="menu"
+          class="absolute z-40 min-w-56 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
+          style={{ top: `${state.slashAt.top}px`, left: `${state.slashAt.left}px` }}
+          onMouseDown={(event: MouseEvent) => event.preventDefault()}
+        >
+          {state.slashPattern && <MenuOptionLabel>{Publr.t("Patterns")}</MenuOptionLabel>}
+          {state.slashPattern && <MenuOption icon="pattern" label={Publr.t("Pattern")} value="pattern" active={state.slashIndex === 0} onClick={() => pickSlashPattern()} />}
+          {state.slashItems.length > 0 && <MenuOptionLabel>{Publr.t("Blocks")}</MenuOptionLabel>}
+          {state.slashItems.map((item, index) => (
+            <MenuOption icon={item.icon} label={item.label} value={item.type} active={index + (state.slashPattern ? 1 : 0) === state.slashIndex} onClick={() => pickSlash(item.type)} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}

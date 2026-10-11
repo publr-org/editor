@@ -1,0 +1,43 @@
+// The wire output under the canvas (Options → Show wire output): the editing pipeline,
+// the full wire contract live, and the data pipeline, the published shape.
+import { Publr } from "publr-jsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { copyOutput, state } from "./Shell.ptsx";
+
+export function OutputPanel() {
+  return (
+    <>
+      {state.output && (
+        <section data-output class="grid h-72 shrink-0 grid-cols-2 gap-4 overflow-hidden border-t border-border bg-card p-4">
+          <div class="flex min-h-0 flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <Text as="h2" variant="eyebrow" tone="muted">
+                {Publr.t("Downcast editing pipeline (full wire contract, live)")}
+              </Text>
+              <Button hierarchy="tertiary" size="xs" onClick={() => copyOutput("editing")}>
+                {state.copied === "editing" ? Publr.t("Copied") : Publr.t("Copy")}
+              </Button>
+            </div>
+            <pre data-output-editing class="m-0 min-h-0 flex-1 overflow-auto rounded-lg bg-zinc-900 p-4 break-words whitespace-pre-wrap text-zinc-300">
+              <Text variant="mono-xs">{state.outputEditing}</Text>
+            </pre>
+          </div>
+          <div class="flex min-h-0 flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <Text as="h2" variant="eyebrow" tone="muted">
+                {Publr.t("Downcast data pipeline (published shape, data-pb-* stripped)")}
+              </Text>
+              <Button hierarchy="tertiary" size="xs" onClick={() => copyOutput("data")}>
+                {state.copied === "data" ? Publr.t("Copied") : Publr.t("Copy")}
+              </Button>
+            </div>
+            <pre data-output-data class="m-0 min-h-0 flex-1 overflow-auto rounded-lg bg-zinc-900 p-4 break-words whitespace-pre-wrap text-zinc-300">
+              <Text variant="mono-xs">{state.outputData}</Text>
+            </pre>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}

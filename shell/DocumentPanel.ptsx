@@ -1,0 +1,205 @@
+// The sidebar's Document tab: the document's header and its actions, where it stands (a
+// record's status and its publish), the template it is drawn in, its featured image, the
+// template's slots it fills, and under them the host's own fields for it (a record's).
+import { Publr } from "publr-jsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { DropdownMenu } from "../../ui/src/components/Dropdown/Dropdown.ptsx";
+import { DropdownMenuContent } from "../../ui/src/components/Dropdown/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "../../ui/src/components/Dropdown/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "../../ui/src/components/Dropdown/DropdownMenuTrigger.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../ui/src/components/Input/Input.ptsx";
+import { PanelButton } from "../../ui/src/components/Panel/PanelButton.ptsx";
+import { PanelCheck } from "../../ui/src/components/Panel/PanelCheck.ptsx";
+import { PanelRow } from "../../ui/src/components/Panel/PanelRow.ptsx";
+import { Status } from "../../ui/src/components/Status/Status.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { ToolbarButton } from "../../ui/src/components/Toolbar/ToolbarButton.ptsx";
+import {
+  applyFeaturedUrl,
+  browseFeatured,
+  editTemplate,
+  entryHost,
+  featuredInput,
+  openFeaturedUrl,
+  resetFeatured,
+  resetTemplate,
+  runDocumentAction,
+  selectSlot,
+  setFeaturedUrl,
+  state,
+  toggleTemplate,
+  uploadFeatured,
+} from "./Shell.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+/** The featured image's menu, under either of its triggers. */
+function FeaturedMenu() {
+  return (
+    <DropdownMenuContent align="right" classes="min-w-56">
+      {state.canPickMedia && (
+        <DropdownMenuItem onClick={() => browseFeatured()}>
+          <Icon name="gallery" size="md" />
+          {Publr.t("Media Library")}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={() => (featuredInput.current as HTMLInputElement | null)?.click()}>
+        <Icon name="image" size="md" />
+        {Publr.t("Upload")}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={(event: MouseEvent) => {
+          event.preventDefault();
+          openFeaturedUrl();
+        }}
+      >
+        <Icon name="globe" size="md" />
+        {Publr.t("Insert from URL")}
+      </DropdownMenuItem>
+      {state.featuredUrlOpen && (
+        <div data-part="search">
+          <form data-featured-url class="my-1 flex items-center gap-1.5 px-1" onSubmit={(event: Event) => applyFeaturedUrl(event)}>
+            <Input type="url" name="featured-image-url" placeholder={Publr.t("Paste or type URL")} value={state.featuredUrl} onInput={(event: Event) => setFeaturedUrl(valueOf(event))} />
+            <Button type="submit" size="lg" label={Publr.t("Apply featured image URL")}>
+              ↵
+            </Button>
+          </form>
+        </div>
+      )}
+      <DropdownMenuItem disabled={!state.document.featuredSrc} onClick={() => resetFeatured()}>
+        <Icon name="reset" size="md" />
+        {Publr.t("Reset")}
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  );
+}
+
+export function DocumentPanel() {
+  return (
+    <div data-sidebar-document id="sidebar-document" role="tabpanel" class="p-4" hidden={state.sidebar !== "document"}>
+      <div data-document-header class="flex items-start gap-3">
+        <Icon name="file" size="lg" classes="mt-0.5" />
+        <Text as="h2" variant="title-sm" classes="m-0 min-w-0 flex-1 break-words">
+          <span data-document-title>{state.document.title}</span>
+        </Text>
+        {state.document.actions.length > 0 && (
+          <DropdownMenu classes="shrink-0">
+            <DropdownMenuTrigger asChild>
+              <ToolbarButton size="sm" title={Publr.t("Document actions")} label={Publr.t("Document actions")}>
+                <Icon name="more" size="md" />
+              </ToolbarButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="right" classes="min-w-48">
+              {state.document.actions.map((action) => (
+                <DropdownMenuItem variant={action.destructive ? "destructive" : "default"} onClick={() => runDocumentAction(action.id)}>
+                  {action.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      {state.document.status && (
+        <section data-document-status class="mt-5 grid gap-3 border-t border-border pt-4">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Status tone={state.document.status?.tone === "success" ? "success" : "neutral"}>{state.document.status?.label ?? ""}</Status>
+            {state.document.status?.changed && <Status tone="warning">{Publr.t("Unpublished changes")}</Status>}
+            <Text variant="body-xs" tone="muted" classes="ml-auto">
+              {state.document.status?.note ?? ""}
+            </Text>
+          </div>
+          {state.document.primary && (
+            <Button classes="w-full" onClick={() => runDocumentAction(state.document.primary?.id ?? "")}>
+              <span data-document-primary>{state.document.primary?.label}</span>
+            </Button>
+          )}
+          {state.document.status?.hint && (
+            <Text as="p" variant="body-note" tone="muted" classes="m-0">
+              {state.document.status?.hint}
+            </Text>
+          )}
+        </section>
+      )}
+
+      {state.template && (
+        <div data-template class="mt-5 border-t border-border pt-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <Text variant="eyebrow-section" tone="muted" classes="block">
+                {Publr.t("Template")}
+              </Text>
+              <Text variant="heading-2xs" classes="mt-1 block truncate">
+                <span data-template-label>{state.template?.label ?? ""}</span>
+              </Text>
+              {state.template?.description && (
+                <Text as="p" variant="body-note" tone="muted" classes="m-0 mt-1">
+                  {state.template?.description}
+                </Text>
+              )}
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-1">
+              <PanelButton variant="accent" onClick={() => editTemplate()}>
+                <span data-edit-template>{Publr.t("Edit")}</span>
+              </PanelButton>
+              {state.template?.overridden && (
+                <Button hierarchy="link" size="xs" title={Publr.t("Return to the template's file")} onClick={() => resetTemplate()}>
+                  {Publr.t("Reset")}
+                </Button>
+              )}
+            </div>
+          </div>
+          <PanelCheck label={Publr.t("Show template")} checked={state.template?.showing ?? false} classes="mt-3" onClick={() => toggleTemplate()} />
+        </div>
+      )}
+
+      {state.document.hasFeatured && (
+        <div data-featured class="mt-5">
+          <input ref={featuredInput} type="file" accept="image/*" class="hidden" onChange={(event: Event) => uploadFeatured(event)} />
+          {state.document.featuredSrc ? (
+            <div class="relative aspect-[5/3] w-full overflow-hidden rounded-xs border-2 border-primary bg-muted">
+              <img class="absolute inset-0 size-full object-cover" src={state.document.featuredSrc} alt={state.document.featuredAlt} />
+              <div class="absolute inset-x-0 bottom-0 grid grid-cols-2 gap-2 p-2">
+                <DropdownMenu classes="block">
+                  <DropdownMenuTrigger asChild>
+                    <PanelButton variant="overlay">{Publr.t("Replace")}</PanelButton>
+                  </DropdownMenuTrigger>
+                  <FeaturedMenu />
+                </DropdownMenu>
+                <PanelButton variant="overlay" onClick={() => resetFeatured()}>
+                  {Publr.t("Remove")}
+                </PanelButton>
+              </div>
+            </div>
+          ) : (
+            <DropdownMenu classes="block">
+              <DropdownMenuTrigger asChild>
+                <PanelButton>{Publr.t("Set featured image")}</PanelButton>
+              </DropdownMenuTrigger>
+              <FeaturedMenu />
+            </DropdownMenu>
+          )}
+          {state.featuredError && (
+            <Text as="p" variant="body-note" tone="error" classes="m-0 mt-2">
+              {state.featuredError}
+            </Text>
+          )}
+        </div>
+      )}
+
+      {(state.template?.slots.length ?? 0) > 0 && (
+        <section data-template-slots class="mt-5 border-t border-border pt-4">
+          <Text as="h3" variant="eyebrow-section" tone="muted" classes="m-0 mb-2 block">
+            {Publr.t("Template content")}
+          </Text>
+          {(state.template?.slots ?? []).map((slot) => (
+            <PanelRow label={slot.label} icon={slot.icon as never} selected={slot.selected} onClick={() => selectSlot(slot.name)} />
+          ))}
+        </section>
+      )}
+
+      <div data-entry-panel ref={entryHost} class={state.hasEntry ? "-mx-4 mt-5 border-t border-border pt-1" : "hidden"}></div>
+    </div>
+  );
+}

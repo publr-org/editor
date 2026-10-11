@@ -1,0 +1,126 @@
+// The editor on one rich text field: paragraphs, and the inline formats the field
+// allows. It keeps the field's own control (a textarea in the form) current and fires
+// a bubbling `input`, so the form saves as it would from typing in the textarea.
+import { Publr } from "publr-jsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import type { ThemeToken } from "../canvas/engine";
+import type { MarkName } from "../model/format";
+import { Session } from "./session";
+
+export const state = Publr.reactive({
+  /** The inline formats the field offers, and the ones over the caret's range. */
+  formats: [] as string[],
+  marks: [] as string[],
+  linkOpen: false,
+  linkValue: "",
+});
+
+export const canvasHost = Publr.ref();
+
+let session: Session | null = null;
+
+export type InlineEditorProps = {
+  /** The field's control: its value is read once and written on every change. */
+  control: HTMLTextAreaElement | HTMLInputElement;
+  /** The formats the field offers; absent offers every one, empty offers none. */
+  formats?: readonly string[];
+  canvasStylesheet: string;
+  siteStyles?: readonly string[];
+  theme?: readonly ThemeToken[];
+  placeholder?: string;
+};
+
+export function start(props: InlineEditorProps): void {
+  if (session) return;
+  const formats = props.formats ?? ["bold", "italic", "link"];
+  session = new Session({
+    content: props.control.value,
+    plain: true,
+    canvasStylesheet: props.canvasStylesheet,
+    siteStyles: props.siteStyles,
+    theme: props.theme,
+    inline: true,
+    policy: { allowedBlocks: ["paragraph"], blocks: { paragraph: { allowedFormats: formats } } },
+  });
+  const current = session;
+  state.formats = [...current.editor.policy.formats({ type: "paragraph" } as never)];
+  current.onUpdate((update) => {
+    if (update.kind === "model") {
+      props.control.value = current.editor.serialize("editing");
+      props.control.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    state.marks = [...(current.canvas?.formatState()?.marks ?? [])];
+  });
+}
+
+Publr.effect(() => {
+  const host = canvasHost.current as HTMLElement | null;
+  if (host && session && !session.canvas) session.mount(host);
+});
+
+export function format(mark: MarkName): void {
+  session?.format(mark);
+}
+
+export function openLink(): void {
+  state.linkValue = session?.canvas?.formatState()?.link ?? "";
+  state.linkOpen = true;
+}
+
+export function applyLink(href: string): void {
+  state.linkOpen = false;
+  const caret = session?.editor.selection.caret;
+  if (!session || !caret || caret.start === caret.end) return;
+  session.editor.format(caret.block, caret.field, caret.start, caret.end, "link", href.trim() || undefined);
+  session.canvas?.restoreSelection();
+}
+
+export function sessionOf(): Session | null {
+  return session;
+}
+
+const keep = (event: MouseEvent) => event.preventDefault();
+
+export function InlineEditor(props: InlineEditorProps) {
+  start(props);
+  return (
+    <div data-inline-editor class="relative rounded-md border border-input bg-card focus-within:border-ring">
+      {(state.formats.includes("bold") || state.formats.includes("italic") || state.formats.includes("link")) && (
+        <div data-inline-toolbar class="flex items-center gap-0.5 border-b border-border px-1 py-0.5" onMouseDown={keep}>
+          {state.formats.includes("bold") && (
+            <Button hierarchy="tertiary" size="xs" label={Publr.t("Bold")} title={Publr.t("Bold")} pressed={state.marks.includes("bold")} onClick={() => format("bold")}>
+              <Icon name="bold" size="sm" />
+            </Button>
+          )}
+          {state.formats.includes("italic") && (
+            <Button hierarchy="tertiary" size="xs" label={Publr.t("Italic")} title={Publr.t("Italic")} pressed={state.marks.includes("italic")} onClick={() => format("italic")}>
+              <Icon name="italic" size="sm" />
+            </Button>
+          )}
+          {state.formats.includes("link") && (
+            <Button hierarchy="tertiary" size="xs" label={Publr.t("Link")} title={Publr.t("Link")} pressed={state.marks.includes("link")} onClick={() => openLink()}>
+              <Icon name="link" size="sm" />
+            </Button>
+          )}
+        </div>
+      )}
+      {state.linkOpen && (
+        <form
+          data-link-popover
+          class="absolute left-1 top-9 z-30 flex w-80 items-center gap-1 rounded-md border border-border bg-popover p-1.5 shadow-lg"
+          onSubmit={(event: Event) => {
+            event.preventDefault();
+            applyLink(((event.target as HTMLFormElement).elements.namedItem("href") as HTMLInputElement).value);
+          }}
+        >
+          <input name="href" type="url" value={state.linkValue} placeholder="https://" class="h-7 min-w-0 flex-1 rounded-sm border border-input bg-background px-2 text-body-sm" />
+          <button type="submit" class="h-7 rounded-sm bg-primary px-2 text-body-sm text-primary-foreground">
+            {Publr.t("Apply")}
+          </button>
+        </form>
+      )}
+      <div ref={canvasHost} data-inline-canvas></div>
+    </div>
+  );
+}

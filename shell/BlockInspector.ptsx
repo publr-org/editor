@@ -1,0 +1,327 @@
+// The Block tab: the block inspector as the old editor drew it. The block's card (icon,
+// name, chips, description), its header settings (a Group's layouts), then the Settings
+// and Styles tabs. Settings groups the declared controls by role into collapsible
+// sections with an actions menu, plus a Layout section for flex containers; Styles is
+// StylePanel. A pattern copy shows its own card instead.
+import { Publr } from "publr-jsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import type { IconName } from "../../ui/src/components/Icon/Icon.ptsx";
+import { IconTab } from "../../ui/src/components/IconTab/IconTab.ptsx";
+import { Input } from "../../ui/src/components/Input/Input.ptsx";
+import { InspectorSection } from "../../ui/src/components/InspectorSection/InspectorSection.ptsx";
+import { ChevronSelect } from "../../ui/src/components/ChevronSelect/ChevronSelect.ptsx";
+import { OptionTile } from "../../ui/src/components/OptionTile/OptionTile.ptsx";
+import { PreviewTile } from "../../ui/src/components/PreviewTile/PreviewTile.ptsx";
+import { Switch } from "../../ui/src/components/Switch/Switch.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { Textarea } from "../../ui/src/components/Textarea/Textarea.ptsx";
+import { ScaleRowControl, StyleOverlays, StylesTab, keepSelection } from "./StylePanel.ptsx";
+import {
+  applyControl,
+  applyMedia,
+  applyPatternContext,
+  defineToken,
+  editPattern,
+  focusContent,
+  pickMedia,
+  removeMedia,
+  resetSection,
+  resetStylePanel,
+  setInspectorTab,
+  setRawClasses,
+  setToggleInteraction,
+  state,
+  toggleLayoutSection,
+  toggleSection,
+  uploadMedia,
+} from "./Shell.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+export function BlockInspector() {
+  return (
+    <div data-sidebar-block id="sidebar-block" role="tabpanel" class="p-4" onMouseDown={(event: MouseEvent) => keepSelection(event)}>
+      {state.patternCard ? (
+        <div data-pattern-card-sidebar>
+          <div class="mb-4 flex items-start gap-3">
+            <Icon name="pattern" size="lg" />
+            <div>
+              <div class="mb-1 flex items-center gap-2">
+                <Text variant="body-sm" classes="font-semibold">
+                  <span data-block-label>{state.patternCard?.label}</span>
+                </Text>
+                <Text variant="label-sm" tone="muted" classes="rounded-xs bg-ui-accent px-1.5 py-0.5">
+                  {Publr.t("Pattern")}
+                </Text>
+              </div>
+              <Text as="p" variant="body-sm" tone="muted" classes="m-0">
+                {state.patternCard?.description}
+              </Text>
+            </div>
+          </div>
+          <div class="flex flex-col gap-6">
+            <Button hierarchy="secondary" size="md" classes="w-full" onClick={() => editPattern()}>
+              <span data-sidebar-edit-pattern>{Publr.t("Edit pattern")}</span>
+            </Button>
+            {(state.patternCard?.contexts ?? []).length > 0 && (
+              <div data-pattern-context>
+                <div class="mb-4 flex items-center justify-between border-b border-border pb-2">
+                  <Text as="h3" variant="eyebrow-sm" tone="muted" classes="m-0">
+                    {Publr.t("Style")}
+                  </Text>
+                  <Text variant="body-2xs" tone="muted">
+                    {Publr.t("Applies to this copy")}
+                  </Text>
+                </div>
+                <div class="grid grid-cols-2 gap-2" role="group" aria-label={Publr.t("Pattern color style")}>
+                  {(state.patternCard?.contexts ?? []).map((context) => (
+                    <PreviewTile label={context.label} surface={context.surface} foreground={context.foreground} accent={context.accent} pressed={context.pressed} onClick={() => applyPatternContext(context.key)} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <div class="mb-4 border-b border-border pb-2">
+                <Text as="h3" variant="eyebrow-sm" tone="muted" classes="m-0">
+                  {Publr.t("Content")}
+                </Text>
+              </div>
+              <ol data-pattern-content>
+                {(state.patternCard?.content ?? []).map((row) => (
+                  <li>
+                    <button type="button" data-content-row={row.id} aria-current={row.selected} class="flex w-full cursor-pointer items-center gap-2 rounded-xs px-1 py-2 text-left hover:bg-ui-accent aria-[current=true]:bg-ui-accent" onClick={() => focusContent(row.id)}>
+                      <span class="flex size-5 shrink-0 items-center justify-center">
+                        <Icon name={row.icon as IconName} size="md" />
+                      </span>
+                      <Text variant="body-sm" classes="shrink-0 font-medium">
+                        {row.label}
+                      </Text>
+                      <Text variant="body-sm" tone="muted" classes="truncate">
+                        {row.detail}
+                      </Text>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </div>
+      ) : state.selectedCount > 1 ? (
+        <Text variant="body-sm" tone="muted">
+          <span data-selected-count>{Publr.tn("{count} block selected", "{count} blocks selected", state.selectedCount)}</span>
+        </Text>
+      ) : state.active ? (
+        <>
+          <div data-block-card class="mb-4 flex items-start gap-3">
+            <span class="flex size-6 shrink-0 items-center justify-center">
+              <Icon name={(state.inspector.icon || "components") as IconName} size="lg" />
+            </span>
+            <div>
+              <div class="mb-1 flex items-center gap-2">
+                <Text variant="body-sm" classes="font-semibold">
+                  <span data-block-label>{state.inspector.label || (state.active?.label ?? "")}</span>
+                </Text>
+                {state.inspector.containerOn && (
+                  <span data-container-marker>
+                    <Text variant="label-sm" tone="muted" classes="rounded-xs bg-muted px-1.5 py-0.5">
+                      {Publr.t("Container")}
+                    </Text>
+                  </span>
+                )}
+              </div>
+              <Text as="p" variant="body-sm" tone="muted" classes="m-0">
+                {state.inspector.description || (state.active?.description ?? "")}
+              </Text>
+            </div>
+          </div>
+          {state.inspector.header.length > 0 && (
+            <div data-header-settings class="mt-5">
+              {state.inspector.header.map((row) => (
+                <div class="flex flex-wrap gap-2" role="group" aria-label={row.label}>
+                  {row.options.map((option) => (
+                    <span data-layout={option.value} class="contents">
+                      <OptionTile label={option.label} icon={option.icon} pressed={option.pressed} disabled={row.disabled} onClick={() => applyControl(row.key, option.value)} />
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+          {state.inspector.tabsShown && (
+            <div class="mt-5 flex border-b border-border" role="tablist" aria-label={Publr.t("Block inspector")}>
+              <IconTab label={Publr.t("Settings")} icon="settings" tab="settings" selected={state.inspectorTab !== "styles" || !state.inspector.hasStyles} onClick={() => setInspectorTab("settings")} />
+              {state.inspector.hasStyles && <IconTab label={Publr.t("Styles")} icon="palette" tab="styles" selected={state.inspectorTab === "styles"} onClick={() => setInspectorTab("styles")} />}
+            </div>
+          )}
+          {(state.inspectorTab !== "styles" || !state.inspector.hasStyles) && (
+            <div data-controls class="-mx-4 mt-3">
+              {state.inspector.sections.map((section) => (
+                <InspectorSection title={section.label} layout="section" sectionKey={section.role} open={section.open} actionsLabel={Publr.t("Section actions")} onToggle={() => toggleSection(section.key, section.open)} onReset={() => resetSection(section.role)}>
+                  <div>
+                  {section.rows.map((row) => (
+                    <div data-control={row.label} role="group" aria-label={row.label} class="mt-4 first:mt-0">
+                      {row.control === "toggle-group" && (
+                        <div class="flex flex-wrap gap-2">
+                          {row.options.map((option) => (
+                            <OptionTile label={option.label} icon={option.icon} pressed={option.pressed} disabled={row.disabled} onClick={() => applyControl(row.key, option.value)} />
+                          ))}
+                        </div>
+                      )}
+                      {row.control === "toggle" && (
+                        <label class="flex items-center justify-between">
+                          <Text variant="body-sm" classes="font-medium">
+                            {row.label}
+                          </Text>
+                          <Switch checked={row.checked} disabled={row.disabled} onChange={(event: Event) => applyControl(row.key, (event.target as HTMLInputElement).checked)} />
+                        </label>
+                      )}
+                      {row.control === "select" && (
+                        <label class="block">
+                          <Text variant="body-sm" classes="mb-1 block font-medium">
+                            {row.label}
+                          </Text>
+                          <ChevronSelect label={row.label} disabled={row.disabled} onChange={(event: Event) => applyControl(row.key, valueOf(event))}>
+                            {row.options.map((option) => (
+                              <option value={option.value} selected={option.pressed}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </ChevronSelect>
+                        </label>
+                      )}
+                      {(row.control === "text" || row.control === "url") && (
+                        <label class="block">
+                          <Text variant="body-sm" classes="mb-1 block font-medium">
+                            {row.label}
+                          </Text>
+                          <Input size="sm" classes="h-10" type={row.control === "url" ? "url" : "text"} value={row.value} placeholder={row.placeholder} disabled={row.disabled} onInput={(event: Event) => applyControl(row.key, valueOf(event))} />
+                        </label>
+                      )}
+                      {row.control === "number" && (
+                        <label class="block">
+                          <Text variant="body-sm" classes="mb-1 block font-medium">
+                            {row.label}
+                          </Text>
+                          <Input
+                            size="sm"
+                            classes="h-10"
+                            type="number"
+                            value={String(row.number)}
+                            min={String(row.min)}
+                            max={String(row.max)}
+                            step={String(row.step)}
+                            disabled={row.disabled}
+                            onInput={(event: Event) => valueOf(event) !== "" && applyControl(row.key, Number(valueOf(event)))}
+                          />
+                        </label>
+                      )}
+                      {row.control === "media" && (
+                        <div data-media>
+                          <Text variant="body-sm" classes="mb-2 block font-medium">
+                            {row.label}
+                          </Text>
+                          {row.src ? (
+                            <div>
+                              <img src={row.src} alt="" class="mb-2 max-h-32 w-full rounded-xs bg-muted object-contain" />
+                              <div class="mb-2 flex items-center gap-1.5">
+                                <label class="inline-flex">
+                                  <span class="sr-only">{Publr.t("Replace")}</span>
+                                  <input type="file" class="hidden" accept="image/*,video/*,audio/*" onChange={(event: Event) => uploadMedia(row.key, event)} />
+                                  <Button hierarchy="secondary" size="md" onClick={(event: MouseEvent) => ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).click()}>
+                                    {Publr.t("Replace")}
+                                  </Button>
+                                </label>
+                                {state.canPickMedia && (
+                                  <Button hierarchy="secondary" size="md" onClick={() => pickMedia(row.key)}>
+                                    {Publr.t("Media Library")}
+                                  </Button>
+                                )}
+                                <Button hierarchy="tertiary" size="md" onClick={() => removeMedia(row.key)}>
+                                  {Publr.t("Remove")}
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div class="grid gap-2">
+                              <label class="block">
+                                <input type="file" class="hidden" accept="image/*,video/*,audio/*" onChange={(event: Event) => uploadMedia(row.key, event)} />
+                                <Button hierarchy="secondary" size="md" classes="w-full" onClick={(event: MouseEvent) => ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).click()}>
+                                  {row.addLabel}
+                                </Button>
+                              </label>
+                              {state.canPickMedia && (
+                                <Button hierarchy="secondary" size="md" classes="w-full" onClick={() => pickMedia(row.key)}>
+                                  {Publr.t("Media Library")}
+                                </Button>
+                              )}
+                              <Input size="sm" classes="h-10" type="url" placeholder={Publr.t("Paste a URL")} value={row.src} onChange={(event: Event) => applyMedia(row.key, "src", valueOf(event))} />
+                            </div>
+                          )}
+                          <Text variant="eyebrow-sm" classes="mt-2 mb-1 block">
+                            {Publr.t("Alternative text")}
+                          </Text>
+                          <Textarea rows={3} variant="compact" label={Publr.t("Alternative text")} value={row.alt} onChange={(event: Event) => applyMedia(row.key, "alt", valueOf(event))} />
+                          <Text variant="body-xs" tone="muted" classes="mt-1 block">
+                            {Publr.t("Describe the purpose of the media. Leave empty if decorative.")}
+                          </Text>
+                        </div>
+                      )}
+                      {row.help && (
+                        <Text as="p" variant="body-xs" tone="muted" classes="mt-2 mb-0 block">
+                          {row.help}
+                        </Text>
+                      )}
+                    </div>
+                  ))}
+                  </div>
+                  {section.role === "advanced" && (
+                    <div data-control="Additional CSS classes" class={section.rows.length ? "mt-4" : ""}>
+                      <label class="block">
+                        <Text variant="body-sm" classes="mb-1 block font-medium">
+                          {Publr.t("Additional CSS classes")}
+                        </Text>
+                        <Input size="sm" classes="h-10" value={state.inspector.classes} placeholder="mt-4 md:flex" onChange={(event: Event) => setRawClasses(valueOf(event))} />
+                      </label>
+                      {state.unknownClasses.length > 0 && (
+                        <div data-unknown-classes class="mt-2 flex flex-wrap gap-1">
+                          {state.unknownClasses.map((name) => (
+                            <Button hierarchy="secondary" size="xs" onClick={() => defineToken(name)}>
+                              <span data-define={name}>{`${name} · Define…`}</span>
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                      <label class="mt-4 flex items-center justify-between">
+                        <Text variant="body-sm" classes="font-medium">
+                          {Publr.t("Toggle classes on click")}
+                        </Text>
+                        <Switch checked={state.interaction.on} onChange={(event: Event) => setToggleInteraction((event.target as HTMLInputElement).checked, state.interaction.classes || "ring-2")} />
+                      </label>
+                      {state.interaction.on && <Input size="sm" classes="mt-2 h-10" value={state.interaction.classes} placeholder={Publr.t("Classes while open")} onChange={(event: Event) => setToggleInteraction(true, valueOf(event))} />}
+                    </div>
+                  )}
+                </InspectorSection>
+              ))}
+              {state.inspector.layout.length > 0 && (
+                <InspectorSection title={Publr.t("Layout")} layout="accordion" sectionKey="layout" open={state.layoutOpen} actionsLabel={Publr.t("Layout actions")} note={Publr.t("Controls for the selected container type")} onToggle={() => toggleLayoutSection()} onReset={() => resetStylePanel("layout")}>
+                  <div data-style-section="layout">
+                    {state.inspector.layout.map((row) => (
+                      <ScaleRowControl row={row} />
+                    ))}
+                  </div>
+                </InspectorSection>
+              )}
+            </div>
+          )}
+          {state.inspectorTab === "styles" && state.inspector.hasStyles && <StylesTab />}
+        </>
+      ) : (
+        <Text variant="body-sm" tone="muted">
+          {Publr.t("No block selected.")}
+        </Text>
+      )}
+      <StyleOverlays />
+    </div>
+  );
+}

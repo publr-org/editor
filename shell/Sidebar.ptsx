@@ -1,0 +1,32 @@
+// The right sidebar: the Document tab, and the Block tab with the active block's card
+// and its declared controls.
+import { Publr } from "publr-jsx";
+import { PanelTab } from "../../ui/src/components/PanelTab/PanelTab.ptsx";
+import { DocumentPanel } from "./DocumentPanel.ptsx";
+import { PatternOverview } from "./Patterns.ptsx";
+import { DesignTab } from "./DesignTab.ptsx";
+import { BlockInspector } from "./BlockInspector.ptsx";
+import { setSidebar, state } from "./Shell.ptsx";
+
+export function Sidebar() {
+  return (
+    <aside data-sidebar hidden={!state.sidebarOpen} class="relative flex w-80 shrink-0 flex-col border-l border-border bg-card">
+      {!state.embedded && (
+        <div class="flex shrink-0 border-b border-border" role="tablist" aria-label={Publr.t("Editor settings")}>
+          <PanelTab variant="rail" id="sidebar-tab-document" panel="sidebar-document" label={state.documentTabLabel} selected={state.sidebar === "document"} onClick={() => setSidebar("document")} />
+          <PanelTab variant="rail" id="sidebar-tab-block" panel="sidebar-block" label={Publr.t("Block")} selected={state.sidebar === "block"} onClick={() => setSidebar("block")} />
+        </div>
+      )}
+      <div class="min-h-0 flex-1 overflow-auto">
+        {state.sidebar === "design" && <DesignTab />}
+        {!state.draft && <DocumentPanel />}
+        {state.draft && state.sidebar === "document" && (
+          <div data-sidebar-pattern id="sidebar-document" role="tabpanel" class="p-4">
+            <PatternOverview />
+          </div>
+        )}
+        {state.sidebar === "block" && <BlockInspector />}
+      </div>
+    </aside>
+  );
+}

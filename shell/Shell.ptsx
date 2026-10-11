@@ -1,0 +1,1985 @@
+// The editor's chrome: a family root, so every editor on a page has its own store and
+// session, and the parts below it reach the instance they render under. The document
+// lives in the editor's model outside the store; after every change the session
+// announces, `refresh()` writes what the chrome shows into the store (views.ts), and the
+// parts render store values only. The canvas frame lives in a host element that carries
+// no binding: a redraw never moves it.
+import { Publr } from "publr-jsx";
+import { mergeClasses, nameOf } from "publr/class-merge";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import type { Boundary } from "../canvas/canvas";
+import type { ThemeToken } from "../canvas/engine";
+import type { Place } from "../model/editor";
+import type { Device, Layout } from "../model/layout";
+import type { MarkName } from "../model/format";
+import type { PolicyConfig } from "../model/policy";
+import { blockType } from "../model/registry";
+import type { TemplateHost } from "../model/templates";
+import { Theme } from "../model/theme";
+import type { TextStyle } from "../model/theme";
+import { isImageValue } from "../model/types";
+import { getPattern } from "../model/patterns";
+import { downcast, upcastBlocks } from "../model/codec";
+import { mountFrame, mountPreview } from "./preview";
+import type { PreviewFrame } from "./preview";
+import { Session } from "./session";
+import type { DocumentHost, MediaHost, TreeDrop } from "./session";
+import { clearAtVariant, moveVariant, withPatternContext, applyBox, applyLayout, applyProp, applyVariation, boxScale, partsOf, resetPanel, selectionLabel, swatchesFor, withTextStyle, writeStyleSetting } from "./styles";
+import type { BoxKind, InspectorView, PaneView } from "./styles";
+import { buildViews } from "./views";
+import type { Views } from "./views";
+import { BlockToolbar } from "./BlockToolbar.ptsx";
+import { Breadcrumb } from "./Breadcrumb.ptsx";
+import { InlineInserter } from "./InlineInserter.ptsx";
+import { LeftRail } from "./LeftRail.ptsx";
+import { OutputPanel } from "./OutputPanel.ptsx";
+import { PatternExplorer } from "./Patterns.ptsx";
+import { Sidebar } from "./Sidebar.ptsx";
+import { SlashPicker } from "./SlashPicker.ptsx";
+import { SurfaceLabel } from "./SurfaceLabel.ptsx";
+import { Topbar } from "./Topbar.ptsx";
+
+/** The canvas viewport's devices, narrowest first: the width each previews at. */
+export const DEVICES = [
+  { key: "mobile", label: "Mobile", icon: "device-mobile", width: 390, breakpoint: "Base", range: "< 768px" },
+  { key: "tablet", label: "Tablet", icon: "device-tablet", width: 768, breakpoint: "Tablet", range: "≥ 768px" },
+  { key: "desktop", label: "Desktop", icon: "device-desktop", width: 1024, breakpoint: "Desktop", range: "≥ 1024px" },
+] as const;
+
+/** A compare surface's visual width and the room its label and the stage take. */
+const COMPARE_WIDTH = 360;
+const COMPARE_CHROME = 122;
+
+const EMPTY_VIEWS: Views = {
+  canUndo: false,
+  canRedo: false,
+  active: null,
+  selectedCount: 0,
+  breadcrumb: [],
+  rows: [],
+  shelves: [],
+  slashItems: [],
+  boundaryItems: [],
+  stats: { characters: 0, words: 0, minutes: 1, headings: [] },
+  toolbar: { shown: false, top: 0, left: 0 },
+  slashAt: { top: 0, left: 0 },
+  marks: [],
+  formats: [],
+  textSelected: false,
+  toolbarOwnsText: false,
+  movable: false,
+  canMoveUp: false,
+  canMoveDown: false,
+  alignment: "",
+  supportsAlign: false,
+  canUngroup: false,
+  inspector: {
+    label: "",
+    icon: "",
+    description: "",
+    container: false,
+    containerOn: false,
+    classes: "",
+    header: [],
+    tabsShown: true,
+    hasStyles: false,
+    sections: [],
+    layout: [],
+    styles: { shown: false, disabled: false, variations: [], textStyles: [], fontFamily: null, fontSize: null, typography: [], typographyShown: false, colors: [], textSpacing: false, box: null, dimensions: [], borderStyles: [], optional: [] },
+  } as InspectorView,
+  toolbarControls: [],
+  unknownClasses: [],
+  pane: { open: false, kind: "", title: "", selection: "Top", corners: false, index: 0, max: 1, display: "None", customNumber: "0", customUnit: "px", customRangeValue: 0, customMin: 0, customMax: 200, customStep: 1, borderColor: null, top: 0, left: 0 } as PaneView,
+  tokens: [],
+  engineStatus: "",
+  themeCss: "",
+  patternGroups: [],
+  flyout: [],
+  explorer: [],
+  explorerGroups: [],
+  slashPattern: false,
+  boundaryPattern: false,
+  outline: { characters: "0", words: "0", readTime: Publr.t("< 1 minute"), rows: [] },
+  draft: null,
+  patternCard: null,
+  onPatternRoot: false,
+  insidePattern: false,
+  isolation: null,
+  hierarchy: [],
+  template: null,
+  document: { title: "", status: null, primary: null, actions: [], hasFeatured: false, featuredSrc: "", featuredAlt: "", slotLabel: "", languages: [], languageLabel: "" },
+  interaction: { on: false, classes: "" },
+  outputEditing: "",
+  outputData: "",
+  canPickMedia: false,
+};
+
+export const state = Publr.reactive({
+  ...EMPTY_VIEWS,
+  left: "",
+  inserterTab: "blocks",
+  listTab: "list",
+  query: "",
+  sidebar: "document",
+  sidebarOpen: true,
+  /** The canvas viewport: "" fills the pane, else a device of DEVICES. */
+  device: "",
+  /** Fit the device viewport to the pane; compare every breakpoint side by side. */
+  fit: false,
+  compare: false,
+  /** The live viewport as drawn: its box and its scale (fit and compare scale it down). */
+  viewportWidth: "100%",
+  viewportHeight: "100%",
+  outerWidth: "100%",
+  outerHeight: "100%",
+  scale: 1,
+  /** The compare stage: one surface per device, the live one included. */
+  surfaces: [] as { key: string; label: string; icon: string; breakpoint: string; range: string; order: number; first: boolean; height: string; inner: string; scale: string }[],
+  liveOrder: 0,
+  liveIcon: "device-desktop",
+  liveLabel: "",
+  liveBreakpoint: "",
+  liveRange: "",
+  dark: false,
+  /** The featured image menu's URL form. */
+  featuredUrlOpen: false,
+  featuredUrl: "",
+  featuredError: "",
+  /** The host gives ways to the design system and the moodboard. */
+  hasDesign: false,
+  hasMoodboard: false,
+  output: false,
+  slashOpen: false,
+  slashBlock: "",
+  slashQuery: "",
+  slashIndex: 0,
+  boundaryShown: false,
+  boundaryTop: 0,
+  boundaryLeft: 0,
+  boundaryWidth: 0,
+  boundaryMenu: false,
+  boundaryQuery: "",
+  focused: false,
+  copied: "",
+  /** The open box-model pane: its kind and the parts it edits, comma-joined. */
+  paneKind: "",
+  paneParts: "",
+  paneCustom: false,
+  paneTop: 0,
+  paneLeft: 0,
+  /** The block inspector: its tab, the sections toggled, rows in custom mode, Advanced picks. */
+  inspectorTab: "settings",
+  layoutOpen: true,
+  stylesAdvancedOpen: false,
+  sectionsOpen: "",
+  customRows: "",
+  optionalOn: "",
+  colorOpen: "",
+  colorTop: 0,
+  colorLeft: 0,
+  /** The border color picker's tier in the box pane. */
+  borderTier: "recommended",
+  /** A style option hovered: its preview beside the sidebar. */
+  previewShown: false,
+  previewTitle: "",
+  previewTop: 0,
+  previewLeft: 0,
+  /** The block toolbar's open menu (a declared control's index, "align", "more") and its link form. */
+  toolbarMenu: "",
+  /** The toolbar's form under a declared control: a link, a text, a media URL, or an upload. */
+  toolbarForm: false,
+  toolbarUpload: false,
+  toolbarFormIndex: 0,
+  toolbarFormValue: "",
+  toolbarFormLink: false,
+  toolbarFormTarget: false,
+  toolbarFormBlank: false,
+  /** The Design tab's add-token form, prefilled by Define…. */
+  tokenName: "",
+  tokenValue: "",
+  themeImport: "",
+  /** The Patterns tab: the open group ("" none, "all"), its search, the explorer. */
+  patternGroup: "",
+  patternQuery: "",
+  explorerOpen: false,
+  explorerCategory: "All",
+  explorerQuery: "",
+  /** The list view's drag: the dragged row, and the drop line under the pointer. */
+  dragging: "",
+  dropShown: false,
+  dropTop: 0,
+  dropLeft: 0,
+  /** A template part clicked in the projected template: "Edit original" offered. */
+  partMenu: "",
+  /** The toolbar's link popover. */
+  partMenuTop: 0,
+  partMenuLeft: 0,
+  partMenuLabel: "",
+  linkOpen: false,
+  linkValue: "",
+  linkBlank: false,
+  /** The host's own record editor is shown in an Entry panel. */
+  hasEntry: false,
+  /** Drawn inside another app (the design system builder): no top bar, the canvas fills. */
+  embedded: false,
+  get flyoutTitle(): string {
+    return state.patternQuery.trim() ? Publr.t("Search results") : state.patternGroup === "All" ? Publr.t("All") : state.patternGroup;
+  },
+  /** The flyout shows beside a Patterns tab with a group picked or a search typed. */
+  get flyoutShown(): boolean {
+    const tab = (state.left === "inserter" && state.inserterTab === "patterns") || (state.left === "list" && state.listTab === "patterns");
+    return tab && (state.patternGroup !== "" || state.patternQuery.trim() !== "");
+  },
+  get noResults(): boolean {
+    return state.shelves.length === 0;
+  },
+  get deviceWidth(): string {
+    return state.viewportWidth;
+  },
+  get documentTabLabel(): string {
+    return state.isolation?.kind === "copy" || state.isolation?.kind === "definition" ? Publr.t("Pattern") : Publr.t("Document");
+  },
+  get deviceLabel(): string {
+    const device = DEVICES.find((candidate) => candidate.key === state.device);
+    return device ? `${device.width}px` : "";
+  },
+});
+
+/** The device whose breakpoint the style controls read and write: the full canvas is Base. */
+const bp = (): Device => (state.device || "mobile") as Device;
+
+export const canvasHost = Publr.ref();
+export const area = Publr.ref();
+export const plusButton = Publr.ref();
+export const entryHost = Publr.ref();
+export const stage = Publr.ref();
+export const featuredInput = Publr.ref();
+
+let session: Session | null = null;
+let entry: HTMLElement | null = null;
+let boundary: Boundary | null = null;
+let menuBoundary: Boundary | null = null;
+let libraryPlace: Place | null = null;
+let overPlus = false;
+let lastActive: string | null = null;
+let apps: EditorApps = {};
+const frames = new Map<string, PreviewFrame>();
+
+/** Ways out to the other Publr apps, as the host gives them. */
+export type EditorApps = { design?: () => void; moodboard?: () => void };
+
+export type EditorShellProps = {
+  content: string;
+  canvasStylesheet: string;
+  policy?: PolicyConfig;
+  theme?: readonly ThemeToken[];
+  /** The theme's named text styles (Display, Title, ...). */
+  textStyles?: readonly TextStyle[];
+  siteStyles?: readonly string[];
+  /** Called with the editing serialization after every change to the document. */
+  onChange?: (html: string) => void;
+  templates?: TemplateHost;
+  media?: MediaHost;
+  onPatternPublished?: (name: string) => void;
+  /** Plain HTML content (a field written before the editor) opens as paragraphs. */
+  plain?: boolean;
+  /** The host's own editor for the record (status, actions, other fields): the Entry panel. */
+  entry?: HTMLElement;
+  /** `embedded`: inside another app, which draws its own bar: the canvas, the
+   * breadcrumb and the sidebar only, with `header` above the canvas. */
+  chrome?: "full" | "embedded";
+  header?: JSX.Element;
+  /** Hands the host the session once it exists (tests, host actions). */
+  onReady?: (session: Session) => void;
+  /** The document as the host presents it: name, status, actions, featured image. */
+  document?: DocumentHost;
+  /** The design system and the moodboard, when the host has them. */
+  apps?: EditorApps;
+  /** A page edited edge to edge, the site's own layout, rather than in a reading column. */
+  wide?: boolean;
+};
+
+/** Writes what the chrome shows into the store, from the session and the chrome's inputs. */
+function refresh(): void {
+  if (!session) return;
+  Object.assign(
+    state,
+    buildViews(session, {
+      query: state.query,
+      slashOpen: state.slashOpen,
+      slashBlock: state.slashBlock,
+      slashQuery: state.slashQuery,
+      boundary: state.boundaryMenu ? menuBoundary : null,
+      boundaryQuery: state.boundaryQuery,
+      libraryPlace,
+      inspector: {
+        tab: state.inspectorTab,
+        sections: Object.fromEntries(state.sectionsOpen.split(",").filter(Boolean).map((entry) => [entry.slice(1), entry[0] === "+"])),
+        customRows: state.customRows.split(",").filter(Boolean),
+        optional: state.optionalOn.split(",").filter(Boolean),
+        colorOpen: state.colorOpen,
+        device: bp(),
+        borderTier: state.borderTier,
+        paneKind: state.paneKind,
+        paneParts: state.paneParts.split(",").filter(Boolean),
+        paneTop: state.paneTop,
+        paneLeft: state.paneLeft,
+      },
+      patternGroup: state.patternGroup,
+      patternQuery: state.patternQuery,
+      explorerCategory: state.explorerCategory,
+      explorerQuery: state.explorerQuery,
+      left: state.left,
+      leftTab: state.left === "list" ? state.listTab : state.inserterTab,
+      output: state.output,
+      origin: (area.current as HTMLElement | null)?.getBoundingClientRect() ?? null,
+    }),
+  );
+  refreshFrames();
+  if (session?.isolation) sizeSheet();
+  if (session?.isolation && state.partMenu) requestAnimationFrame(() => partOnSelection(session?.editor.activeId ?? null));
+  else if (!state.device && state.viewportHeight !== "100%") layoutStage();
+}
+
+/** Creates the instance's session once, wiring its updates into the store. */
+export function start(props: EditorShellProps): void {
+  if (session) return;
+  entry = props.entry ?? null;
+  state.hasEntry = entry !== null;
+  apps = props.apps ?? {};
+  state.hasDesign = !!apps.design;
+  state.hasMoodboard = !!apps.moodboard;
+  state.dark = document.documentElement.classList.contains("dark");
+  state.embedded = props.chrome === "embedded";
+  session = new Session({
+    content: props.content,
+    policy: props.policy,
+    canvasStylesheet: props.canvasStylesheet,
+    theme: props.theme,
+    textStyles: props.textStyles,
+    siteStyles: props.siteStyles,
+    templates: props.templates,
+    media: props.media,
+    onPatternPublished: props.onPatternPublished,
+    plain: props.plain,
+    document: props.document,
+    wide: props.wide,
+  });
+  const current = session;
+  // The record's value is the document's own editor, never an isolated one (a template,
+  // a part or a pattern being edited), and it is reported only when it changed.
+  let reported = current.main.serialize("editing");
+  current.onUpdate((update) => {
+    if (update.kind === "model") {
+      const html = current.main.serialize("editing");
+      if (html !== reported) {
+        reported = html;
+        props.onChange?.(html);
+      }
+      followSelection();
+    } else if (update.kind === "selection") {
+      followSelection();
+    } else if (update.kind === "slash" && update.event?.type === "slash") {
+      state.slashOpen = update.event.open;
+      state.slashBlock = update.event.block;
+      state.slashQuery = update.event.query;
+      state.slashIndex = 0;
+    } else if (update.kind === "boundary" && update.event?.type === "boundary") {
+      showBoundary(update.event.boundary);
+      return;
+    } else if (update.kind === "scroll") {
+      state.boundaryShown = false;
+    } else if (update.kind === "part" && update.event?.type === "part") {
+      state.partMenu = update.event.name;
+      placePartMenu();
+      // A click on the template around the document leaves the document's blocks.
+      current.editor.select({ blocks: [], caret: null });
+      return;
+    } else if (update.kind === "focus" && update.event?.type === "focus") {
+      state.focused = update.event.inside;
+      return;
+    }
+    refresh();
+  });
+  refresh();
+  props.onReady?.(current);
+}
+
+/** Selecting a block opens the Block tab; deselecting falls back to Document (or Entry). */
+function followSelection(): void {
+  const active = session?.editor.activeId ?? null;
+  if (active !== lastActive) {
+    state.paneKind = "";
+    state.paneParts = "";
+    state.paneCustom = false;
+    state.colorOpen = "";
+    state.customRows = "";
+    state.previewShown = false;
+    state.toolbarMenu = "";
+    state.toolbarForm = false;
+    state.toolbarUpload = false;
+  }
+  const tab = active || (session?.editor.selection.blocks.length ?? 0) > 1 ? "block" : "document";
+  if (active && session?.selectedSlot) session.selectSlot("");
+  if (tab !== state.sidebar && (tab !== "block" || lastActive !== active) && !(state.sidebar === "design" && tab !== "block")) state.sidebar = tab;
+  if (active) session?.reveal(active);
+  lastActive = active;
+  partOnSelection(active);
+}
+
+function showBoundary(next: Boundary | null): void {
+  if (state.boundaryMenu) return;
+  if (next === null) {
+    // Leaving the frame for the + on the line must not take the line away.
+    setTimeout(() => {
+      if (!overPlus && !state.boundaryMenu) state.boundaryShown = false;
+    }, 200);
+    return;
+  }
+  boundary = next;
+  const origin = (area.current as HTMLElement | null)?.getBoundingClientRect();
+  state.boundaryTop = next.top - (origin?.top ?? 0);
+  state.boundaryLeft = next.left - (origin?.left ?? 0);
+  state.boundaryWidth = next.width;
+  state.boundaryShown = true;
+}
+
+export function hoverPlus(over: boolean): void {
+  overPlus = over;
+  if (!over && !state.boundaryMenu) setTimeout(() => !overPlus && !state.boundaryMenu && (state.boundaryShown = false), 200);
+}
+
+Publr.effect(() => {
+  const host = canvasHost.current as HTMLElement | null;
+  if (host && session && !session.canvas) {
+    session.mount(host);
+    session.canvas!.claimKeys((event) => slashKeys(event));
+    refresh();
+  }
+});
+
+// The stage's size decides how a fitted or compared viewport is scaled.
+Publr.effect(() => {
+  const element = stage.current as HTMLElement | null;
+  if (!element) return;
+  const observer = new ResizeObserver(() => layoutStage());
+  observer.observe(element);
+  return () => observer.disconnect();
+});
+
+Publr.effect(() => {
+  const host = entryHost.current as HTMLElement | null;
+  if (host && entry && entry.parentElement !== host) host.append(entry);
+});
+
+export function sessionOf(): Session {
+  return session!;
+}
+
+// ── the top bar and the left rail ───────────────────────────────────────
+
+export const undo = () => session?.editor.undo();
+export const redo = () => session?.editor.redo();
+
+export function toggleLeft(panel: string): void {
+  state.left = state.left === panel ? "" : panel;
+  state.query = "";
+  if (state.left !== "inserter") libraryPlace = null;
+  if (patternsBrowsing()) state.sidebarOpen = false;
+  refresh();
+}
+
+/** A Patterns surface is open: the right sidebar steps aside for its flyout. */
+function patternsBrowsing(): boolean {
+  return (state.left === "inserter" && state.inserterTab === "patterns") || (state.left === "list" && state.listTab === "patterns");
+}
+
+/** A rail tab: the Patterns tabs take the caret (their search) and fold the sidebar. */
+export function setInserterTab(tab: string): void {
+  state.inserterTab = tab;
+  if (tab === "patterns") state.sidebarOpen = false;
+  refresh();
+}
+
+export function setListTab(tab: string): void {
+  state.listTab = tab;
+  if (tab === "patterns") state.sidebarOpen = false;
+  refresh();
+}
+
+export function closeLeft(): void {
+  state.left = "";
+  libraryPlace = null;
+  ((plusButton.current as HTMLElement | null)?.querySelector("button") as HTMLElement | null)?.focus();
+}
+
+export function setQuery(query: string): void {
+  state.query = query;
+  refresh();
+}
+
+export function pick(type: string): void {
+  if (!session) return;
+  session.insert(type, libraryPlace);
+  libraryPlace = null;
+  session.canvas?.focus();
+}
+
+export function pickFirst(): void {
+  const first = state.shelves[0]?.items[0];
+  if (first) pick(first.type);
+}
+
+export function selectRow(id: string, event: MouseEvent): void {
+  if (!session) return;
+  if (id.startsWith("template:")) {
+    const part = session.selectTemplateNode(id);
+    if (part) {
+      state.partMenu = part;
+      placePartMenu();
+    }
+    return;
+  }
+  const editor = session.editor;
+  if (event.metaKey || event.ctrlKey) {
+    const ids = editor.selection.blocks.length > 0 ? editor.selection.blocks : editor.selection.caret ? [editor.selection.caret.block] : [];
+    editor.selectBlocks(ids.includes(id) ? ids.filter((candidate) => candidate !== id) : [...ids, id]);
+    return;
+  }
+  if (event.shiftKey && editor.activeId) {
+    const rows = session.treeRows().map((row) => row.id);
+    const from = rows.indexOf(editor.activeId);
+    const to = rows.indexOf(id);
+    if (from >= 0 && to >= 0) {
+      editor.selectBlocks(rows.slice(Math.min(from, to), Math.max(from, to) + 1));
+      return;
+    }
+  }
+  editor.selectBlocks([id]);
+}
+
+// ── the list view: dragging rows ────────────────────────────────────────
+
+let dragged: string | null = null;
+let drop: TreeDrop | null = null;
+
+export function rowDragStart(id: string, event: DragEvent): void {
+  if (!session || !event.dataTransfer) return;
+  dragged = id;
+  state.dragging = id;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("application/x-publr-block", id);
+  event.dataTransfer.setData("text/plain", id);
+  // A compact badge (the row's icon and a grip) instead of the whole row.
+  const row = (event.currentTarget as HTMLElement | null) ?? null;
+  const icon = row?.querySelector("[data-select-row] svg")?.cloneNode(true) as Element | undefined;
+  const preview = document.createElement("div");
+  preview.setAttribute("data-tree-drag-preview", "");
+  preview.className = mergeClasses("fixed -top-[1000px] -left-[1000px] z-50 flex h-11 min-w-[88px] items-center justify-around gap-2 rounded-md border border-border bg-popover px-2.5 py-1 text-popover-foreground shadow-[0_8px_24px_rgb(0_0_0/0.2)] pointer-events-none");
+  if (icon) preview.append(icon);
+  const grip = row?.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+  if (grip) {
+    grip.setAttribute("viewBox", "0 0 20 20");
+    grip.setAttribute("fill", "currentColor");
+    grip.setAttribute("class", nameOf("size-6"));
+    grip.innerHTML = '<circle cx="7" cy="5" r="1.35"/><circle cx="13" cy="5" r="1.35"/><circle cx="7" cy="10" r="1.35"/><circle cx="13" cy="10" r="1.35"/><circle cx="7" cy="15" r="1.35"/><circle cx="13" cy="15" r="1.35"/>';
+    preview.append(grip);
+  }
+  document.body.append(preview);
+  event.dataTransfer.setDragImage(preview, 44, 22);
+  setTimeout(() => preview.remove(), 0);
+}
+
+/** The drop line follows the pointer over the rows; near the panel's edges it scrolls. */
+export function rowsDragOver(event: DragEvent): void {
+  if (!session || !dragged) return;
+  event.preventDefault();
+  const rows = event.currentTarget as HTMLElement;
+  const items = [...rows.querySelectorAll<HTMLElement>("[data-tree-row]")];
+  if (items.length === 0) return;
+  const measured = items.map((item) => ({ item, rect: item.getBoundingClientRect() }));
+  const target =
+    measured.find(({ rect }) => event.clientY >= rect.top && event.clientY <= rect.bottom) ??
+    measured.reduce((near, next) => (Math.abs(event.clientY - (next.rect.top + next.rect.height / 2)) < Math.abs(event.clientY - (near.rect.top + near.rect.height / 2)) ? next : near));
+  const ratio = target.rect.height ? (event.clientY - target.rect.top) / target.rect.height : 0.5;
+  const depth = Number(target.item.dataset.depth ?? 0);
+  const intended = Math.max(0, Math.floor((event.clientX - target.rect.left - 4) / 20));
+  const targetId = target.item.dataset.treeRow ?? "";
+  // The template's content row holds the document: dropping on it means the document's end.
+  const next = targetId.startsWith("template:")
+    ? targetId.endsWith(":content")
+      ? { parent: null, slot: null, index: session.editor.model.blocks.length, depth: 1 }
+      : null
+    : session.treeDrop(dragged, targetId, ratio, intended, depth);
+  if (!next || session.isOrigin(dragged, next)) {
+    drop = null;
+    state.dropShown = false;
+  } else {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    drop = next;
+    placeDropLine(rows, items, next);
+  }
+  const panel = rows.parentElement;
+  if (panel) {
+    const box = panel.getBoundingClientRect();
+    if (event.clientY < box.top + 40) panel.scrollTop -= 12;
+    else if (event.clientY > box.bottom - 40) panel.scrollTop += 12;
+  }
+}
+
+/** The line sits at the top of the row the block would land before (or after the last of the destination). */
+function placeDropLine(rows: HTMLElement, items: HTMLElement[], at: TreeDrop): void {
+  const editor = session!.editor;
+  const list = (at.parent ? editor.getBlock(at.parent)?.slots?.[at.slot ?? ""] : editor.model.blocks) ?? [];
+  const following = list.filter((block) => block.id !== dragged)[at.index - (list.slice(0, at.index).some((block) => block.id === dragged) ? 1 : 0)];
+  const rowOf = (id: string) => items.find((item) => item.dataset.treeRow === id) ?? null;
+  const afterSubtree = (row: HTMLElement): HTMLElement | null => {
+    const depth = Number(row.dataset.depth ?? 0);
+    let next = items[items.indexOf(row) + 1] ?? null;
+    while (next && Number(next.dataset.depth ?? 0) > depth) next = items[items.indexOf(next) + 1] ?? null;
+    return next;
+  };
+  let boundaryRow: HTMLElement | null = following ? rowOf(following.id) : null;
+  if (!following && at.parent) {
+    const parentRow = rowOf(at.parent);
+    boundaryRow = parentRow ? afterSubtree(parentRow) : null;
+  } else if (!following) {
+    const contentRow = items.find((item) => (item.dataset.treeRow ?? "").endsWith(":content") && (item.dataset.treeRow ?? "").startsWith("template:"));
+    if (contentRow) boundaryRow = afterSubtree(contentRow);
+  }
+  const box = rows.getBoundingClientRect();
+  const y = boundaryRow ? boundaryRow.getBoundingClientRect().top : items[items.length - 1].getBoundingClientRect().bottom;
+  state.dropTop = y - box.top;
+  state.dropLeft = 28 + at.depth * 20;
+  state.dropShown = true;
+}
+
+export function rowsDrop(event: DragEvent): void {
+  if (!session || !dragged || !drop) return;
+  event.preventDefault();
+  const id = dragged;
+  const at = drop;
+  rowDragEnd();
+  session.dropAt(id, at);
+}
+
+export function rowDragEnd(): void {
+  dragged = null;
+  drop = null;
+  state.dragging = "";
+  state.dropShown = false;
+}
+
+export function toggleCollapsed(id: string): void {
+  session?.toggleCollapsed(id);
+  refresh();
+}
+
+export function selectPath(id: string): void {
+  if (id) session?.editor.selectBlocks([id]);
+  else session?.editor.select({ blocks: [], caret: null });
+}
+
+export function setSidebar(tab: string): void {
+  state.sidebar = tab;
+}
+
+/** Picks a device; the picked one again returns to the full canvas (never while comparing). */
+export function setDevice(device: string): void {
+  if (state.device === device) {
+    if (state.compare) return;
+    state.device = "";
+    state.fit = false;
+  } else state.device = device;
+  if (session) session.device = (state.device || "desktop") as never;
+  layoutStage();
+  refresh();
+}
+
+export function toggleFit(): void {
+  if (state.compare) return;
+  state.fit = !state.fit;
+  if (state.fit && !state.device) {
+    state.device = "desktop";
+    if (session) session.device = "desktop";
+  }
+  layoutStage();
+  refresh();
+}
+
+export function toggleCompare(): void {
+  state.compare = !state.compare;
+  // Comparing from the full canvas edits the base breakpoint first.
+  if (state.compare && !state.device) {
+    state.device = "mobile";
+    if (session) session.device = "mobile";
+  }
+  if (!state.compare) {
+    for (const frame of frames.values()) frame.destroy();
+    frames.clear();
+  }
+  layoutStage();
+  refresh();
+}
+
+/** Sizes the live viewport (and the compare surfaces) from the device, fit and the stage. */
+export function layoutStage(): void {
+  const element = stage.current as HTMLElement | null;
+  const device = DEVICES.find((candidate) => candidate.key === state.device);
+  const paneWidth = element?.clientWidth ?? 0;
+  const paneHeight = element?.clientHeight ?? 0;
+  let next: Partial<Pick<typeof state, "surfaces" | "liveOrder" | "liveIcon" | "liveLabel" | "liveBreakpoint" | "liveRange" | "scale" | "viewportWidth" | "viewportHeight" | "outerWidth" | "outerHeight">>;
+  if (state.compare && device) {
+    const visual = Math.max(420, paneHeight - COMPARE_CHROME);
+    const scale = Math.min(1, COMPARE_WIDTH / device.width);
+    next = {
+      // The other devices; the live one is drawn apart, since it holds the canvas frame.
+      surfaces: DEVICES.flatMap((candidate, order) => {
+        if (candidate.key === device.key) return [];
+        const own = Math.min(1, COMPARE_WIDTH / candidate.width);
+        return [{
+          key: candidate.key,
+          label: candidate.label,
+          icon: candidate.icon,
+          breakpoint: candidate.breakpoint,
+          range: candidate.range,
+          order,
+          first: order > 0,
+          scale: String(own),
+          height: `${Math.round(visual)}px`,
+          inner: `${Math.round(visual / own)}px`,
+        }];
+      }),
+      liveOrder: DEVICES.findIndex((candidate) => candidate.key === device.key),
+      liveIcon: device.icon,
+      liveLabel: device.label,
+      liveBreakpoint: device.breakpoint,
+      liveRange: device.range,
+      scale,
+      viewportWidth: `${device.width}px`,
+      viewportHeight: `${Math.round(visual / scale)}px`,
+      outerWidth: `${Math.round(device.width * scale)}px`,
+      outerHeight: `${Math.round(visual)}px`,
+    };
+  } else if (!device) {
+    next = { surfaces: [], liveOrder: 0, scale: 1, viewportWidth: "100%", viewportHeight: "100%", outerWidth: "100%", outerHeight: "100%" };
+  } else {
+    // A device's viewport sits in a 12px gutter; Fit scales it down to the pane.
+    const scale = state.fit ? Math.min(1, Math.max(1, paneWidth - 24) / device.width) : 1;
+    const height = Math.max(1, paneHeight - 24);
+    next = {
+      surfaces: [],
+      liveOrder: 0,
+      scale,
+      viewportWidth: `${device.width}px`,
+      viewportHeight: scale < 1 ? `${Math.round(height / scale)}px` : "100%",
+      outerWidth: `${Math.round(device.width * scale)}px`,
+      outerHeight: scale < 1 ? `${height}px` : "100%",
+    };
+  }
+  // Only what changed is written: a redraw of the surfaces remounts their frames.
+  for (const [key, value] of Object.entries(next) as [keyof typeof next, never][]) {
+    if (JSON.stringify(state[key]) !== JSON.stringify(value)) (state as Record<string, unknown>)[key] = value;
+  }
+  // An isolated sheet keeps its own height when the pane resizes under it.
+  if (session?.isolation) sizeSheet();
+}
+
+/** A compare surface becomes the live editor. */
+export function promoteSurface(key: string): void {
+  if (key === state.device) return;
+  state.device = key;
+  if (session) session.device = key as never;
+  frames.get(key)?.destroy();
+  frames.delete(key);
+  layoutStage();
+  refresh();
+}
+
+/** Mounts a compare surface's preview frame (a ref callback). */
+export function surfaceFrame(host: Element | null, key: string): void {
+  if (!host || !session) return;
+  const device = DEVICES.find((candidate) => candidate.key === key);
+  if (!device) return;
+  frames.get(key)?.destroy();
+  const current = session;
+  // The surface's host joins the page after the ref runs: the frame waits for it.
+  const attach = () => {
+    if (!state.compare) return;
+    if (!host.isConnected) return void requestAnimationFrame(attach);
+    frames.set(key, mountFrame(host as HTMLElement, current.previewHtml(), current.siteStyles, current.theme.tokens, device.width, current.canvasStylesheet));
+  };
+  requestAnimationFrame(attach);
+}
+
+let framesTimer = 0;
+
+/** Redraws the compare previews a moment after the document settles. */
+function refreshFrames(): void {
+  if (!state.compare || frames.size === 0 || !session) return;
+  clearTimeout(framesTimer);
+  const current = session;
+  framesTimer = window.setTimeout(() => {
+    const html = current.previewHtml();
+    for (const frame of frames.values()) frame.update(html);
+  }, 150);
+}
+
+export function toggleSidebar(): void {
+  state.sidebarOpen = !state.sidebarOpen;
+}
+
+export function openApp(app: "design" | "moodboard"): void {
+  apps[app]?.();
+}
+
+/** The top bar's language menu: the canvas shows the document in another language. */
+export function setLanguage(code: string): void {
+  session?.document?.setLanguage?.(code);
+  refresh();
+}
+
+/** The Options menu's appearance: light (checked) or dark. */
+export function toggleAppearance(): void {
+  state.dark = !state.dark;
+  document.documentElement.classList.toggle("dark", state.dark);
+  try {
+    localStorage.setItem("publr.appearance", state.dark ? "dark" : "light");
+  } catch {
+    // The choice lasts as long as the page without storage.
+  }
+}
+
+export async function copyHtml(pipeline: "editing" | "data"): Promise<void> {
+  await navigator.clipboard?.writeText(session?.editor.serialize(pipeline) ?? "");
+}
+
+/** The editing hierarchy: an earlier crumb returns to it, the levels inside it discarded. */
+export function openCrumb(index: number): void {
+  session?.returnTo(index);
+  refresh();
+}
+
+// ── the Document tab ────────────────────────────────────────────────────
+
+export function runDocumentAction(id: string): void {
+  session?.document?.run?.(id);
+}
+
+export function selectSlot(name: string): void {
+  session?.selectSlot(session.selectedSlot === name ? "" : name);
+  state.sidebar = "document";
+}
+
+export function openFeaturedUrl(): void {
+  state.featuredUrl = state.document.featuredSrc;
+  state.featuredUrlOpen = !state.featuredUrlOpen;
+}
+
+export function closeFeaturedUrl(): void {
+  state.featuredUrlOpen = false;
+  state.featuredError = "";
+}
+
+export function setFeaturedUrl(url: string): void {
+  state.featuredUrl = url;
+}
+
+export function applyFeaturedUrl(event: Event): void {
+  event.preventDefault();
+  const url = state.featuredUrl.trim();
+  if (!url) return;
+  state.featuredUrlOpen = false;
+  session?.setFeaturedImage({ src: url, alt: "", width: "", height: "" });
+}
+
+export function resetFeatured(): void {
+  state.featuredUrlOpen = false;
+  session?.setFeaturedImage(null);
+}
+
+export function uploadFeatured(event: Event): void {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file || !session) return;
+  const current = session;
+  state.featuredError = "";
+  if (current.media) {
+    current.media
+      .upload(file)
+      .then((value) => current.setFeaturedImage(value))
+      .catch((error) => (state.featuredError = error instanceof Error ? error.message : String(error)));
+    return;
+  }
+  current.setFeaturedImage({ src: URL.createObjectURL(file), alt: "", width: "", height: "" });
+}
+
+export function browseFeatured(): void {
+  const current = session;
+  current?.media?.pick?.("image").then((value) => value && current.setFeaturedImage(value));
+}
+
+export function toggleOutput(): void {
+  state.output = !state.output;
+  refresh();
+}
+
+export function preview(): void {
+  if (!session) return;
+  const html = session.previewHtml();
+  const view = window.open("", "_blank");
+  if (!view) return;
+  view.document.open();
+  const styles = session.siteStyles.map((href) => `<link rel="stylesheet" href="${new URL(href, document.baseURI).href}">`).join("");
+  view.document.write(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Preview</title>${styles}<body>${html}</body>`);
+  view.document.close();
+}
+
+export async function copyOutput(pipeline: "editing" | "data"): Promise<void> {
+  await navigator.clipboard?.writeText(session?.editor.serialize(pipeline) ?? "");
+  state.copied = pipeline;
+}
+
+// ── the toolbar ─────────────────────────────────────────────────────────
+
+export function format(mark: MarkName): void {
+  session?.format(mark);
+}
+
+/** Opens the link popover over the selected text; the canvas keeps its selection meanwhile. */
+export function link(): void {
+  if (!session) return;
+  state.linkValue = session.canvas?.formatState()?.link ?? "";
+  state.linkBlank = session.canvas?.formatState()?.linkTarget === "_blank";
+  state.linkOpen = true;
+}
+
+export function applyLink(href: string, blank = false): void {
+  state.linkOpen = false;
+  if (!session) return;
+  const caret = session.editor.selection.caret;
+  if (!caret || caret.start === caret.end) return;
+  session.editor.format(caret.block, caret.field, caret.start, caret.end, "link", href.trim() || undefined, blank ? "_blank" : "");
+  session.canvas?.restoreSelection();
+}
+
+export function closeLink(): void {
+  state.linkOpen = false;
+  session?.canvas?.restoreSelection();
+}
+
+export function move(delta: number): void {
+  const id = session?.editor.activeId;
+  if (id) session!.editor.moveBlock(id, delta);
+}
+
+export function setAlign(align: string): void {
+  const block = session?.activeBlock;
+  if (block) session!.setAlignment(block, state.alignment === align ? "" : align);
+}
+
+export function duplicate(): void {
+  if (session) session.editor.duplicate(session.targetIds());
+}
+
+export function remove(): void {
+  if (session) session.editor.removeBlocks(session.targetIds());
+}
+
+export function group(): void {
+  if (session) session.editor.group(session.targetIds());
+}
+
+export function ungroup(): void {
+  const id = session?.editor.activeId;
+  if (id) session!.editor.ungroup(id);
+}
+
+export function selectParent(): void {
+  const path = state.breadcrumb;
+  if (path.length > 1) session?.editor.selectBlocks([path[path.length - 2].id]);
+}
+
+// ── block controls and media ────────────────────────────────────────────
+
+export function applyControl(key: string, value: unknown): void {
+  const block = session?.activeBlock;
+  const type = block ? blockType(block.type) : null;
+  const spec = type?.settings?.[Number(key)];
+  if (!session || !block || !spec) return;
+  const editor = session.editor;
+  const typing = spec.control === "text" || spec.control === "url" || spec.control === "number";
+  if (spec.transform) editor.transformBlock(block.id, String(value));
+  else if (spec.style !== undefined) editor.setClasses(block.id, writeStyleSetting(block, spec.style, typeof value === "boolean" ? String(value) : String(value), session.theme, bp()));
+  else if (spec.setting !== undefined) {
+    // Turning a Caption (or Citation, Header section) off clears what it shows.
+    if (spec.clears && value === false && String(block.fields[spec.clears] ?? "").trim() !== "") editor.setField(block.id, spec.clears, "");
+    editor.setSetting(block.id, spec.setting, value, { key: typing ? `${block.id}:setting:${spec.setting}` : null });
+  }
+  else if (spec.field !== undefined) {
+    const current = block.fields[spec.field];
+    const next = isImageValue(current) ? { ...current, src: String(value) } : String(value);
+    editor.setField(block.id, spec.field, next, { key: typing ? `${block.id}:field:${spec.field}` : null });
+  }
+}
+
+function mediaField(key: string): { id: string; field: string; type: string } | null {
+  const block = session?.activeBlock;
+  const spec = block ? blockType(block.type)?.settings?.[Number(key)] : undefined;
+  return block && spec?.field ? { id: block.id, field: spec.field, type: block.type } : null;
+}
+
+export function applyMedia(key: string, part: "src" | "alt", value: string): void {
+  const target = mediaField(key);
+  const current = target ? session!.editor.getBlock(target.id)?.fields[target.field] : null;
+  if (!target || !isImageValue(current)) return;
+  const next = part === "src" ? { src: value, alt: current.alt, width: "", height: "" } : { ...current, alt: value };
+  session!.editor.setField(target.id, target.field, next, { key: `${target.id}:media:${part}` });
+}
+
+export function removeMedia(key: string): void {
+  const target = mediaField(key);
+  if (target) session!.editor.setField(target.id, target.field, { src: "", alt: "", width: "", height: "" });
+}
+
+/** Uploads a picked file through the host's media library (in a bare page, an object URL). */
+export function uploadMedia(key: string, event: Event): void {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  const target = mediaField(key);
+  if (!file || !target || !session) return;
+  const editor = session.editor;
+  if (session.media) {
+    session.media.upload(file).then((value) => editor.setField(target.id, target.field, value));
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => editor.setField(target.id, target.field, { src: url, alt: "", width: String(image.naturalWidth), height: String(image.naturalHeight) });
+  image.onerror = () => editor.setField(target.id, target.field, { src: url, alt: "", width: "", height: "" });
+  image.src = url;
+}
+
+export function pickMedia(key: string): void {
+  const target = mediaField(key);
+  if (!target || !session?.media?.pick) return;
+  const editor = session.editor;
+  const kind = target.type === "video" ? "video" : target.type === "audio" ? "audio" : "image";
+  session.media.pick(kind).then((value) => value && editor.setField(target.id, target.field, value));
+}
+
+/** The one interaction preset: toggle classes on click (a PublrJS `local:toggle` store). */
+export function setToggleInteraction(on: boolean, classes: string): void {
+  const block = session?.activeBlock;
+  if (!block || !session) return;
+  const next = { ...block.interactions };
+  for (const name of ["data-p-store", "data-p-on", "data-p-class"]) delete next[name];
+  if (on) Object.assign(next, { "data-p-store": "local:toggle", "data-p-on": "click: flip", "data-p-class": `open -> ${classes.trim()}` });
+  session.editor.setInteractions(block.id, next);
+}
+
+// ── the block inspector ─────────────────────────────────────────────────
+
+export const previewHost = Publr.ref();
+
+export function setInspectorTab(tab: string): void {
+  state.inspectorTab = tab;
+  refresh();
+}
+
+/** Opens or closes a settings section (Advanced starts closed, the rest open). */
+export function toggleSection(key: string, open: boolean): void {
+  const kept = state.sectionsOpen.split(",").filter((entry) => entry && entry.slice(1) !== key);
+  state.sectionsOpen = [...kept, `${open ? "-" : "+"}${key}`].join(",");
+  refresh();
+}
+
+/** A pattern copy's Style: its semantic colors moved to another context, one undo step each block. */
+export function applyPatternContext(key: string): void {
+  const card = state.patternCard;
+  const root = card ? session?.editor.getBlock(card.id) : null;
+  if (!session || !root) return;
+  for (const change of withPatternContext(root, session.theme, key)) session.editor.setClasses(change.id, change.classes);
+}
+
+export function toggleStylesAdvanced(): void {
+  state.stylesAdvancedOpen = !state.stylesAdvancedOpen;
+}
+
+export function toggleLayoutSection(): void {
+  state.layoutOpen = !state.layoutOpen;
+}
+
+/** Section actions → Reset: every setting of the role back to its default. */
+export function resetSection(role: string): void {
+  const block = session?.activeBlock;
+  const type = block ? blockType(block.type) : null;
+  if (!session || !block || !type) return;
+  const specs = (type.settings ?? []).filter((spec) => (spec.role ?? (spec.field ? "content" : "advanced")) === role);
+  const settings = { ...block.settings };
+  let classes = block.classes;
+  for (const spec of specs) {
+    if (spec.setting !== undefined) delete settings[spec.setting];
+    if (spec.style !== undefined) classes = writeStyleSetting({ ...block, classes }, spec.style, String(spec.default ?? ""), session.theme, bp());
+  }
+  session.editor.setSettings(block.id, settings);
+  if (classes !== block.classes) session.editor.setClasses(block.id, classes);
+}
+
+/** A panel's actions → Reset: the panel's props cleared. */
+export function resetStylePanel(panel: string): void {
+  const block = session?.activeBlock;
+  if (block) session!.editor.setClasses(block.id, resetPanel(block, session!.theme, bp(), panel));
+}
+
+/** A scale option: picking the chosen one again clears it ("" is Default). */
+export function setProp(prop: string, key: string): void {
+  const row = [...state.inspector.styles.typography, ...state.inspector.styles.dimensions, ...state.inspector.layout, ...(state.inspector.styles.fontSize ? [state.inspector.styles.fontSize] : [])].find((candidate) => candidate.prop === prop);
+  const block = session?.activeBlock;
+  if (!block) return;
+  const again = !!row && row.value === key;
+  applyProp(session!.editor, block, session!.theme, bp(), prop, key && !again ? { key } : null);
+}
+
+export function setPropCustom(prop: string, text: string): void {
+  const block = session?.activeBlock;
+  if (!block) return;
+  const value = text.trim();
+  const row = [...state.inspector.styles.typography, ...state.inspector.styles.dimensions, ...state.inspector.layout, ...(state.inspector.styles.fontSize ? [state.inspector.styles.fontSize] : [])].find((candidate) => candidate.prop === prop);
+  const known = row?.options.find((option) => option.key === value);
+  applyProp(session!.editor, block, session!.theme, bp(), prop, !value ? null : known ? { key: value } : { custom: value });
+}
+
+/** A range step: 0 clears, n picks the scale's nth option. */
+export function setPropStep(prop: string, event: Event): void {
+  const row = [...state.inspector.styles.typography, ...state.inspector.styles.dimensions, ...state.inspector.layout].find((candidate) => candidate.prop === prop);
+  const block = session?.activeBlock;
+  if (!row || !block) return;
+  const index = Number((event.target as HTMLInputElement).value);
+  const option = row.options[index - 1];
+  applyProp(session!.editor, block, session!.theme, bp(), prop, option ? { key: option.key } : null, `${block.id}:prop:${prop}`);
+}
+
+export function toggleCustomRow(prop: string): void {
+  const rows = state.customRows.split(",").filter(Boolean);
+  state.customRows = (rows.includes(prop) ? rows.filter((row) => row !== prop) : [...rows, prop]).join(",");
+  refresh();
+}
+
+/** The custom editor's number, unit or range: written as one CSS length. */
+export function setPropLength(prop: string, part: "number" | "unit", event: Event): void {
+  const row = [...state.inspector.styles.typography, ...state.inspector.styles.dimensions, ...state.inspector.layout].find((candidate) => candidate.prop === prop);
+  const block = session?.activeBlock;
+  if (!row || !block) return;
+  const value = (event.target as HTMLInputElement).value;
+  const number = part === "number" ? value : row.customNumber || "0";
+  const unit = part === "unit" ? value : row.customUnit;
+  applyProp(session!.editor, block, session!.theme, bp(), prop, number === "" ? null : { custom: `${number}${unit}` }, `${block.id}:prop:${prop}`);
+}
+
+export function setVariation(name: string): void {
+  const block = session?.activeBlock;
+  if (block) applyVariation(session!.editor, block, name);
+}
+
+export function setTextStyle(key: string): void {
+  const block = session?.activeBlock;
+  if (block) session!.editor.setClasses(block.id, withTextStyle(block, session!.theme, bp(), key));
+}
+
+export function setFontFamily(key: string): void {
+  const block = session?.activeBlock;
+  if (block) applyProp(session!.editor, block, session!.theme, bp(), "fontFamily", key === "default" ? null : { key });
+}
+
+/** Opens a color control's picker beside the sidebar, at the control's height. */
+export function openColor(prop: string, event: MouseEvent): void {
+  if (state.colorOpen === prop) {
+    state.colorOpen = "";
+  } else {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    state.colorOpen = prop;
+    state.colorLeft = Math.max(12, rect.left - 286 - 12);
+    state.colorTop = Math.max(12, Math.min(rect.top, window.innerHeight - 160));
+  }
+  refresh();
+}
+
+export function pickColor(prop: string, key: string): void {
+  const block = session?.activeBlock;
+  if (!block) return;
+  const row = state.inspector.styles.colors.find((candidate) => candidate.prop === prop);
+  const again = !!row?.swatches.find((swatch) => swatch.key === key)?.pressed;
+  applyProp(session!.editor, block, session!.theme, bp(), prop, key && !again ? { key } : null);
+}
+
+/** Dimensions → "Set all to 0": the text block's inherited element spacing overridden. */
+export function zeroTextSpacing(): void {
+  const block = session?.activeBlock;
+  if (!block || !session) return;
+  let next = block;
+  for (const prop of ["padding", "margin"]) next = { ...next, classes: writeStyleSetting(next, prop, "0", session.theme, bp()) };
+  session.editor.setClasses(block.id, next.classes);
+}
+
+/** Advanced: a less common control turned on (or off, clearing its value). */
+export function toggleOptional(prop: string, enabled: boolean): void {
+  const block = session?.activeBlock;
+  if (!block || !session) return;
+  const key = `${block.id}:${prop}`;
+  const on = state.optionalOn.split(",").filter((entry) => entry && entry !== key);
+  state.optionalOn = (enabled ? on : [...on, key]).join(",");
+  if (enabled) applyProp(session.editor, block, session.theme, bp(), prop, null);
+  refresh();
+}
+
+/** Shows a style option's preview beside the sidebar: the block with that option applied. */
+export function showPreview(kind: string, key: string, label: string, event: PointerEvent): void {
+  const block = session?.activeBlock;
+  if (!block || !session) return;
+  const classes =
+    kind === "variation"
+      ? writeVariationOf(block, key)
+      : kind === "textStyle"
+        ? withTextStyle(block, session.theme, bp(), key)
+        : writeStyleSetting(block, "fontFamily", key === "default" ? "" : key, session.theme, bp());
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const sidebar = (event.currentTarget as HTMLElement).closest("[data-sidebar]")?.getBoundingClientRect();
+  state.previewTitle = label;
+  state.previewLeft = Math.max(12, (sidebar?.left ?? rect.left) - 12 - 300);
+  state.previewTop = Math.max(12, rect.top);
+  state.previewShown = true;
+  const current = session;
+  queueMicrotask(() => {
+    const host = previewHost.current as HTMLElement | null;
+    if (host) mountPreview(host, downcast([{ ...block, classes }], "data"), current.siteStyles, current.theme.tokens, { padding: "20px", width: 298 });
+  });
+}
+
+function writeVariationOf(block: { type: string; classes: string }, name: string): string {
+  const variations = blockType(block.type)?.variations ?? [];
+  const owned = new Set(variations.flatMap((variation) => variation.classes.split(/\s+/)));
+  const kept = block.classes.split(/\s+/).filter((entry) => entry && !owned.has(entry));
+  const chosen = variations.find((variation) => variation.name === name);
+  return [...kept, ...(chosen ? chosen.classes.split(/\s+/) : [])].join(" ");
+}
+
+export function hidePreview(): void {
+  state.previewShown = false;
+}
+
+export function setLayout(patch: Partial<Layout>): void {
+  const block = session?.activeBlock;
+  if (block) applyLayout(session!.editor, block, bp(), patch);
+}
+
+export function setRawClasses(classes: string): void {
+  const block = session?.activeBlock;
+  if (block) session!.editor.setClasses(block.id, classes, { key: `${block.id}:classes` });
+}
+
+/**
+ * A click on a box-model value: opens the pane for that part beside the box model, or
+ * with Shift adds or removes the part (same kind only; another kind starts over); the
+ * same click again closes.
+ */
+export function pickPart(kind: BoxKind, part: string, extend: boolean): void {
+  const parts = state.paneParts ? state.paneParts.split(",") : [];
+  if (extend && state.paneKind === kind) {
+    const next = parts.includes(part) ? parts.filter((candidate) => candidate !== part) : [...parts, part];
+    state.paneParts = next.join(",");
+    if (next.length === 0) state.paneKind = "";
+  } else if (state.paneKind === kind && parts.length === 1 && parts[0] === part) {
+    closePane();
+    return;
+  } else {
+    state.paneKind = kind;
+    state.paneParts = part;
+    state.paneCustom = false;
+    const box = document.querySelector("[data-sidebar] [data-part='box-model']")?.getBoundingClientRect();
+    if (box) {
+      state.paneLeft = Math.max(12, box.left - 286 - 12);
+      state.paneTop = Math.max(12, Math.min(box.top, window.innerHeight - 220));
+    }
+  }
+  refresh();
+}
+
+export function closePane(): void {
+  state.paneKind = "";
+  state.paneParts = "";
+  state.paneCustom = false;
+  refresh();
+}
+
+/** The pane's own sync buttons: its selection, in the BoxControl's words. */
+export function paneSelection(event: Event): void {
+  const selection = (event as CustomEvent<string>).detail;
+  if (!selection || !state.paneKind) return;
+  state.paneParts = partsOf(state.paneKind, selection).join(",");
+  refresh();
+}
+
+export function syncAll(): void {
+  state.paneParts = (state.paneKind === "radius" ? ["tl", "tr", "br", "bl"] : ["top", "right", "bottom", "left"]).join(",");
+  refresh();
+}
+
+/** The pane's range: 0 is None, n the scale's nth step. */
+export function setPaneStep(event: Event): void {
+  if (!session || !state.paneKind) return;
+  const index = Number((event.target as HTMLInputElement).value);
+  setPaneKey(boxScale(session.theme, state.paneKind as BoxKind)[index - 1]?.key ?? "");
+}
+
+/** Writes a scale step by its key ("" is None) over the pane's parts. */
+export function setPaneKey(key: string): void {
+  const block = session?.activeBlock;
+  const kind = state.paneKind as BoxKind;
+  if (!block || !kind || !session) return;
+  applyBox(session.editor, block, session.theme, kind, state.paneParts.split(","), key ? { key } : null, bp());
+}
+
+/** The pane's custom value: the number, unit or text the BoxControl sends. */
+export function setPaneCustom(event: Event): void {
+  const block = session?.activeBlock;
+  const kind = state.paneKind as BoxKind;
+  if (!block || !kind || !session) return;
+  const target = event.target as HTMLInputElement | HTMLSelectElement;
+  const raw = target.value.trim();
+  const value = target.tagName === "SELECT" ? `${state.pane.customNumber || "0"}${raw}` : target.type === "number" || target.type === "range" ? (raw === "" ? "" : `${raw}${state.pane.customUnit}`) : raw;
+  applyBox(session.editor, block, session.theme, kind, state.paneParts.split(","), value ? { custom: value } : null, bp());
+}
+
+export function setBorderTier(tier: string): void {
+  state.borderTier = tier;
+  refresh();
+}
+
+/** The custom tier's color well or text: any CSS color. */
+export function setBorderCustom(event: Event): void {
+  const block = session?.activeBlock;
+  const value = (event.target as HTMLInputElement).value.trim();
+  if (block && session) applyProp(session.editor, block, session.theme, bp(), "borderColor", value ? { custom: value } : null);
+}
+
+/** The responsive track: a point jumps the canvas to its breakpoint's device. */
+export function jumpToBreakpoint(device: string): void {
+  const target = device === "mobile" ? "mobile" : device;
+  if (state.device !== target) setDevice(target);
+}
+
+/** A changed range's reset: the breakpoint's own values cleared. */
+export function resetResponsive(prop: string, variant: string): void {
+  const block = session?.activeBlock;
+  if (block && session) session.editor.setClasses(block.id, clearAtVariant(block, session.theme, prop, variant as never));
+}
+
+/** Arrow keys on a changed point move its change to the neighbouring breakpoint. */
+export function moveResponsive(prop: string, variant: string, event: KeyboardEvent): void {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const block = session?.activeBlock;
+  if (!block || !session) return;
+  const order = ["", "md:", "lg:"];
+  const to = order[order.indexOf(variant) + (event.key === "ArrowLeft" ? -1 : 1)];
+  if (to === undefined || to === "") return;
+  event.preventDefault();
+  session.editor.setClasses(block.id, moveVariant(block, session.theme, prop, variant as never, to as never));
+}
+
+export function pickBorderColor(key: string): void {
+  const block = session?.activeBlock;
+  if (!block || !session) return;
+  const { swatches } = swatchesFor("borderColor", block, session.theme, session.editor.path(block.id), bp());
+  const again = !!swatches.find((swatch) => swatch.key === key)?.pressed;
+  applyProp(session.editor, block, session.theme, bp(), "borderColor", again ? null : { key });
+}
+
+export { selectionLabel };
+
+// ── the block toolbar's declared controls ───────────────────────────────
+
+/** Opens (or closes) a declared control's form under the toolbar: `form:3`, `url:2`, `upload:2`. */
+export function toggleToolbarMenu(name: string): void {
+  const open = name && state.toolbarMenu !== name ? name : "";
+  state.toolbarMenu = open;
+  const [kind, at] = open.split(":");
+  const index = Number(at ?? 0);
+  const block = session?.activeBlock;
+  const type = block ? blockType(block.type) : null;
+  const spec = type?.toolbar?.[index];
+  state.toolbarForm = !!spec && (kind === "form" || kind === "url");
+  state.toolbarUpload = !!spec && kind === "upload";
+  state.toolbarFormIndex = index;
+  state.toolbarFormLink = spec?.control === "link" || kind === "url";
+  state.toolbarFormTarget = spec?.control === "link" && !!spec.targetSetting;
+  if (!block || !type || !spec) return;
+  const settings = { ...type.defaults, ...block.settings };
+  const raw = spec.field ? block.fields[spec.field] : spec.setting ? settings[spec.setting] : "";
+  state.toolbarFormValue = isImageValue(raw) ? raw.src : typeof raw === "string" ? raw : "";
+  state.toolbarFormBlank = !!spec.targetSetting && settings[spec.targetSetting] === "_blank";
+}
+
+/** A declared toolbar control's action (toggles, add-child, copy). */
+export function toolbarAction(index: number): void {
+  const block = session?.activeBlock;
+  const spec = block ? blockType(block.type)?.toolbar?.[index] : undefined;
+  if (!session || !block || !spec) return;
+  const editor = session.editor;
+  const type = blockType(block.type)!;
+  if (spec.control === "caption" && spec.setting && spec.field) {
+    const on = state.toolbarControls.find((control) => control.index === index)?.pressed;
+    if (on) {
+      editor.setField(block.id, spec.field, "");
+      editor.setSetting(block.id, spec.setting, false);
+    } else editor.setSetting(block.id, spec.setting, true);
+  } else if (spec.control === "toggle-setting" && spec.setting) {
+    const current = { ...type.defaults, ...block.settings }[spec.setting];
+    editor.setSetting(block.id, spec.setting, !current);
+  } else if (spec.control === "toggle-style" && spec.style) {
+    const on = state.toolbarControls.find((control) => control.index === index)?.pressed;
+    applyProp(editor, block, session.theme, bp(), spec.style, on ? null : { key: spec.value ?? "" });
+  } else if (spec.control === "add-child" && spec.type) {
+    const slot = type.slots[0];
+    if (slot) editor.insertType(spec.type, { parent: block.id, slot, index: block.slots?.[slot]?.length ?? 0 });
+  } else if (spec.control === "copy" && spec.field) {
+    const value = block.fields[spec.field];
+    if (typeof value === "string") void navigator.clipboard?.writeText(value);
+  }
+}
+
+/** A declared toolbar menu's option: a field, setting or style value ("again" clears a style). */
+export function toolbarOption(index: number, value: string): void {
+  const block = session?.activeBlock;
+  const spec = block ? blockType(block.type)?.toolbar?.[index] : undefined;
+  state.toolbarMenu = "";
+  if (!session || !block || !spec) return;
+  const editor = session.editor;
+  if (spec.control === "field-options" && spec.field) editor.setField(block.id, spec.field, value);
+  else if (spec.control === "setting-options" && spec.setting) editor.setSetting(block.id, spec.setting, value);
+  else if (spec.control === "style-options" && spec.style) {
+    const pressed = state.toolbarControls.find((control) => control.index === index)?.options.find((option) => option.value === value)?.pressed;
+    editor.setClasses(block.id, writeStyleSetting(block, spec.style, pressed && !spec.style.startsWith("container") ? "" : value, session.theme, bp()));
+  }
+}
+
+/** A declared text or link control's form: written to its field or setting. */
+export function toolbarText(index: number, value: string, target = ""): void {
+  const block = session?.activeBlock;
+  const spec = block ? blockType(block.type)?.toolbar?.[index] : undefined;
+  state.toolbarMenu = "";
+  if (!session || !block || !spec) return;
+  state.toolbarForm = false;
+  const current = spec.field ? block.fields[spec.field] : null;
+  if (spec.control === "replace" && spec.field && isImageValue(current)) session.editor.setField(block.id, spec.field, { src: value.trim(), alt: current.alt, width: "", height: "" });
+  else if (spec.field) session.editor.setField(block.id, spec.field, value);
+  else if (spec.setting) session.editor.setSetting(block.id, spec.setting, value);
+  if (spec.targetSetting && target) session.editor.setSetting(block.id, spec.targetSetting, target);
+}
+
+/** Replace → Media Library / Upload / Reset for a declared replace control. */
+export function toolbarMedia(index: number, action: "pick" | "upload" | "reset", event?: Event): void {
+  const block = session?.activeBlock;
+  const spec = block ? blockType(block.type)?.toolbar?.[index] : undefined;
+  state.toolbarMenu = "";
+  state.toolbarUpload = false;
+  if (!session || !block || !spec?.field) return;
+  const settingIndex = (blockType(block.type)?.settings ?? []).findIndex((candidate) => candidate.field === spec.field);
+  if (action === "reset") removeMedia(String(settingIndex));
+  else if (action === "pick") pickMedia(String(settingIndex));
+  else if (event) uploadMedia(String(settingIndex), event);
+}
+
+// ── the theme (Design tab) ──────────────────────────────────────────────
+
+/** The token a utility class would need: `text-xxxxl` → `text-xxxxl`, `bg-brand` → `color-brand`. */
+export function tokenFor(name: string): string {
+  const utility = name.slice(name.lastIndexOf(":") + 1);
+  const rules: [RegExp, string][] = [
+    [/^(?:bg|border|ring|fill|stroke|decoration|outline|accent|caret|from|via|to)-(.+)$/, "color-"],
+    [/^(?:p[xytrbl]?|m[xytrbl]?|gap(?:-[xy])?|space-[xy]|w|h|min-[wh]|max-[wh]|size|inset|top|right|bottom|left)-(.+)$/, "spacing-"],
+    [/^rounded(?:-[trbl]{1,2})?-(.+)$/, "radius-"],
+    [/^leading-(.+)$/, "leading-"],
+    [/^tracking-(.+)$/, "tracking-"],
+    [/^font-(.+)$/, "font-"],
+    [/^text-(.+)$/, "text-"],
+  ];
+  for (const [pattern, prefix] of rules) {
+    const match = pattern.exec(utility);
+    if (match) return prefix + match[1];
+  }
+  return utility;
+}
+
+export function defineToken(name: string): void {
+  state.tokenName = tokenFor(name);
+  state.tokenValue = "";
+  state.sidebar = "design";
+}
+
+export function setToken(name: string, value: string): void {
+  if (!session || !name.trim()) return;
+  session.setTheme(session.theme.with(name.trim(), value));
+}
+
+export function removeToken(name: string): void {
+  if (session) session.setTheme(session.theme.with(name, null));
+}
+
+export function addToken(): void {
+  if (!state.tokenName.trim() || !state.tokenValue.trim()) return;
+  setToken(state.tokenName, state.tokenValue.trim());
+  state.tokenName = "";
+  state.tokenValue = "";
+}
+
+export function importTheme(): void {
+  if (!session) return;
+  let theme = session.theme;
+  for (const token of Theme.fromCss(state.themeImport)) theme = theme.with(token.name, token.value);
+  session.setTheme(theme);
+  state.themeImport = "";
+}
+
+// ── patterns ────────────────────────────────────────────────────────────
+
+export function pickPatternGroup(group: string): void {
+  // A second click on the open group folds the flyout.
+  state.patternGroup = state.patternGroup === group ? "" : group;
+  refresh();
+}
+
+export function setPatternQuery(query: string): void {
+  state.patternQuery = query;
+  refresh();
+}
+
+export function insertPattern(name: string): void {
+  if (!session) return;
+  session.insertPattern(name, libraryPlace);
+  libraryPlace = null;
+}
+
+/** The explorer: the full library. From an in-canvas picker it keeps that picker's place. */
+export function openExplorer(place: Place | null = null): void {
+  if (place) libraryPlace = place;
+  state.sidebarOpen = false;
+  state.explorerCategory = state.patternGroup || "All";
+  state.explorerQuery = "";
+  state.explorerOpen = true;
+  refresh();
+}
+
+export function setExplorerCategory(category: string): void {
+  state.explorerCategory = category;
+  refresh();
+}
+
+export function setExplorerQuery(query: string): void {
+  state.explorerQuery = query;
+  refresh();
+}
+
+export function closeExplorer(): void {
+  state.explorerOpen = false;
+}
+
+export function pickFromExplorer(name: string): void {
+  state.explorerOpen = false;
+  insertPattern(name);
+}
+
+/**
+ * Mounts a live preview of a pattern's library design into a card (a ref callback): the
+ * 1200px design scaled to the card. `square` crops (the explorer), `contain` fits a
+ * variant card; a variant name previews that variant's draft.
+ */
+export function previewPattern(host: Element | null, name: string, shape: "fit" | "square" | "contain" = "fit", variant = ""): void {
+  if (!host || !session) return;
+  const pattern = getPattern(name);
+  const draft = session.draft?.name === name ? session.draft : null;
+  const html = variant && draft ? (draft.variants.find((candidate) => candidate.name === variant)?.html ?? "") : pattern?.html;
+  if (!html) return;
+  const current = session;
+  queueMicrotask(() => mountPreview(host as HTMLElement, downcast(upcastBlocks(html), "data"), current.siteStyles, current.theme.tokens, { padding: "0", width: 1200, shape, maxHeight: 0 }));
+}
+
+// ── the library design: variants and color schemes ──────────────────────
+
+export function addVariant(): void {
+  session?.addVariant();
+}
+
+export function editVariant(name: string): void {
+  session?.editVariant(name);
+}
+
+export function setDefaultVariant(name: string): void {
+  session?.setDefaultVariant(name);
+}
+
+export function renameVariant(name: string): void {
+  const variant = session?.draft?.variants.find((candidate) => candidate.name === name);
+  if (!variant) return;
+  const label = window.prompt(Publr.t("Rename pattern variant"), variant.label);
+  if (label !== null) session!.renameVariant(name, label);
+}
+
+export function describeVariant(name: string): void {
+  const variant = session?.draft?.variants.find((candidate) => candidate.name === name);
+  if (!variant) return;
+  const description = window.prompt(Publr.t("Short variant description"), variant.description);
+  if (description !== null) session!.describeVariant(name, description);
+}
+
+export function deleteVariant(name: string): void {
+  if (session?.draft && window.confirm(Publr.t("Delete this pattern variant?"))) session.deleteVariant(name);
+}
+
+export function setDefaultScheme(key: string): void {
+  session?.setDefaultColorContext(key);
+}
+
+export function toggleScheme(key: string): void {
+  session?.toggleColorContext(key);
+}
+
+/** Focuses an inner content block from the pattern card's outline. */
+export function focusContent(id: string): void {
+  if (!session) return;
+  const block = session.editor.getBlock(id);
+  const type = block ? blockType(block.type) : null;
+  if (!block || !type) return;
+  const field = session.editor.firstEditableField(block, type);
+  session.editor.select(field ? { blocks: [], caret: { block: id, field, start: 0, end: 0 } } : { blocks: [id], caret: null });
+  session.canvas?.focus();
+}
+
+export function editPattern(): void {
+  if (!session) return;
+  const root = session.patternRootOf(session.editor.activeId);
+  if (root) session.editPatternCopy(root.id);
+}
+
+/** The library's Edit: the rail folds, the sidebar opens on the design's Pattern tab. */
+export function editDefinition(name: string): void {
+  state.explorerOpen = false;
+  state.left = "";
+  state.patternGroup = "";
+  state.patternQuery = "";
+  state.sidebarOpen = true;
+  state.sidebar = "document";
+  session?.editPatternDefinition(name);
+}
+
+export function applyIsolation(): void {
+  session?.applyIsolation();
+  refresh();
+}
+
+export function cancelIsolation(): void {
+  session?.cancelIsolation();
+}
+
+// ── templates ───────────────────────────────────────────────────────────
+
+export function toggleTemplate(): void {
+  session?.toggleTemplate();
+}
+
+export function editTemplate(): void {
+  session?.editTemplate();
+  // The template opens with its first block picked, as the part bar under it shows.
+  const first = session?.isolation ? session.editor.model.blocks[0] : null;
+  if (first) session!.editor.selectBlocks([first.id]);
+}
+
+export function editPart(name: string): void {
+  state.partMenu = "";
+  session?.editPart(name);
+  const first = session?.isolation?.kind === "part" ? session.editor.model.blocks[0] : null;
+  if (first) session!.editor.selectBlocks([first.id]);
+}
+
+export function resetTemplate(): void {
+  session?.templates?.resetTemplate?.();
+  if (session?.showingTemplate) session.toggleTemplate(true);
+  refresh();
+}
+
+export function resetPart(name: string): void {
+  session?.templates?.resetPart?.(name);
+  if (session?.showingTemplate) session.toggleTemplate(true);
+  refresh();
+}
+
+/** The part bar sits under the clicked part, at its left edge. */
+function placePartMenu(): void {
+  const rect = session?.canvas?.partRect(state.partMenu);
+  const origin = (area.current as HTMLElement | null)?.getBoundingClientRect();
+  state.partMenuTop = rect && origin ? Math.max(0, rect.bottom - origin.top) : 8;
+  state.partMenuLeft = rect && origin ? Math.max(0, rect.left - origin.left) : 8;
+  state.partMenuLabel = session?.templates?.part(state.partMenu)?.label ?? state.partMenu;
+}
+
+/** In a template, a selected part offers its original under it: "Site header | Edit original". */
+function partOnSelection(active: string | null): void {
+  const block = active ? session?.editor.getBlock(active) : null;
+  if (session?.isolation?.kind !== "template" || block?.type !== "template-part") {
+    if (session?.isolation) state.partMenu = "";
+    return;
+  }
+  const name = String(block.settings.part ?? "header");
+  const rect = session.canvas?.rectOf(block.id);
+  const origin = (area.current as HTMLElement | null)?.getBoundingClientRect();
+  state.partMenu = name;
+  state.partMenuTop = rect && origin ? Math.max(0, rect.bottom - origin.top) : 8;
+  state.partMenuLeft = rect && origin ? Math.max(0, rect.left - origin.left) : 8;
+  state.partMenuLabel = session.templates?.part(name)?.label ?? name;
+}
+
+/** In an isolated sheet the frame is as tall as its blocks; the stage scrolls instead. */
+function sizeSheet(): void {
+  if (!session?.isolation || state.compare || state.device) return;
+  const height = Math.max(120, session.canvas?.contentHeight() ?? 0);
+  state.viewportHeight = `${height}px`;
+  state.outerHeight = `${height}px`;
+}
+
+export function scrolled(): void {
+  state.partMenu = "";
+  refresh();
+}
+
+export function closePartMenu(): void {
+  state.partMenu = "";
+}
+
+// ── the slash picker and the inline inserter ────────────────────────────
+
+/** The slash picker's keys ride the canvas: the caret never leaves the block. "Pattern"
+ * leads the list while it shows, so it is index 0 then. */
+function slashKeys(event: KeyboardEvent): boolean {
+  if (!state.slashOpen || (!state.slashPattern && state.slashItems.length === 0)) return false;
+  const count = state.slashItems.length + (state.slashPattern ? 1 : 0);
+  if (event.key === "ArrowDown") {
+    state.slashIndex = (state.slashIndex + 1) % count;
+    return true;
+  }
+  if (event.key === "ArrowUp") {
+    state.slashIndex = (state.slashIndex - 1 + count) % count;
+    return true;
+  }
+  if (event.key === "Enter") {
+    if (state.slashPattern && state.slashIndex === 0) pickSlashPattern();
+    else {
+      const item = state.slashItems[state.slashIndex - (state.slashPattern ? 1 : 0)];
+      if (item) pickSlash(item.type);
+    }
+    return true;
+  }
+  if (event.key === "Escape" || event.key === "Tab") {
+    session?.canvas?.dismissSlash();
+    return true;
+  }
+  return false;
+}
+
+/** "Pattern": the slash is consumed (the block is empty again) and the explorer opens on it. */
+export function pickSlashPattern(): void {
+  if (!session) return;
+  const id = state.slashBlock;
+  state.slashOpen = false;
+  session.canvas?.dismissSlash();
+  const block = session.editor.getBlock(id);
+  const primary = block ? blockType(block.type)?.primary : null;
+  if (block && primary) session.editor.setField(id, primary, "");
+  openExplorer(null);
+}
+
+export function pickSlash(type: string): void {
+  if (!session) return;
+  const block = state.slashBlock;
+  state.slashOpen = false;
+  session.pickFromSlash(block, type);
+}
+
+export function openBoundaryMenu(): void {
+  menuBoundary = boundary;
+  state.boundaryQuery = "";
+  state.boundaryMenu = true;
+  refresh();
+}
+
+export function closeBoundaryMenu(): void {
+  state.boundaryMenu = false;
+  state.boundaryShown = false;
+  menuBoundary = null;
+}
+
+export function setBoundaryQuery(query: string): void {
+  state.boundaryQuery = query;
+  refresh();
+}
+
+/** The inline inserter's "Pattern" tile: the explorer, inserting at this boundary. */
+export function patternAtBoundary(): void {
+  const place = menuBoundary ? { parent: menuBoundary.parent, slot: menuBoundary.slot, index: menuBoundary.index } : null;
+  closeBoundaryMenu();
+  openExplorer(place);
+}
+
+/** Enter in the inserter's search picks the first tile. */
+export function pickFirstAtBoundary(): void {
+  if (state.boundaryPattern) patternAtBoundary();
+  else if (state.boundaryItems[0]) pickAtBoundary(state.boundaryItems[0].type);
+}
+
+export function escapeBoundaryMenu(): void {
+  closeBoundaryMenu();
+  session?.canvas?.focus();
+}
+
+export function pickAtBoundary(type: string): void {
+  if (!session || !menuBoundary) return;
+  const place = { parent: menuBoundary.parent, slot: menuBoundary.slot, index: menuBoundary.index };
+  closeBoundaryMenu();
+  session.editor.insertType(type, place);
+  session.canvas?.focus();
+}
+
+/** "Browse all": the library rail, keeping the boundary's exact place. */
+export function browseAll(): void {
+  const place = menuBoundary ? { parent: menuBoundary.parent, slot: menuBoundary.slot, index: menuBoundary.index } : null;
+  closeBoundaryMenu();
+  libraryPlace = place;
+  state.left = "inserter";
+  state.inserterTab = "blocks";
+  state.query = "";
+  refresh();
+}
+
+/** Each isolation wears its colour: the shell's frame and the top bar's fill. */
+const MODE_FRAME: Record<string, string> = {
+  "": "",
+  template: "border-[6px] border-t-0 border-[#0f766e]",
+  part: "border-[6px] border-t-0 border-[#581c87]",
+  copy: "border-[6px] border-t-0 border-[#285ae1]",
+  definition: "border-[6px] border-t-0 border-[#285ae1]",
+};
+
+const CRUMB_LOOKS: Record<string, string> = {
+  template: "text-[#14b8a6] aria-[current=true]:bg-[rgb(88_28_135/0.35)]",
+  part: "text-[#9452e8] aria-[current=true]:bg-[rgb(88_28_135/0.35)]",
+  copy: "text-[#3974ef] aria-[current=true]:bg-[rgb(40_90_225/0.22)]",
+  definition: "text-[#3974ef] aria-[current=true]:bg-[rgb(40_90_225/0.22)]",
+};
+
+export function EditorShell(props: EditorShellProps) {
+  start(props);
+  return (
+    <div data-editor-shell data-mode={state.isolation?.kind ?? ""} class={["flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground", MODE_FRAME[state.isolation?.kind ?? ""]]}>
+      {state.hierarchy.length > 0 && (
+        <nav data-hierarchy aria-label={Publr.t("Editing hierarchy")} class="-mx-[6px] flex h-8 shrink-0 items-stretch overflow-hidden bg-neutral-950 px-1">
+          {state.hierarchy.map((crumb) => (
+            <span class="flex min-w-0 items-center">
+              <button
+                type="button"
+                data-kind={crumb.kind}
+                aria-current={crumb.current ? "true" : undefined}
+                disabled={crumb.current}
+                title={crumb.label}
+                class={["flex h-full max-w-56 cursor-pointer items-center gap-2 px-2 hover:bg-white/7 disabled:cursor-default disabled:hover:bg-transparent", CRUMB_LOOKS[crumb.kind]]}
+                onClick={() => openCrumb(crumb.index)}
+              >
+                <Icon name="pattern" size="sm" />
+                <Text variant="label-md-strong" classes="truncate">
+                  {crumb.label}
+                </Text>
+              </button>
+              {!crumb.current && (
+                <span aria-hidden="true" class="px-1 text-white/30">
+                  ›
+                </span>
+              )}
+            </span>
+          ))}
+        </nav>
+      )}
+      {!state.embedded && <Topbar />}
+      {state.embedded && props.header}
+      <div class="flex min-h-0 flex-1">
+        <LeftRail />
+        <div class="flex min-w-0 flex-1 flex-col">
+          <div ref={area} data-canvas-area class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div
+              ref={stage}
+              data-stage
+              data-compare={state.compare ? "" : undefined}
+              data-isolation-stage={state.isolation ? "" : undefined}
+              class={[
+                "min-h-0 flex-1 overflow-auto",
+                state.compare
+                  ? "bg-[color-mix(in_oklch,var(--background)_86%,var(--foreground))] [overflow-anchor:none]"
+                  : state.isolation
+                    ? "flex flex-col items-center bg-[color-mix(in_oklch,var(--background)_86%,var(--foreground))] px-[clamp(24px,3vw,48px)] py-[clamp(24px,5vh,64px)]"
+                    : state.device
+                      ? "bg-muted/30 p-3"
+                      : "bg-muted/30",
+              ]}
+              onScroll={() => scrolled()}
+            >
+              <div class={state.compare ? "flex h-full min-h-full w-max min-w-full items-start gap-[clamp(24px,3vw,44px)] px-[clamp(24px,3vw,48px)] pt-14 pb-8" : state.isolation ? "w-full" : "h-full"}>
+                {state.surfaces.map((surface) => (
+                  <section
+                    data-surface={surface.key}
+                    class={["relative flex shrink-0 cursor-pointer flex-col", surface.first ? "ml-[clamp(20px,2.5vw,36px)]" : ""]}
+                    style={{ order: String(surface.order) }}
+                    onClick={() => promoteSurface(surface.key)}
+                  >
+                    {surface.first && <span aria-hidden="true" class="absolute -left-[calc((clamp(24px,3vw,44px)+clamp(20px,2.5vw,36px))/2)] inset-y-0 border-l-2 border-dashed border-foreground/30"></span>}
+                    <SurfaceLabel icon={surface.icon} device={surface.label} breakpoint={surface.breakpoint} range={surface.range} live={false} />
+                    <div class="relative overflow-hidden bg-white shadow-[0_0_0_1px_var(--border),0_12px_32px_rgb(0_0_0/0.12)]" style={{ width: `${COMPARE_WIDTH}px`, height: surface.height }}>
+                      <div class="origin-top-left" style={{ height: surface.inner, transform: `scale(${surface.scale})` }} ref={(element: Element | null) => surfaceFrame(element, surface.key)}></div>
+                    </div>
+                  </section>
+                ))}
+                <section data-live-surface class={state.compare ? ["relative flex shrink-0 flex-col", state.liveOrder > 0 ? "ml-[clamp(20px,2.5vw,36px)]" : ""] : state.isolation ? "w-full" : "h-full"} style={{ order: String(state.liveOrder) }}>
+                  {state.compare && state.liveOrder > 0 && <span aria-hidden="true" class="absolute -left-[calc((clamp(24px,3vw,44px)+clamp(20px,2.5vw,36px))/2)] inset-y-0 border-l-2 border-dashed border-foreground/30"></span>}
+                  {state.compare && (
+                    <SurfaceLabel icon={state.liveIcon} device={state.liveLabel} breakpoint={state.liveBreakpoint} range={state.liveRange} live={true} />
+                  )}
+                  <div
+                    data-viewport
+                    class={["relative mx-auto shrink-0 overflow-hidden bg-white", state.device || state.isolation ? "shadow-[0_0_0_1px_var(--border),0_12px_32px_rgb(0_0_0/0.12)]" : ""]}
+                    style={{ width: state.outerWidth, height: state.outerHeight }}
+                  >
+                    <div class="origin-top-left" style={{ width: state.viewportWidth, height: state.viewportHeight, transform: `scale(${state.scale})` }}>
+                      <div ref={canvasHost} data-canvas-host class="h-full"></div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+            <BlockToolbar />
+            {state.partMenu && (
+              <div data-part-menu class="absolute z-30 flex border border-foreground bg-card shadow-xs" style={{ top: `${state.partMenuTop}px`, left: `${state.partMenuLeft}px` }}>
+                <Text variant="heading-2xs" classes="flex items-center px-3 py-2.5">
+                  {state.partMenuLabel}
+                </Text>
+                <button type="button" data-edit-part={state.partMenu} class="cursor-pointer border-l border-foreground px-3 py-2.5 hover:bg-muted" onClick={() => editPart(state.partMenu)}>
+                  <Text variant="heading-2xs">{Publr.t("Edit original")}</Text>
+                </button>
+              </div>
+            )}
+            <SlashPicker />
+            <InlineInserter />
+          </div>
+          <Breadcrumb />
+          <OutputPanel />
+        </div>
+        <Sidebar />
+      </div>
+      <PatternExplorer />
+    </div>
+  );
+}

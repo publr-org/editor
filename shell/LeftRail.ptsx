@@ -1,0 +1,208 @@
+// The left rail: one panel at a time. The block library (Blocks, Patterns, Media) or the
+// document overview (List View, Outline, Patterns), and the patterns flyout beside either.
+import { Publr } from "publr-jsx";
+import { CloseButton } from "../../ui/src/components/CloseButton/CloseButton.ptsx";
+import { PanelTab } from "../../ui/src/components/PanelTab/PanelTab.ptsx";
+import { PickerTile } from "../../ui/src/components/PickerTile/PickerTile.ptsx";
+import { SearchField } from "../../ui/src/components/SearchField/SearchField.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { TreeItem } from "../../ui/src/components/TreeItem/TreeItem.ptsx";
+import { PatternFlyout, PatternsTab } from "./Patterns.ptsx";
+import {
+  closeLeft,
+  pick,
+  pickFirst,
+  rowDragEnd,
+  rowDragStart,
+  rowsDragOver,
+  rowsDrop,
+  selectRow,
+  setInserterTab,
+  setListTab,
+  setQuery,
+  state,
+  toggleCollapsed,
+} from "./Shell.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+/** Focuses a panel's search when the panel appears. */
+export function focusSearch(element: Element | null) {
+  if (element) requestAnimationFrame(() => (element as HTMLElement).querySelector("input")?.focus());
+}
+
+function panelKeys(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeLeft();
+  }
+}
+
+function searchKeys(event: KeyboardEvent) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    pickFirst();
+  }
+}
+
+function BlockLibrary() {
+  return (
+    <div data-panel="blocks" class="min-h-0 flex-1 overflow-y-auto p-4" ref={focusSearch}>
+      <SearchField value={state.query} label={Publr.t("Search for blocks")} classes="mb-2" onInput={(event: Event) => setQuery(valueOf(event).trim())} onKeyDown={searchKeys} />
+      <div data-shelves>
+        {state.shelves.map((shelf) => (
+          <section data-shelf={shelf.category}>
+            <Text as="h3" variant="eyebrow-section" tone="muted" classes="mt-6 py-2">
+              {shelf.label}
+            </Text>
+            <div class="grid grid-cols-3">
+              {shelf.items.map((item) => (
+                <PickerTile icon={item.icon} label={item.label} value={item.type} onClick={() => pick(item.type)} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      {state.noResults && (
+        <Text as="p" variant="body-sm" tone="muted" classes="py-4">
+          {Publr.t("No results found.")}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+function ListView() {
+  return (
+    <div data-panel="list" class="min-h-0 flex-1 overflow-y-auto p-2">
+      <div data-tree class="relative" data-dragging={state.dragging ? "true" : undefined} onDragOver={rowsDragOver} onDrop={rowsDrop}>
+        {state.rows.map((row) => (
+          <div class={row.id === state.dragging ? "opacity-45" : ""}>
+            <TreeItem
+              id={row.id}
+              depth={row.depth}
+              label={row.label}
+              icon={row.icon}
+              detail={row.detail}
+              tag={row.tag}
+              identity={row.identity}
+              hasChildren={row.hasChildren}
+              expanded={row.expanded}
+              selected={row.selected}
+              draggable={row.draggable}
+              onToggle={() => toggleCollapsed(row.id)}
+              onSelect={(event: MouseEvent) => selectRow(row.id, event)}
+              onDragStart={(event: DragEvent) => rowDragStart(row.id, event)}
+              onDragEnd={() => rowDragEnd()}
+            />
+          </div>
+        ))}
+        {state.dropShown && <div data-tree-drop class="pointer-events-none absolute right-1.5 z-10 h-[3px] -translate-y-1/2 bg-[#581c87]" style={{ top: `${state.dropTop}px`, left: `${state.dropLeft}px` }}></div>}
+      </div>
+    </div>
+  );
+}
+
+function Outline() {
+  return (
+    <div data-panel="outline" class="min-h-0 flex-1 overflow-y-auto">
+      <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-10 gap-y-2.5 border-b border-border px-4 py-4">
+        <dt>
+          <Text as="span" variant="body-sm" classes="block">
+            {Publr.t("Characters:")}
+          </Text>
+        </dt>
+        <dd class="m-0" data-stat="characters">
+          <Text as="span" variant="body-sm" classes="block">{state.outline.characters}</Text>
+        </dd>
+        <dt>
+          <Text as="span" variant="body-sm" classes="block">
+            {Publr.t("Words:")}
+          </Text>
+        </dt>
+        <dd class="m-0" data-stat="words">
+          <Text as="span" variant="body-sm" classes="block">{state.outline.words}</Text>
+        </dd>
+        <dt>
+          <Text as="span" variant="body-sm" classes="block">
+            {Publr.t("Time to read:")}
+          </Text>
+        </dt>
+        <dd class="m-0" data-stat="minutes">
+          <Text as="span" variant="body-sm" classes="block">{state.outline.readTime}</Text>
+        </dd>
+      </dl>
+      <div class="px-4 py-3">
+        {state.outline.rows.map((heading) => (
+          <button type="button" data-heading={heading.id} class="flex w-full cursor-pointer items-center py-1.5 text-left hover:text-primary" onMouseDown={(event: MouseEvent) => event.preventDefault()} onClick={(event: MouseEvent) => selectRow(heading.id, event)}>
+            <span class="mt-4 h-px shrink-0 self-start bg-border" style={{ width: `${heading.guide}px` }}></span>
+            <span class={["mr-2 ml-1 shrink-0 self-start rounded-sm px-1.5 py-0.5", heading.flagged ? "bg-[#fcd34d]" : "bg-border"]}>
+              <Text as="span" variant="heading-2xs" classes="block leading-[18px]">
+                {heading.level}
+              </Text>
+            </span>
+            <span class="min-w-0 py-0.5">
+              <Text as="span" variant="body-sm" tone={heading.empty ? "muted" : "default"} classes={heading.empty ? "block truncate italic" : "block truncate"}>
+                {heading.text}
+              </Text>
+              {heading.badLevel && (
+                <Text as="span" variant="body-sm" tone="muted" classes="block truncate italic">
+                  {Publr.t("(Incorrect heading level)")}
+                </Text>
+              )}
+            </span>
+          </button>
+        ))}
+        {state.outline.rows.length === 0 && (
+          <Text as="p" variant="body-sm" tone="muted">
+            {Publr.t("Add headings to create a table of contents for the document.")}
+          </Text>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function LeftRail() {
+  return (
+    <>
+      {state.left === "inserter" && (
+        <aside data-inserter class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card" onKeyDown={panelKeys}>
+          <div class="flex shrink-0 items-center border-b border-border">
+            <div class="flex flex-1" role="tablist" aria-label={Publr.t("Block library")}>
+              <PanelTab variant="rail" label={Publr.t("Blocks")} selected={state.inserterTab === "blocks"} onClick={() => setInserterTab("blocks")} />
+              <PanelTab variant="rail" label={Publr.t("Patterns")} selected={state.inserterTab === "patterns"} onClick={() => setInserterTab("patterns")} />
+              <PanelTab variant="rail" label={Publr.t("Media")} selected={state.inserterTab === "media"} onClick={() => setInserterTab("media")} />
+            </div>
+            <CloseButton label={Publr.t("Close block inserter")} classes="mr-2" onClick={() => closeLeft()} />
+          </div>
+          {state.inserterTab === "blocks" && <BlockLibrary />}
+          {state.inserterTab === "patterns" && <PatternsTab />}
+          {state.inserterTab === "media" && (
+            <div data-panel="media" class="min-h-0 flex-1 overflow-y-auto p-4">
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Media arrives with a later step.")}
+              </Text>
+            </div>
+          )}
+        </aside>
+      )}
+      {state.left === "list" && (
+        <aside data-list-view class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card" onKeyDown={panelKeys}>
+          <div class="flex shrink-0 items-center border-b border-border">
+            <div class="flex flex-1" role="tablist" aria-label={Publr.t("Document overview")}>
+              <PanelTab variant="rail" label={Publr.t("List View")} selected={state.listTab === "list"} onClick={() => setListTab("list")} />
+              <PanelTab variant="rail" label={Publr.t("Outline")} selected={state.listTab === "outline"} onClick={() => setListTab("outline")} />
+              <PanelTab variant="rail" label={Publr.t("Patterns")} selected={state.listTab === "patterns"} onClick={() => setListTab("patterns")} />
+            </div>
+            <CloseButton label={Publr.t("Close list view")} classes="mr-2" onClick={() => closeLeft()} />
+          </div>
+          {state.listTab === "list" && <ListView />}
+          {state.listTab === "outline" && <Outline />}
+          {state.listTab === "patterns" && <PatternsTab />}
+        </aside>
+      )}
+      <PatternFlyout />
+    </>
+  );
+}

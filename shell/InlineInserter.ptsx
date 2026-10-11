@@ -1,0 +1,95 @@
+// The inline inserter: near the boundary between sibling blocks a line with a round + on
+// it; the + opens a small inserter for exactly that boundary: a search, "Pattern" and the
+// most used blocks at rest, every match while searching, and "Browse all".
+import { Publr } from "publr-jsx";
+import { BarButton } from "../../ui/src/components/BarButton/BarButton.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { PickerTile } from "../../ui/src/components/PickerTile/PickerTile.ptsx";
+import { SearchField } from "../../ui/src/components/SearchField/SearchField.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { focusSearch } from "./LeftRail.ptsx";
+import { browseAll, escapeBoundaryMenu, hoverPlus, openBoundaryMenu, patternAtBoundary, pickAtBoundary, pickFirstAtBoundary, setBoundaryQuery, state } from "./Shell.ptsx";
+
+const PANEL_WIDTH = 300;
+
+function searchKeys(event: KeyboardEvent) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    pickFirstAtBoundary();
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    ((event.currentTarget as HTMLElement).closest("[data-boundary-menu]")?.querySelector("[data-tile]") as HTMLElement | null)?.focus();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    escapeBoundaryMenu();
+  }
+}
+
+/** Arrows walk the tiles; past the first, back to the search. */
+function gridKeys(event: KeyboardEvent) {
+  const tiles = [...((event.currentTarget as HTMLElement).querySelectorAll("[data-tile]") as NodeListOf<HTMLElement>)];
+  const at = tiles.indexOf(document.activeElement as HTMLElement);
+  if (["ArrowDown", "ArrowRight"].includes(event.key)) {
+    event.preventDefault();
+    tiles[at < tiles.length - 1 ? at + 1 : 0]?.focus();
+  } else if (["ArrowUp", "ArrowLeft"].includes(event.key)) {
+    event.preventDefault();
+    if (at > 0) tiles[at - 1].focus();
+    else ((event.currentTarget as HTMLElement).closest("[data-boundary-menu]")?.querySelector("input") as HTMLElement | null)?.focus();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    escapeBoundaryMenu();
+  }
+}
+
+export function InlineInserter() {
+  return (
+    <>
+      <button
+        type="button"
+        data-boundary
+        aria-label={Publr.t("Add block")}
+        title={Publr.t("Add block")}
+        class="absolute z-30 h-6 cursor-pointer text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        style={{ top: `${state.boundaryTop - 12}px`, left: `${state.boundaryLeft}px`, width: `${state.boundaryWidth}px` }}
+        hidden={!state.boundaryShown || state.boundaryMenu}
+        onMouseDown={(event: MouseEvent) => event.preventDefault()}
+        onMouseEnter={() => hoverPlus(true)}
+        onMouseLeave={() => hoverPlus(false)}
+        onClick={() => openBoundaryMenu()}
+      >
+        <span class="pointer-events-none absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 bg-primary"></span>
+        <span data-boundary-plus class="pointer-events-none absolute top-1/2 left-1/2 flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+          <Icon name="plus" size="md" />
+        </span>
+      </button>
+      {state.boundaryMenu && (
+        <div
+          data-boundary-menu
+          class="absolute z-40 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+          style={{ width: `${PANEL_WIDTH}px`, top: `${state.boundaryTop + 18}px`, left: `${Math.max(0, state.boundaryLeft + state.boundaryWidth - PANEL_WIDTH)}px` }}
+        >
+          <div class="m-3 mb-1" ref={focusSearch}>
+            <SearchField value={state.boundaryQuery} label={Publr.t("Search for blocks")} size="md" icon={false} onInput={(event: Event) => setBoundaryQuery(valueOf(event))} onKeyDown={searchKeys} />
+          </div>
+          {(state.boundaryPattern || state.boundaryItems.length > 0) && (
+            <div class="grid grid-cols-3 gap-1 px-2 pt-2 pb-3" onKeyDown={gridKeys}>
+              {state.boundaryPattern && <PickerTile size="sm" icon="pattern" label={Publr.t("Pattern")} value="pattern" onClick={() => patternAtBoundary()} />}
+              {state.boundaryItems.map((item) => (
+                <PickerTile size="sm" icon={item.icon} label={item.label} value={item.type} onClick={() => pickAtBoundary(item.type)} />
+              ))}
+            </div>
+          )}
+          {!state.boundaryPattern && state.boundaryItems.length === 0 && (
+            <Text as="p" variant="body-sm" tone="muted" classes="px-3 pt-1 pb-4 text-center">
+              {Publr.t("No blocks found")}
+            </Text>
+          )}
+          <BarButton label={Publr.t("Browse all")} onClick={() => browseAll()} />
+        </div>
+      )}
+    </>
+  );
+}
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;

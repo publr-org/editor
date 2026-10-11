@@ -1,0 +1,305 @@
+// Patterns: the Patterns tab (search, groups, the explorer button), the flyout of live
+// previews beside the rail, the explorer dialog, and the library design's overview (its
+// color schemes, variants and blocks). Patterns are compositions, never blocks: the block
+// pickers only offer the way here.
+import { Publr } from "publr-jsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { CloseButton } from "../../ui/src/components/CloseButton/CloseButton.ptsx";
+import { CountButton } from "../../ui/src/components/CountButton/CountButton.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { SnapshotTile } from "../../ui/src/components/SnapshotTile/SnapshotTile.ptsx";
+import { SearchField } from "../../ui/src/components/SearchField/SearchField.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { TreeItem } from "../../ui/src/components/TreeItem/TreeItem.ptsx";
+import { focusSearch } from "./LeftRail.ptsx";
+import {
+  addVariant,
+  closeExplorer,
+  deleteVariant,
+  describeVariant,
+  editDefinition,
+  editVariant,
+  insertPattern,
+  openExplorer,
+  pickFromExplorer,
+  pickPatternGroup,
+  previewPattern,
+  renameVariant,
+  selectRow,
+  setDefaultScheme,
+  setDefaultVariant,
+  setExplorerCategory,
+  setExplorerQuery,
+  setPatternQuery,
+  state,
+  toggleScheme,
+} from "./Shell.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+export function PatternsTab() {
+  return (
+    <div data-patterns class="flex min-h-0 flex-1 flex-col overflow-y-auto p-4" ref={focusSearch}>
+      <SearchField value={state.patternQuery} label={Publr.t("Search for patterns")} classes="mb-4" onInput={(event: Event) => setPatternQuery(valueOf(event).trim())} />
+      <div data-pattern-groups class="flex flex-col gap-1">
+        {state.patternGroups.map((group) => (
+          <CountButton label={group.name === "All" ? Publr.t("All") : group.name} count={group.count} pressed={group.selected} onClick={() => pickPatternGroup(group.name)} />
+        ))}
+      </div>
+      <Button hierarchy="secondary" size="lg" classes="mt-6 w-full shrink-0" onClick={() => openExplorer(null)}>
+        <span data-explore>{Publr.t("Explore all patterns")}</span>
+      </Button>
+    </div>
+  );
+}
+
+/** The previews beside the rail: one group, all, or search results. */
+export function PatternFlyout() {
+  return (
+    <>
+      {state.flyoutShown && (
+        <aside data-pattern-flyout class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card">
+          <Text as="h2" variant="title-sm" classes="shrink-0 px-4 pt-4">
+            <span data-flyout-title>{state.flyoutTitle}</span>
+          </Text>
+          <Text as="p" variant="body-sm" tone="muted" classes="shrink-0 px-4 pt-1 pb-3">
+            {Publr.t("Click a pattern to add it to the canvas.")}
+          </Text>
+          <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            {state.flyout.map((pattern) => (
+              <SnapshotTile
+                label={pattern.label}
+                value={pattern.name}
+                action={Publr.t("Edit")}
+                actionLabel={Publr.t("Edit pattern in the library")}
+                classes="mb-4"
+                onClick={() => insertPattern(pattern.name)}
+                onAction={() => editDefinition(pattern.name)}
+              >
+                <span class="block h-full w-full" ref={(holder: Element | null) => previewPattern(holder, pattern.name)}></span>
+              </SnapshotTile>
+            ))}
+            {state.flyout.length === 0 && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("No patterns found.")}
+              </Text>
+            )}
+          </div>
+        </aside>
+      )}
+    </>
+  );
+}
+
+function explorerKeys(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    event.stopPropagation();
+    closeExplorer();
+  }
+}
+
+/** The explorer: search and groups on the left, a grid of square live previews. */
+export function PatternExplorer() {
+  return (
+    <>
+      {state.explorerOpen && (
+        <div data-pattern-explorer class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onKeyDown={explorerKeys} onClick={() => closeExplorer()}>
+          <div role="dialog" aria-modal="true" aria-label={Publr.t("Patterns")} class="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-[0_10px_40px_rgb(0_0_0/0.35)]" onClick={(event: MouseEvent) => event.stopPropagation()}>
+            <header class="flex shrink-0 items-center justify-between px-6 pt-5 pb-3">
+              <Text as="h2" variant="heading-md">
+                {Publr.t("Patterns")}
+              </Text>
+              <CloseButton label={Publr.t("Close patterns explorer")} onClick={() => closeExplorer()} />
+            </header>
+            <div class="flex min-h-0 flex-1">
+              <div class="w-64 shrink-0 overflow-y-auto px-6 pb-6" ref={focusSearch}>
+                <SearchField value={state.explorerQuery} label={Publr.t("Search for patterns")} icon={false} onInput={(event: Event) => setExplorerQuery(valueOf(event).trim())} />
+                <div class="mt-4 flex flex-col gap-0.5">
+                  {state.explorerGroups.map((group) => (
+                    <CountButton label={group.name === "All" ? Publr.t("All") : group.name} count={group.count} pressed={group.selected} onClick={() => setExplorerCategory(group.name)} />
+                  ))}
+                </div>
+              </div>
+              <div class="min-h-0 flex-1 overflow-y-auto px-6 pb-8">
+                <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-6">
+                  {state.explorer.map((pattern) => (
+                    <SnapshotTile
+                      label={pattern.label}
+                      value={pattern.name}
+                      shape="square"
+                      action={Publr.t("Edit")}
+                      actionLabel={Publr.t("Edit pattern in the library")}
+                      classes="self-start"
+                      onClick={() => pickFromExplorer(pattern.name)}
+                      onAction={() => editDefinition(pattern.name)}
+                    >
+                      <span class="block h-full w-full" ref={(holder: Element | null) => previewPattern(holder, pattern.name, "square")}></span>
+                    </SnapshotTile>
+                  ))}
+                </div>
+                {state.explorer.length === 0 && (
+                  <Text as="p" variant="body-sm" tone="muted">
+                    {Publr.t("No patterns found.")}
+                  </Text>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SectionHeader({ title, children }: { title: string; children?: JSX.Element }) {
+  return (
+    <header class="mb-3 flex items-center justify-between gap-3 border-b border-border py-1.5 text-muted-foreground">
+      <Text as="h2" variant="eyebrow-section" tone="muted">
+        {title}
+      </Text>
+      {children}
+    </header>
+  );
+}
+
+/** The library design's Pattern tab: default style, variants, and its blocks. */
+export function PatternOverview() {
+  return (
+    <>
+      {state.draft && (
+        <div data-pattern-overview class="flex flex-col gap-4">
+          {state.draft.schemesShown && (
+            <section data-pattern-schemes>
+              <SectionHeader title={Publr.t("Default pattern style")} />
+              <div class="grid grid-cols-2 gap-2" role="group" aria-label={Publr.t("Pattern color schemes")}>
+                {(state.draft?.schemes ?? []).map((scheme) => (
+                  <article class="relative" data-scheme={scheme.key}>
+                    <button
+                      type="button"
+                      aria-pressed={scheme.isDefault ? "true" : "false"}
+                      aria-label={scheme.selectLabel}
+                      title={scheme.selectLabel}
+                      disabled={scheme.disabled}
+                      class="block w-full cursor-pointer overflow-hidden rounded-lg border border-input bg-background text-left text-muted-foreground hover:border-ring hover:text-foreground aria-[pressed=true]:border-ring aria-[pressed=true]:text-foreground aria-[pressed=true]:shadow-[inset_0_0_0_1px_var(--color-ring)] disabled:cursor-default disabled:opacity-60"
+                      onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                      onClick={() => setDefaultScheme(scheme.key)}
+                    >
+                      <span class="relative block h-[74px] px-2.5 py-3.5" style={{ backgroundColor: scheme.surface, color: scheme.foreground }}>
+                        <i class="mb-[5px] block h-[3px] w-[60%] rounded-full bg-current opacity-80"></i>
+                        <i class="block h-[3px] w-[38%] rounded-full bg-current opacity-40"></i>
+                        <b class="absolute right-2.5 bottom-2.5 h-2.5 w-6 rounded-full" style={{ backgroundColor: scheme.accent }}></b>
+                        {scheme.statusShown && (
+                          <em class="absolute top-2 left-2 rounded-full bg-ring px-[7px] py-1 leading-none not-italic text-primary-foreground">
+                            <Text as="span" variant="label-2xs-strong" classes="block leading-none">
+                              {scheme.statusLabel}
+                            </Text>
+                          </em>
+                        )}
+                      </span>
+                      <span class={["block truncate border-t border-input px-[7px] py-1.5 text-foreground", scheme.isDefault ? "bg-ui-accent" : "bg-card"]}>
+                        <Text as="span" variant="label-2xs-strong">
+                          {scheme.label}
+                        </Text>
+                      </span>
+                    </button>
+                    {!scheme.isDefault && (
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={scheme.disabled ? "false" : "true"}
+                        aria-label={scheme.availabilityLabel}
+                        title={scheme.availabilityLabel}
+                        class="absolute top-2 right-2 flex size-[18px] cursor-pointer items-center justify-center rounded-[4px] border border-input bg-background text-primary-foreground aria-[checked=true]:border-primary aria-[checked=true]:bg-primary"
+                        onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                        onClick={() => toggleScheme(scheme.key)}
+                      >
+                        {!scheme.disabled && <Icon name="check" size="xs" />}
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+          <section data-pattern-variants class="mt-7">
+            <SectionHeader title={Publr.t("Pattern variants")}>
+              <Button hierarchy="tertiary" size="xs" label={Publr.t("Add pattern variant")} title={Publr.t("Add pattern variant")} onClick={() => addVariant()}>
+                <Icon name="plus" size="sm" />
+              </Button>
+            </SectionHeader>
+            {(state.draft?.variants.length ?? 0) === 0 && (
+              <Text as="p" variant="body-sm" classes="py-2">
+                {Publr.t("No variants")}
+              </Text>
+            )}
+            {(state.draft?.variants.length ?? 0) > 0 && (
+              <div class="grid grid-cols-2 gap-2" role="group" aria-label={Publr.t("Pattern variants")}>
+                {(state.draft?.variants ?? []).map((variant) => (
+                  <article class="min-w-0" data-variant={variant.name}>
+                    <button
+                      type="button"
+                      aria-pressed={variant.selected ? "true" : "false"}
+                      aria-label={variant.label}
+                      class="relative block w-full cursor-pointer overflow-hidden rounded-lg border border-input bg-card text-left text-muted-foreground hover:border-ring hover:text-foreground aria-[pressed=true]:border-ring aria-[pressed=true]:text-foreground aria-[pressed=true]:shadow-[inset_0_0_0_1px_var(--color-ring),0_0_0_1px_color-mix(in_oklch,var(--color-ring)_30%,transparent)]"
+                      onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                      onClick={() => editVariant(variant.name)}
+                    >
+                      <span class="relative block aspect-[16/10] w-full overflow-hidden bg-white" ref={(holder: Element | null) => previewPattern(holder, state.draft?.name ?? "", "contain", variant.name)}></span>
+                      {variant.isDefault && (
+                        <em class="absolute top-2 left-2 z-10 rounded-full bg-ring px-[7px] py-1 leading-none not-italic text-primary-foreground">
+                          <Text as="span" variant="label-2xs-strong" classes="block leading-none">
+                            {Publr.t("Default")}
+                          </Text>
+                        </em>
+                      )}
+                      <span class={["block truncate border-t border-input px-[7px] py-1.5 text-foreground", variant.selected ? "bg-ui-accent" : "bg-card"]}>
+                        <Text as="span" variant="label-2xs-strong">
+                          {variant.label}
+                        </Text>
+                      </span>
+                    </button>
+                    <span class="mt-1 flex items-center justify-end gap-0.5">
+                      {!variant.isDefault && (
+                        <Button hierarchy="tertiary" size="xs" label={Publr.t("Set as default variant")} title={Publr.t("Set as default")} onClick={() => setDefaultVariant(variant.name)}>
+                          ★
+                        </Button>
+                      )}
+                      <Button hierarchy="tertiary" size="xs" label={Publr.t("Rename variant")} title={Publr.t("Rename variant")} onClick={() => renameVariant(variant.name)}>
+                        ✎
+                      </Button>
+                      <Button hierarchy="tertiary" size="xs" label={Publr.t("Edit variant description")} title={Publr.t("Edit variant description")} onClick={() => describeVariant(variant.name)}>
+                        ≡
+                      </Button>
+                      <Button hierarchy="tertiary" size="xs" label={Publr.t("Delete variant")} title={Publr.t("Delete variant")} onClick={() => deleteVariant(variant.name)}>
+                        ×
+                      </Button>
+                    </span>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+          <section data-pattern-blocks class="mt-7">
+            <SectionHeader title={Publr.t("Blocks")} />
+            <div class="-mx-1">
+              {(state.draft?.blocks ?? []).map((row) => (
+                <TreeItem
+                  id={row.id}
+                  depth={row.depth}
+                  indent={12}
+                  toggle={false}
+                  label={row.label}
+                  icon={row.icon}
+                  detail={row.detail}
+                  tag={row.tag}
+                  selected={row.selected}
+                  onSelect={(event: MouseEvent) => selectRow(row.id, event)}
+                />
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}

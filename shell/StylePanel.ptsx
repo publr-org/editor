@@ -1,0 +1,358 @@
+// The block inspector's Styles tab, as the old editor drew it: the Styles, Typography,
+// Color, Dimensions and Border panels and the Advanced list, each panel with its actions
+// menu (Reset). Values come through the lenses (styles.ts); the box model's values open
+// the BoxControl pane beside the sidebar, a color opens its picker there, and a style
+// option previews itself there on hover.
+import { Publr } from "publr-jsx";
+import { BoxControl } from "../../ui/src/components/BoxControl/BoxControl.ptsx";
+import type { BoxControlSelection } from "../../ui/src/components/BoxControl/BoxControl.ptsx";
+import { BoxModel } from "../../ui/src/components/BoxModel/BoxModel.ptsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { ColorSwatch } from "../../ui/src/components/ColorSwatch/ColorSwatch.ptsx";
+import { ColorValue } from "../../ui/src/components/ColorValue/ColorValue.ptsx";
+import { CustomValue } from "../../ui/src/components/CustomValue/CustomValue.ptsx";
+import { FloatingPanel } from "../../ui/src/components/FloatingPanel/FloatingPanel.ptsx";
+import { Input } from "../../ui/src/components/Input/Input.ptsx";
+import { InspectorSection } from "../../ui/src/components/InspectorSection/InspectorSection.ptsx";
+import { ChevronSelect } from "../../ui/src/components/ChevronSelect/ChevronSelect.ptsx";
+import { OptionCard } from "../../ui/src/components/OptionCard/OptionCard.ptsx";
+import { PreviewPopover } from "../../ui/src/components/PreviewPopover/PreviewPopover.ptsx";
+import { ResponsiveField } from "../../ui/src/components/ResponsiveField/ResponsiveField.ptsx";
+import { ScaleControl } from "../../ui/src/components/ScaleControl/ScaleControl.ptsx";
+import { SegmentedControl } from "../../ui/src/components/SegmentedControl/SegmentedControl.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { ToggleRow } from "../../ui/src/components/ToggleRow/ToggleRow.ptsx";
+import { ValueChip } from "../../ui/src/components/ValueChip/ValueChip.ptsx";
+import type { ResponsiveView, ScaleRow } from "./styles";
+import {
+  closePane,
+  hidePreview,
+  jumpToBreakpoint,
+  moveResponsive,
+  resetResponsive,
+  setBorderCustom,
+  setBorderTier,
+  openColor,
+  paneSelection,
+  pickBorderColor,
+  pickColor,
+  pickPart,
+  previewHost,
+  resetStylePanel,
+  setFontFamily,
+  setPaneCustom,
+  setPaneStep,
+  setProp,
+  setPropCustom,
+  setPropLength,
+  setPropStep,
+  setTextStyle,
+  setVariation,
+  showPreview,
+  state,
+  toggleCustomRow,
+  toggleOptional,
+  toggleStylesAdvanced,
+  zeroTextSpacing,
+} from "./Shell.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+/** Buttons in the inspector keep the canvas selection: a mousedown on one never takes focus. */
+export const keepSelection = (event: MouseEvent) => {
+  const target = event.target as Element;
+  if (target.closest("button, summary") && !target.closest("input, select, textarea")) event.preventDefault();
+};
+const dataOf = (event: Event, name: string) => (event.currentTarget as HTMLElement).dataset[name] ?? "";
+
+/** One scale control row: its label and current value, then the control the scale calls for. */
+export function ScaleRowControl({ row }: { row: ScaleRow }) {
+  return (
+    <div data-lens={row.prop} class="mt-4 first:mt-0">
+      <div class="mb-[7px] flex min-h-6 items-center justify-between gap-2.5">
+        <Text variant="label-md-strong">{row.label}</Text>
+        {row.kind !== "range" && <ValueChip value={row.valueLabel} note={row.inheritedLabel} />}
+      </div>
+      {row.kind === "segmented" && <SegmentedControl label={row.label} options={row.options} disabled={state.inspector.styles.disabled} onSelect={(event: MouseEvent) => setProp(row.prop, dataOf(event, "option"))} />}
+      {row.kind === "select" && (
+        <ChevronSelect label={row.label} onChange={(event: Event) => setProp(row.prop, valueOf(event))}>
+          <option value="" selected={row.value === ""}>
+            {Publr.t("Default")}
+          </option>
+          {row.options.map((option) => (
+            <option value={option.key} selected={option.pressed}>
+              {option.label}
+            </option>
+          ))}
+        </ChevronSelect>
+      )}
+      {row.kind === "range" && (
+        <ScaleControl
+          label={row.label}
+          index={row.index}
+          max={row.max}
+          valueLabel={row.valueLabel}
+          custom={row.custom}
+          customNumber={row.customNumber}
+          customUnit={row.customUnit}
+          customParsed={row.customParsed}
+          customText={row.value}
+          customRangeValue={row.customRangeValue}
+          customMin={row.customMin}
+          customMax={row.customMax}
+          customStep={row.customStep}
+          onStep={(event: Event) => setPropStep(row.prop, event)}
+          onToggleCustom={() => toggleCustomRow(row.prop)}
+          onCustomNumber={(event: Event) => setPropLength(row.prop, "number", event)}
+          onCustomUnit={(event: Event) => setPropLength(row.prop, "unit", event)}
+          onCustomText={(event: Event) => setPropCustom(row.prop, valueOf(event))}
+          onCustomRange={(event: Event) => setPropLength(row.prop, "number", event)}
+        />
+      )}
+      {row.responsive && <Responsive prop={row.prop} view={row.responsive!} />}
+      {row.showCustom && <CustomValue label={row.label} value={row.value} placeholder={row.prop === "fontSize" ? Publr.t("For example 17px") : Publr.t("Token step or CSS value")} onChange={(event: Event) => setPropCustom(row.prop, valueOf(event))} />}
+    </div>
+  );
+}
+
+/** The "Responsive" pill under a control whose value differs across breakpoints. */
+function Responsive({ prop, view }: { prop: string; view: ResponsiveView }) {
+  return (
+    <ResponsiveField
+      summary={view.summary}
+      changes={view.changes}
+      ranges={view.ranges}
+      points={view.points}
+      onReset={(event: MouseEvent) => resetResponsive(prop, dataOf(event, "breakpoint"))}
+      onJump={(event: MouseEvent) => jumpToBreakpoint(dataOf(event, "device"))}
+      onMove={(event: KeyboardEvent) => moveResponsive(prop, dataOf(event, "breakpoint"), event)}
+    />
+  );
+}
+
+export function StylesTab() {
+  return (
+    <div data-style-panel class="-mx-4">
+      {state.inspector.styles.variations.length > 0 && (
+        <InspectorSection title={Publr.t("Styles")} actionsLabel={Publr.t("Styles actions")} onReset={() => resetStylePanel("styles")}>
+          <div data-style-section="styles" class="grid grid-cols-2 gap-2" role="group" aria-label={Publr.t("Styles")}>
+            {state.inspector.styles.variations.map((option) => (
+              <OptionCard
+                label={option.label}
+                pressed={option.pressed}
+                onClick={() => setVariation(option.key)}
+                onPointerEnter={(event: PointerEvent) => showPreview("variation", option.key, option.label, event)}
+                onPointerLeave={() => hidePreview()}
+              />
+            ))}
+          </div>
+        </InspectorSection>
+      )}
+
+      {state.inspector.styles.typographyShown && (
+        <InspectorSection title={Publr.t("Typography")} actionsLabel={Publr.t("Typography actions")} onReset={() => resetStylePanel("typography")}>
+          <div data-style-section="typography">
+            {state.inspector.styles.textStyles.length > 0 && (
+              <div class="mt-4 first:mt-0">
+                <div class="mb-[7px] flex min-h-6 items-center">
+                  <Text variant="label-md-strong">{Publr.t("Text style")}</Text>
+                </div>
+                <div data-lens="textStyle" class="grid grid-cols-2 gap-2" role="group" aria-label={Publr.t("Text style")}>
+                  {state.inspector.styles.textStyles.map((option) => (
+                    <OptionCard
+                      label={option.label}
+                      pressed={option.pressed}
+                      onClick={() => setTextStyle(option.key)}
+                      onPointerEnter={(event: PointerEvent) => showPreview("textStyle", option.key, option.label, event)}
+                      onPointerLeave={() => hidePreview()}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {state.inspector.styles.fontFamily && (
+              <div class="mt-4 first:mt-0">
+                <div class="mb-[7px] flex min-h-6 items-center justify-between gap-2.5">
+                  <Text variant="label-md-strong">{Publr.t("Font family")}</Text>
+                  <ValueChip value={state.inspector.styles.fontFamily?.valueLabel ?? ""} />
+                </div>
+                <div data-lens="fontFamily" class="grid grid-cols-2 gap-2" role="group" aria-label={Publr.t("Font family")}>
+                  {(state.inspector.styles.fontFamily?.options ?? []).map((option) => (
+                    <OptionCard
+                      label={option.label}
+                      pressed={option.pressed}
+                      fontFamily={option.css}
+                      onClick={() => setFontFamily(option.key)}
+                      onPointerEnter={(event: PointerEvent) => showPreview("fontFamily", option.key, option.label, event)}
+                      onPointerLeave={() => hidePreview()}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {state.inspector.styles.fontSize && <ScaleRowControl row={state.inspector.styles.fontSize!} />}
+            {state.inspector.styles.typography.map((row) => (
+              <ScaleRowControl row={row} />
+            ))}
+          </div>
+        </InspectorSection>
+      )}
+
+      {state.inspector.styles.colors.length > 0 && (
+        <InspectorSection title={Publr.t("Color")} actionsLabel={Publr.t("Color actions")} onReset={() => resetStylePanel("color")}>
+          <div data-style-section="color" class="grid gap-2">
+            {state.inspector.styles.colors.map((row) => (
+              <div data-lens={row.prop === "backgroundColor" ? "background" : row.prop} data-color-value={row.prop} class="relative">
+                <ColorValue label={row.label} value={row.valueLabel} color={row.css} empty={row.empty} open={row.open} note={row.inheritedLabel} onClick={(event: MouseEvent) => openColor(row.prop, event)} />
+                {row.responsive && <Responsive prop={row.prop} view={row.responsive!} />}
+                {row.open && (
+                  <FloatingPanel top={state.colorTop} left={state.colorLeft} label={`${row.label} color`}>
+                    <div onMouseDown={(event: MouseEvent) => keepSelection(event)}>
+                    <div class="mb-3 flex items-center justify-between">
+                      <span>
+                        <Text as="strong" variant="label-sm-strong" classes="block">
+                          {row.label}
+                        </Text>
+                        <Text variant="body-2xs" tone="muted" classes="block">
+                          {row.contextLabel}
+                        </Text>
+                      </span>
+                      <Button hierarchy="tertiary" size="mini" onClick={() => pickColor(row.prop, "")}>
+                        {Publr.t("Clear")}
+                      </Button>
+                    </div>
+                    <div class="flex flex-wrap gap-2" role="group" aria-label={row.label}>
+                      {row.swatches.map((swatch) => (
+                        <span data-swatch={swatch.key} class="contents">
+                          <ColorSwatch label={swatch.label} color={swatch.css} pressed={swatch.pressed} onClick={() => pickColor(row.prop, swatch.key)} />
+                        </span>
+                      ))}
+                    </div>
+                    </div>
+                  </FloatingPanel>
+                )}
+              </div>
+            ))}
+          </div>
+        </InspectorSection>
+      )}
+
+      {(state.inspector.styles.box || state.inspector.styles.dimensions.length > 0) && (
+        <InspectorSection title={Publr.t("Dimensions")} actionsLabel={Publr.t("Dimensions actions")} onReset={() => resetStylePanel("dimensions")}>
+          <div data-style-section="dimensions">
+            {state.inspector.styles.textSpacing && (
+              <div class="mb-4 flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2">
+                <Text variant="label-xs" tone="muted" classes="font-normal">
+                  {Publr.t("Override inherited element spacing")}
+                </Text>
+                <Button hierarchy="secondary" size="mini" onClick={() => zeroTextSpacing()}>
+                  {Publr.t("Set all to 0")}
+                </Button>
+              </div>
+            )}
+            {state.inspector.styles.box && (
+              <BoxModel
+                classes="mb-5"
+                margin={state.inspector.styles.box!.margin}
+                border={state.inspector.styles.box!.border}
+                padding={state.inspector.styles.box!.padding}
+                radius={state.inspector.styles.box!.radius}
+                onPick={(event: MouseEvent) => pickPart(dataOf(event, "boxPart").split(":")[0] as never, dataOf(event, "boxPart").split(":")[1], event.shiftKey)}
+              />
+            )}
+            {state.inspector.styles.box?.responsive && <Responsive prop="box" view={state.inspector.styles.box!.responsive!} />}
+            {state.inspector.styles.dimensions.map((row) => (
+              <ScaleRowControl row={row} />
+            ))}
+          </div>
+        </InspectorSection>
+      )}
+
+      {state.inspector.styles.borderStyles.length > 0 && (
+        <InspectorSection title={Publr.t("Border")} actionsLabel={Publr.t("Border actions")} onReset={() => resetStylePanel("border")}>
+          <div data-style-section="border" data-lens="borderStyle" class="mb-4">
+            <Text variant="label-md" tone="muted" classes="mb-1.5 block font-normal">
+              {Publr.t("Style")}
+            </Text>
+            <SegmentedControl label={Publr.t("Border style")} tone="contrast" options={state.inspector.styles.borderStyles} onSelect={(event: MouseEvent) => setProp("borderStyle", dataOf(event, "option"))} />
+          </div>
+        </InspectorSection>
+      )}
+
+      {state.inspector.styles.optional.length > 0 && (
+        <InspectorSection title={Publr.t("Advanced")} layout="accordion" sectionKey="styles-advanced" open={state.stylesAdvancedOpen} note={Publr.t("Enable less common controls for this block.")} onToggle={() => toggleStylesAdvanced()}>
+          <div data-style-section="advanced" class="flex flex-col gap-1">
+            {state.inspector.styles.optional.map((control) => (
+              <span data-optional={control.prop} class="contents">
+                <ToggleRow label={control.label} pressed={control.enabled} onClick={() => toggleOptional(control.prop, control.enabled)} />
+              </span>
+            ))}
+          </div>
+        </InspectorSection>
+      )}
+    </div>
+  );
+}
+
+/** What the Styles tab opens beside the sidebar: the box pane and an option's preview. */
+export function StyleOverlays() {
+  return (
+    <>
+      {state.pane.open && (
+        <FloatingPanel top={state.pane.top} left={state.pane.left} label={state.pane.title}>
+          <div data-style-pane onMouseDown={(event: MouseEvent) => keepSelection(event)}>
+            <BoxControl
+              title={state.pane.title}
+              label={state.pane.title}
+              value={state.pane.index}
+              max={state.pane.max}
+              displayValue={state.pane.display}
+              selectionKind={state.pane.corners ? "corners" : "sides"}
+              defaultSelection={state.pane.selection as BoxControlSelection}
+              selection={state.pane.selection as BoxControlSelection}
+              customNumber={state.pane.customNumber}
+              customUnit={state.pane.customUnit as never}
+              customRangeValue={state.pane.customRangeValue}
+              customMin={state.pane.customMin}
+              customMax={state.pane.customMax}
+              customStep={state.pane.customStep}
+              onSelectionChange={(event: Event) => paneSelection(event)}
+              onClose={() => closePane()}
+              onTokenInput={(event: Event) => setPaneStep(event)}
+              onTokenChange={(event: Event) => setPaneStep(event)}
+              onCustomChange={(event: Event) => setPaneCustom(event)}
+              onCustomRangeChange={(event: Event) => setPaneCustom(event)}
+            >
+              {state.pane.borderColor && (
+                <div data-lens="borderColor" class="grid gap-1.5">
+                  <Text variant="label-2xs-strong" tone="muted" classes="tracking-[0.04em] uppercase">
+                    {Publr.t("Color")}
+                  </Text>
+                  <SegmentedControl label={Publr.t("Colors")} size="xs" options={state.pane.borderColor?.tiers ?? []} onSelect={(event: MouseEvent) => setBorderTier(dataOf(event, "option"))} />
+                  {state.pane.borderColor?.tier === "custom" ? (
+                    <div class="grid grid-cols-[30px_minmax(0,1fr)] gap-1.5">
+                      <input type="color" class="h-[30px] w-[30px] cursor-pointer rounded border border-input bg-card p-0.5" aria-label={Publr.t("Choose custom border color")} value={state.pane.borderColor?.customHex ?? "#000000"} onChange={(event: Event) => setBorderCustom(event)} />
+                      <Input size="sm" classes="h-[30px]" value={state.pane.borderColor?.custom ?? ""} placeholder={Publr.t("CSS color")} onChange={(event: Event) => setBorderCustom(event)} />
+                    </div>
+                  ) : (
+                    <div class="flex flex-wrap gap-1.5">
+                      {(state.pane.borderColor?.swatches ?? []).map((swatch) => (
+                        <span data-swatch={swatch.key} class="contents">
+                          <ColorSwatch label={swatch.label} color={swatch.css} pressed={swatch.pressed} shape="square" onClick={() => pickBorderColor(swatch.key)} />
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </BoxControl>
+          </div>
+        </FloatingPanel>
+      )}
+      {state.previewShown && (
+        <PreviewPopover title={state.previewTitle} top={state.previewTop} left={state.previewLeft}>
+          <div ref={previewHost} data-style-preview></div>
+        </PreviewPopover>
+      )}
+    </>
+  );
+}

@@ -1,0 +1,271 @@
+// The floating block toolbar, as the old editor drew it: the block's badge and movers,
+// the pattern strip, the block's declared controls (alignment, levels, layouts, toggles,
+// Replace, Link, Add item), the inline formats, and the more menu. A multi-selection
+// shows Group alone.
+import { Publr } from "publr-jsx";
+import { BlockToolbar as Strip } from "../../ui/src/components/BlockToolbar/BlockToolbar.ptsx";
+import { BlockToolbarButton } from "../../ui/src/components/BlockToolbar/BlockToolbarButton.ptsx";
+import { BlockToolbarGroup } from "../../ui/src/components/BlockToolbar/BlockToolbarGroup.ptsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Checkbox } from "../../ui/src/components/Checkbox/Checkbox.ptsx";
+import { DropdownMenu } from "../../ui/src/components/Dropdown/Dropdown.ptsx";
+import { DropdownMenuContent } from "../../ui/src/components/Dropdown/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "../../ui/src/components/Dropdown/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "../../ui/src/components/Dropdown/DropdownMenuTrigger.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import type { IconName } from "../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../ui/src/components/Input/Input.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import {
+  applyLink,
+  closeLink,
+  duplicate,
+  editPattern,
+  format,
+  group,
+  link,
+  move,
+  remove,
+  setAlign,
+  state,
+  toggleToolbarMenu,
+  toolbarAction,
+  toolbarMedia,
+  toolbarOption,
+  toolbarText,
+  ungroup,
+} from "./Shell.ptsx";
+
+/** Toolbar buttons keep the canvas selection: a mousedown never takes focus. */
+const keep = (event: MouseEvent) => event.preventDefault();
+
+const ALIGNMENTS = [
+  { key: "left", label: Publr.t("Align text left"), icon: "text-align-left" },
+  { key: "center", label: Publr.t("Align text center"), icon: "text-align-center" },
+  { key: "right", label: Publr.t("Align text right"), icon: "text-align-right" },
+] as const;
+
+const formValue = (event: Event, name: string) => ((event.target as HTMLFormElement).elements.namedItem(name) as HTMLInputElement | null)?.value ?? "";
+const formChecked = (event: Event, name: string) => !!((event.target as HTMLFormElement).elements.namedItem(name) as HTMLInputElement | null)?.checked;
+
+export function BlockToolbar() {
+  return (
+    <div
+      data-block-toolbar
+      class="absolute z-30"
+      style={{ top: `${state.toolbar.top}px`, left: `${state.toolbar.left}px` }}
+      hidden={!state.toolbar.shown}
+      onMouseDown={(event: MouseEvent) => !(event.target as Element).closest("[data-toolbar-form]") && keep(event)}
+    >
+      <Strip>
+        {state.selectedCount > 1 ? (
+          <BlockToolbarGroup>
+            <BlockToolbarButton label={Publr.t("Group (⌘G)")} icon="group-blocks" text={Publr.t("Group")} onClick={() => group()} />
+          </BlockToolbarGroup>
+        ) : (
+          <>
+            {!state.insidePattern && (
+              <BlockToolbarGroup>
+                <span data-toolbar-block class="flex h-9 min-w-9 items-center justify-center px-1 text-foreground" title={state.inspector.label || (state.active?.label ?? "")}>
+                  <Icon name={(state.onPatternRoot ? "pattern" : state.inspector.icon || "components") as IconName} size="md" />
+                </span>
+                {state.movable && (
+                  <>
+                    <BlockToolbarButton label={Publr.t("Move up")} icon="chevron-up" iconSize="lg" disabled={!state.canMoveUp} onClick={() => move(-1)} />
+                    <BlockToolbarButton label={Publr.t("Move down")} icon="chevron-down" iconSize="lg" disabled={!state.canMoveDown} onClick={() => move(1)} />
+                  </>
+                )}
+              </BlockToolbarGroup>
+            )}
+            {state.onPatternRoot && (
+              <BlockToolbarGroup>
+                <BlockToolbarButton label={Publr.t("Edit pattern")} text={Publr.t("Edit pattern")} onClick={() => editPattern()} />
+              </BlockToolbarGroup>
+            )}
+            {!state.onPatternRoot && state.toolbarControls.length > 0 && !(state.textSelected && state.toolbarOwnsText) && (
+              <BlockToolbarGroup>
+                {state.toolbarControls.map((control) => (
+                  <span class="contents">
+                    {control.control === "text-align" && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <BlockToolbarButton label={control.label} icon={control.icon} menu={true} />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent size="lg">
+                          {ALIGNMENTS.map((alignment) => (
+                            <DropdownMenuItem size="lg" active={state.alignment === alignment.key} onClick={() => setAlign(alignment.key)}>
+                              <Icon name={alignment.icon} size="md" />
+                              {alignment.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    {(control.control === "field-options" || control.control === "setting-options" || control.control === "style-options") && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <BlockToolbarButton label={control.label} icon={control.icon} text={control.icon ? "" : control.text} menu={true} />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent size="lg">
+                          {control.options.map((option) => (
+                            <DropdownMenuItem size="lg" active={option.pressed} onClick={() => toolbarOption(control.index, option.value)}>
+                              {option.icon && <Icon name={option.icon as IconName} size="md" />}
+                              {option.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    {(control.control === "toggle-setting" || control.control === "toggle-style" || control.control === "caption" || control.control === "add-child" || control.control === "copy") && (
+                      <BlockToolbarButton label={control.label} icon={control.icon} text={control.icon ? "" : control.label} pressed={control.pressed} disabled={control.disabled} onClick={() => toolbarAction(control.index)} />
+                    )}
+                    {control.control === "replace" && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <BlockToolbarButton label={control.label} icon={control.icon} text={control.icon ? "" : control.label} menu={true} />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent size="lg" classes="w-72">
+                          {state.canPickMedia && (
+                            <DropdownMenuItem size="lg" onClick={() => toolbarMedia(control.index, "pick")}>
+                              <Icon name="gallery" size="md" />
+                              {Publr.t("Media Library")}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem size="lg" onClick={() => toggleToolbarMenu(`upload:${control.index}`)}>
+                            <Icon name="image" size="md" />
+                            {Publr.t("Upload")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem size="lg" onClick={() => toggleToolbarMenu(`url:${control.index}`)}>
+                            <Icon name="globe" size="md" />
+                            {Publr.t("Insert from URL")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem size="lg" onClick={() => toolbarMedia(control.index, "reset")}>
+                            <Icon name="reset" size="md" />
+                            {Publr.t("Reset")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    {(control.control === "link" || control.control === "text") && (
+                      <BlockToolbarButton label={control.label} icon={control.control === "link" ? "link" : ""} text={control.control === "text" ? control.label : ""} pressed={control.pressed} onClick={() => toggleToolbarMenu(`form:${control.index}`)} />
+                    )}
+                  </span>
+                ))}
+              </BlockToolbarGroup>
+            )}
+            {state.formats.length > 0 && (
+              <BlockToolbarGroup>
+                {state.formats.includes("bold") && <BlockToolbarButton label={Publr.t("Bold")} icon="bold" pressed={state.marks.includes("bold")} onClick={() => format("bold")} />}
+                {state.formats.includes("italic") && <BlockToolbarButton label={Publr.t("Italic")} icon="italic" pressed={state.marks.includes("italic")} onClick={() => format("italic")} />}
+                {state.formats.includes("link") && <BlockToolbarButton label={Publr.t("Link")} icon="link" pressed={state.marks.includes("link")} disabled={!state.textSelected} onClick={() => link()} />}
+              </BlockToolbarGroup>
+            )}
+            {!state.insidePattern && (
+              <BlockToolbarGroup>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <BlockToolbarButton label={Publr.t("Options")} icon="more" iconSize="lg" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent size="lg" align="right">
+                    {state.onPatternRoot && (
+                      <DropdownMenuItem size="lg" onClick={() => ungroup()}>
+                        <Icon name="ungroup" size="md" />
+                        {Publr.t("Convert to blocks")}
+                      </DropdownMenuItem>
+                    )}
+                    {state.canUngroup && !state.onPatternRoot && (
+                      <DropdownMenuItem size="lg" onClick={() => ungroup()}>
+                        <Icon name="ungroup" size="md" />
+                        {Publr.t("Ungroup")}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem size="lg" onClick={() => group()}>
+                      <Icon name="group" size="md" />
+                      {Publr.t("Wrap in container")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem size="lg" onClick={() => duplicate()}>
+                      <Icon name="duplicate" size="md" />
+                      {Publr.t("Duplicate")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem size="lg" onClick={() => remove()}>
+                      <Icon name="trash" size="md" />
+                      {Publr.t("Remove")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </BlockToolbarGroup>
+            )}
+          </>
+        )}
+      </Strip>
+      {state.linkOpen && (
+        <form
+          data-link-popover
+          data-toolbar-form
+          class="absolute left-0 top-full z-40 mt-1 w-80 rounded-lg border border-border bg-popover p-1.5 shadow-lg"
+          onSubmit={(event: Event) => {
+            event.preventDefault();
+            applyLink(formValue(event, "href"), formChecked(event, "blank"));
+          }}
+          onKeyDown={(event: KeyboardEvent) => event.key === "Escape" && closeLink()}
+        >
+          <div class="flex items-center gap-1.5">
+            <Input name="href" type="url" size="sm" classes="h-10" value={state.linkValue} placeholder={Publr.t("Paste URL or type…")} />
+            <Button hierarchy="primary" size="md" type="submit" label={Publr.t("Apply")}>
+              ↵
+            </Button>
+          </div>
+          <label class="mt-2.5 flex cursor-pointer items-center gap-2 px-1">
+            <Checkbox name="blank" checked={state.linkBlank} />
+            <Text variant="body-md" tone="muted">
+              {Publr.t("Open in new tab")}
+            </Text>
+          </label>
+          {state.linkValue && (
+            <Button hierarchy="tertiary" size="md" classes="mt-1 w-full" onClick={() => applyLink("")}>
+              <Icon name="link" size="md" />
+              {Publr.t("Remove link")}
+            </Button>
+          )}
+        </form>
+      )}
+      {state.toolbarForm && (
+        <form
+          data-toolbar-form
+          class="absolute left-0 top-full z-40 mt-1 w-80 rounded-lg border border-border bg-popover p-1.5 shadow-lg"
+          onSubmit={(event: Event) => {
+            event.preventDefault();
+            toolbarText(state.toolbarFormIndex, formValue(event, "value"), state.toolbarFormTarget ? (formChecked(event, "blank") ? "_blank" : "none") : "");
+          }}
+          onKeyDown={(event: KeyboardEvent) => event.key === "Escape" && toggleToolbarMenu("")}
+        >
+          <div class="flex items-center gap-1.5">
+            <Input name="value" type="text" size="sm" classes="h-10" value={state.toolbarFormValue} placeholder={state.toolbarFormLink ? Publr.t("Paste URL or type…") : ""} />
+            <Button hierarchy="primary" size="md" type="submit" label={Publr.t("Apply")}>
+              ↵
+            </Button>
+          </div>
+          {state.toolbarFormTarget && (
+            <label class="mt-2.5 flex cursor-pointer items-center gap-2 px-1">
+              <Checkbox name="blank" checked={state.toolbarFormBlank} />
+              <Text variant="body-md" tone="muted">
+                {Publr.t("Open in new tab")}
+              </Text>
+            </label>
+          )}
+          {state.toolbarFormLink && state.toolbarFormValue && (
+            <Button hierarchy="tertiary" size="md" classes="mt-1 w-full" onClick={() => toolbarText(state.toolbarFormIndex, "")}>
+              <Icon name="link" size="md" />
+              {Publr.t("Remove link")}
+            </Button>
+          )}
+        </form>
+      )}
+      {state.toolbarUpload && (
+        <form data-toolbar-form class="absolute left-0 top-full z-40 mt-1 w-72 rounded-lg border border-border bg-popover p-1.5 shadow-lg">
+          <input type="file" accept="image/*,video/*,audio/*" class="w-full" onChange={(event: Event) => toolbarMedia(state.toolbarFormIndex, "upload", event)} />
+        </form>
+      )}
+    </div>
+  );
+}

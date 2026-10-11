@@ -1,0 +1,33 @@
+// The strip under the canvas: Document, then the path to the active block (or the
+// template slot picked in the Document tab). Each step selects its block.
+import { Publr } from "publr-jsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { selectPath, state } from "./Shell.ptsx";
+
+export function Breadcrumb() {
+  return (
+    <nav data-breadcrumb aria-label={Publr.t("Block path")} class="flex h-[25px] shrink-0 items-center gap-1 overflow-hidden border-t border-border bg-card px-[18px] whitespace-nowrap">
+      <button type="button" class="cursor-pointer hover:text-primary" onClick={() => selectPath("")}>
+        <Text variant="body-compact">{Publr.t("Document")}</Text>
+      </button>
+      {state.document.slotLabel && (
+        <>
+          <Text variant="body-compact" tone="muted">
+            ›
+          </Text>
+          <Text variant="body-compact">{state.document.slotLabel}</Text>
+        </>
+      )}
+      {state.breadcrumb.map((block) => (
+        <>
+          <Text variant="body-compact" tone="muted">
+            ›
+          </Text>
+          <button type="button" data-crumb={block.id} class="cursor-pointer hover:text-primary" onClick={() => selectPath(block.id)}>
+            <Text variant="body-compact">{block.label}</Text>
+          </button>
+        </>
+      ))}
+    </nav>
+  );
+}

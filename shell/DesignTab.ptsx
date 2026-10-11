@@ -1,0 +1,66 @@
+// The Design tab: the site theme the canvas compiles against and the style controls
+// scale from. Tokens edit live; @theme CSS imports and exports. The design system
+// builder is the full tool; this is what the editor itself needs (Define… lands here).
+import { Publr } from "publr-jsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../ui/src/components/Input/Input.ptsx";
+import { Textarea } from "../../ui/src/components/Textarea/Textarea.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { addToken, importTheme, removeToken, setToken, state } from "./Shell.ptsx";
+
+const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
+
+export function DesignTab() {
+  return (
+    <div data-design-tab class="grid gap-5 p-4">
+      <div class="grid gap-1">
+        <Text variant="heading-xs">{Publr.t("Theme")}</Text>
+        <Text variant="body-sm" tone="muted">
+          <span data-engine-status>{`CSS engine: ${state.engineStatus}`}</span>
+        </Text>
+      </div>
+      <section data-add-token class="grid gap-2 rounded-md border border-border p-3">
+        <Text variant="body-sm" classes="font-medium">
+          {Publr.t("Add a token")}
+        </Text>
+        <Input size="sm" placeholder="text-mega" value={state.tokenName} onInput={(event: Event) => (state.tokenName = valueOf(event))} />
+        <Input size="sm" placeholder="4rem" value={state.tokenValue} onInput={(event: Event) => (state.tokenValue = valueOf(event))} />
+        <Button hierarchy="primary" size="sm" onClick={() => addToken()}>
+          {Publr.t("Add token")}
+        </Button>
+      </section>
+      <section class="grid gap-1">
+        <Text variant="eyebrow" tone="muted">
+          {Publr.t("Tokens")}
+        </Text>
+        <ul data-tokens class="grid gap-1">
+          {state.tokens.map((token) => (
+            <li data-token={token.name} class="grid grid-cols-[minmax(0,1fr)_7rem_auto] items-center gap-1">
+              <span class="truncate font-mono text-2xs">{token.name}</span>
+              <Input size="sm" value={token.value} onChange={(event: Event) => setToken(token.name, valueOf(event))} />
+              <Button hierarchy="tertiary" size="xs" label={Publr.t("Remove")} title={Publr.t("Remove")} onClick={() => removeToken(token.name)}>
+                <Icon name="trash" size="sm" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section class="grid gap-2">
+        <Text variant="eyebrow" tone="muted">
+          {Publr.t("Import @theme CSS")}
+        </Text>
+        <Textarea rows={3} mono value={state.themeImport} placeholder="@theme { --text-mega: 4rem; }" onInput={(event: Event) => (state.themeImport = valueOf(event))} />
+        <Button hierarchy="secondary" size="sm" onClick={() => importTheme()}>
+          {Publr.t("Import")}
+        </Button>
+      </section>
+      <section class="grid gap-2">
+        <Text variant="eyebrow" tone="muted">
+          {Publr.t("Export")}
+        </Text>
+        <pre data-theme-export class="max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-2xs">{state.themeCss}</pre>
+      </section>
+    </div>
+  );
+}
