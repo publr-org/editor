@@ -1,33 +1,42 @@
 # Editor integration contract (CMS side)
 
-From the core roadmap §3.5, with the vocabulary of the current core (`record`,
-`expected_version`). The CMS registers an editor per content type; the editor
-never talks to the CMS except through this surface and the operation table.
+How the core hosts the editor, as agreed on 2026-10-08 (`../.agents/specs/editor-rewrite.md`,
+"What stays"). The editor talks to the CMS only through this surface.
 
-```zig
-pub const Editor = struct {
-    id: []const u8,                          // "form" | "block" | plugin ids
-    assets: []const Asset,                   // served at /admin/editors/<id>/<name>
-    full_bleed: bool = false,                // layout hint (replaces "takeover" inference)
-    bootstrap: *const fn (EditorArgs, *std.Io.Writer) anyerror!void,
-};
-pub const EditorArgs = struct {
-    def: *const ContentTypeDef,              // def.editor, def.editor_config (validated)
-    record: *const Record,                   // already loaded
-    form_id: []const u8,                     // "entry-form"
-    csrf: []const u8,
-};
-```
-
-- The editor keeps `<input name=<content_field>>` and `<input name=<editing_field>>`
-  current inside `#entry-form` and fires a bubbling `input` on change.
-- Saving is the ordinary `record.save` operation, posted as `op=record.save` to
-  `/admin/action`, carrying `expected_version` for optimistic concurrency; a 409
-  is shown by the editor as a recovery, never swallowed.
-- Boot JS ships as a real `.js` asset (CSP-compatible), never inline.
-- The CMS stores editor HTML as opaque data but owns the trust policy: stored
-  content is sanitised on the way out for any public render, and the media
-  adapter endpoints are the only upload path.
-- Themes, design, templates and preview are not part of this contract; they
-  return with a site plugin through the editor's own host seams.
-- Browser end-to-end tests cover create → edit → publish through the editor.
+- **Which types.** A content type with `editor` `visual` is edited by the editor over one
+  rich text field: the one `editor_config` `{"field": …}` names, else the type's first.
+  Every `rich` control in a form mounts the editor inline, offering the formats the field
+  allows (`options.richtext.formats`).
+- **Value.** The field holds the editor's annotated HTML (the wire contract), one copy.
+  Plain HTML in a field opens as paragraphs. The CMS sanitizes on the way out: a page
+  printing the value gets plain markup.
+- **Saving.** The editor keeps the field's control inside `form#record` current and fires
+  a bubbling `input`; the record editor's autosave posts it as `record.save` with
+  `expected_version`. A conflict comes back as the record editor's recovery, never
+  swallowed.
+- **The page.** On a visual record the editor fills the sheet; the record's own editor
+  (status, actions, the other fields) is mounted in its Entry panel.
+- **Delivery.** The editor's ES modules are built into the Publr binary and served under
+  `/admin/editor/`. They import the admin's own PublrJS runtime: the build rewrites bare
+  specifiers to `/admin/publr-jsx.js`, `/admin/publr.js` and `/admin/publr-<addon>.js`, so
+  there is no import map. `ui/layouts/Document.ptsx` loads
+  `/admin/editor/editor/host/admin.js` as a module on every admin page; nothing is inline.
+- **The site.** `data-editor-site` on the record's wrapper holds `{"styles", "theme"}`:
+  the editor's reset and the app's `/_app/app.css`, and the tokens the app declares. The
+  canvas draws with them; the chrome keeps the admin's stylesheet.
+- **Media.** Uploads go to `POST /media/upload?filename=<name>` (the file's bytes, with
+  `X-Csrf-Token`) and come back as the library's file; picking opens a grid of the
+  library through `media.list`, as the person signed in. The editor never uploads
+  elsewhere.
+- **Design system.** `/admin/design/system` carries `data-design-system="<app>"`,
+  `data-fonts` (`[{family, url}]`) and the app's tokens in `data-editor-site`; the builder
+  saves `design.save_system {app, tokens, fonts}`. Roles are kept as tokens
+  (`color-primary: var(--color-brand)`) and read back from them, so the app's tokens are
+  the whole system.
+- **Moodboard.** `/admin/design/moodboard` carries `data-moodboard="<app>"` and
+  `data-items` (the board); every change saves `design.save_moodboard {app, items}`, a
+  moment after the last one.
+- **Templates and patterns.** Host hooks give the editor the route's template, its parts
+  and the app's patterns, and save overrides as records (`template`, `template_part`,
+  `pattern`); the CMS renders published overrides in place of the file's region.
+- **Tests.** Browser end-to-end tests cover create, edit and publish through the editor.

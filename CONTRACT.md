@@ -29,14 +29,16 @@ editor depends on this document, never on the CMS repo.
 
 | repo | used for |
 |---|---|
-| `../pjsx` | compiling `.ptsx` to DOM, and (`strip`, `bundle`, `minify`) building the whole editor |
+| `../pjsx` | compiling every `.ptsx` and `.ts` file to an ES module (the `dom` target), as `../ui`'s gallery is built |
 | `../ui` | the design-system components the chrome is made of |
 | `../publr-js` | the runtime the compiled output calls into |
 | `../icons` | `src/index.ts` |
 | `../jit` | `jit_engine.wasm` for live classes on the canvas; `theme.zon` projected to TS |
 
-No vite, no Tailwind, no npm on the build path. Node only for dev-time
-type-checking (`pjsx canonical` + tsgo) and browser tests, untracked.
+No vite, no Tailwind, no npm, no bundler and no minifier on the build path: the modules
+are served as they are, behind an import map. Node only for dev-time type-checking
+(`pjsx canonical` + tsgo) and browser tests, untracked. The order of work and the
+decisions around this contract: `../.agents/specs/editor-rewrite.md`.
 
 ## 4. Shape
 
@@ -45,7 +47,7 @@ model/    pure TypeScript, no DOM, no PJSX: the block tree, commit() and history
           the upcast/downcast codec. Tested headless.
 blocks/   the blocks, in PJSX, one component per module (docs/BLOCKS.md)
 shell/    the chrome, in PJSX, on ../ui components
-host/     the bundle the CMS embeds, and the boot asset
+host/     the boot module the CMS mounts
 tests/    manual/: 57 human-driven specs with fixtures (inherited; the harness
           that runs them is part of the rewrite); e2e: create → edit → publish
 ```
