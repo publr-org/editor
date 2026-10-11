@@ -1,0 +1,208 @@
+// The moodboard: its own app. A free board (pan, zoom, drop, drag, resize, annotate) of
+// what the site should feel like: notes, links, screenshots, photos, colors, font files
+// and Figma frames. Its bar names it and leads to the other apps. It imports neither the
+// editor nor the design system builder; the build prompt (model.ts) is what leaves it.
+import { Publr } from "publr-jsx";
+import { Board } from "../../ui/src/components/Board/Board.ptsx";
+import { BoardCard } from "../../ui/src/components/Board/BoardCard.ptsx";
+import { BoardCardBody } from "../../ui/src/components/Board/BoardCardBody.ptsx";
+import { BoardCardHeader } from "../../ui/src/components/Board/BoardCardHeader.ptsx";
+import { BoardCardMedia } from "../../ui/src/components/Board/BoardCardMedia.ptsx";
+import { BoardCardSpecimen } from "../../ui/src/components/Board/BoardCardSpecimen.ptsx";
+import { BoardCardSwatch } from "../../ui/src/components/Board/BoardCardSwatch.ptsx";
+import { BoardCardSwatches } from "../../ui/src/components/Board/BoardCardSwatches.ptsx";
+import { BoardCardText } from "../../ui/src/components/Board/BoardCardText.ptsx";
+import { BoardNotice } from "../../ui/src/components/Board/BoardNotice.ptsx";
+import { BoardTool } from "../../ui/src/components/Board/BoardTool.ptsx";
+import { BoardToolbar } from "../../ui/src/components/Board/BoardToolbar.ptsx";
+import { BoardZoom } from "../../ui/src/components/Board/BoardZoom.ptsx";
+import { Button } from "../../ui/src/components/Button/Button.ptsx";
+import { Heading } from "../../ui/src/components/Heading/Heading.ptsx";
+import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
+import { Input } from "../../ui/src/components/Input/Input.ptsx";
+import { Link } from "../../ui/src/components/Link/Link.ptsx";
+import { Text } from "../../ui/src/components/Text/Text.ptsx";
+import { FigmaMark } from "./FigmaMark.ptsx";
+import { PublrMark } from "./PublrMark.ptsx";
+import { addCard, dragLeave, dragOver, drop, fit, keyDown, listen, picked, pointerDown, pointerMove, pointerUp, show, wheel, zoomIn, zoomOut } from "./gestures";
+import { boardRoot, growInput, removeItem, start, state, updateItem } from "./store";
+import type { MoodboardOptions } from "./store";
+
+export type MoodboardProps = MoodboardOptions & {
+  /** The Publr mark in the bar's corner: on a page of its own, not inside the admin. */
+  mark?: boolean;
+  /** Where the bar's Editor and Design system icons lead; one not given is left out. */
+  editorHref?: string;
+  designHref?: string;
+};
+
+const picker = Publr.ref();
+const valueOf = (event: Event): string => (event.target as HTMLInputElement).value;
+const blurOnEnter = (event: KeyboardEvent): void => {
+  if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+};
+
+function learnHeight(id: string, width: number, height: number | undefined, event: Event): void {
+  const img = event.target as HTMLImageElement;
+  if (!height && img.naturalWidth) updateItem(id, { h: Math.round((width * img.naturalHeight) / img.naturalWidth) });
+}
+
+function EmptyBoard() {
+  return (
+    <>
+      {state.empty && (
+        <div data-part="moodboard-empty">
+          <Heading level={2} size="lg">
+            {Publr.t("What should this site feel like?")}
+          </Heading>
+          <Text as="p" variant="body-md" tone="muted" classes="mt-2 block">
+            {Publr.t("Drop screenshots and photos, paste links and colors, write notes. Move things around, annotate what matters. The style guide builder reads this board.")}
+          </Text>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Notice() {
+  return <>{state.error && <BoardNotice>{state.error}</BoardNotice>}</>;
+}
+
+function Tools() {
+  return (
+    <BoardToolbar label={Publr.t("Add to the moodboard")} hint={Publr.t("or paste / drop anything")}>
+      <BoardTool label={Publr.t("Add a note")} onClick={() => addCard("note")}>
+        {Publr.t("Note")}
+      </BoardTool>
+      <BoardTool label={Publr.t("Add a link")} onClick={() => addCard("link")}>
+        {Publr.t("Link")}
+      </BoardTool>
+      <BoardTool label={Publr.t("Add a Figma frame")} title={Publr.t("Paste a link to a Figma frame — its render, colors and fonts join the board")} icon={<FigmaMark />} onClick={() => addCard("figma")}>
+        Figma
+      </BoardTool>
+      <BoardTool label={Publr.t("Add a color")} onClick={() => addCard("color")}>
+        {Publr.t("Color")}
+      </BoardTool>
+      <input ref={picker} type="file" class="sr-only" multiple accept="image/*,.woff2,.woff,.ttf,.otf" aria-label={Publr.t("Choose images or font files")} onChange={picked} />
+      <BoardTool
+        label={Publr.t("Upload images or font files")}
+        title={state.uploadTitle}
+        disabled={!state.canUpload || state.busy}
+        onClick={() => (picker.current as HTMLInputElement | null)?.click()}
+      >
+        {state.uploadLabel}
+      </BoardTool>
+    </BoardToolbar>
+  );
+}
+
+export function Moodboard(props: MoodboardProps) {
+  start(props);
+  listen();
+  show();
+  return (
+    <div data-moodboard-app class="flex h-full min-h-0 flex-col bg-background text-foreground">
+      <header class="flex h-12 shrink-0 items-center border-b border-border bg-background px-3">
+        {props.mark && <PublrMark />}
+        <Heading level={1} size="sm" classes="mr-auto truncate">
+          {Publr.t("Moodboard")}
+        </Heading>
+        <nav aria-label={Publr.t("Publr apps")} class="flex items-center gap-0.5">
+          {props.editorHref && (
+            <Link href={props.editorHref} tone="default" label={Publr.t("Open editor")} classes="flex size-9 items-center justify-center">
+              <Icon name="edit" size="sm" />
+            </Link>
+          )}
+          {props.designHref && (
+            <Link href={props.designHref} tone="default" label={Publr.t("Open design system")} classes="flex size-9 items-center justify-center">
+              <Icon name="palette" size="sm" />
+            </Link>
+          )}
+        </nav>
+      </header>
+      <div ref={boardRoot} class="relative flex min-h-0 flex-1 flex-col">
+        <Board
+          label={Publr.t("Moodboard canvas")}
+          x={state.view.x}
+          y={state.view.y}
+          zoom={state.view.z}
+          dropping={state.dropping}
+          grabbing={state.grabbing}
+          toolbar={<Tools />}
+          controls={<BoardZoom value={state.zoomLabel} onZoomOut={zoomOut} onZoomIn={zoomIn} onFit={fit} />}
+          notice={<Notice />}
+          empty={<EmptyBoard />}
+          onPointerDown={pointerDown}
+          onPointerMove={pointerMove}
+          onPointerUp={pointerUp}
+          onWheel={wheel}
+          onKeyDown={keyDown}
+          onDragOver={dragOver}
+          onDragLeave={dragLeave}
+          onDrop={drop}
+        >
+          {state.cards.map((card) => (
+            <BoardCard
+              key={card.key}
+              card={card.id}
+              kind={card.kind}
+              x={card.x}
+              y={card.y}
+              width={card.w}
+              selected={state.selected === card.id}
+              tools={
+                <Button hierarchy="secondary" intent="destructive" size="xs" title={Publr.t("Remove")} label={Publr.t("Remove from the moodboard")} onClick={() => removeItem(card.id)}>
+                  {Publr.t("Remove")}
+                </Button>
+              }
+            >
+              {card.kind === "image" && <BoardCardMedia src={card.src} alt={card.alt ?? ""} height={card.h ?? 0} onLoad={(event: Event) => learnHeight(card.id, card.w, card.h, event)} />}
+              {card.kind === "color" && <BoardCardSwatch color={card.value} height={card.swatch} pick={card.pick} onChange={(event: Event) => updateItem(card.id, { value: valueOf(event) })} />}
+              {card.kind === "figma" && card.thumbnail && <BoardCardMedia src={card.thumbnail} alt={card.title ?? Publr.t("Figma frame")} />}
+              {(card.kind === "link" || card.kind === "figma") && (
+                <BoardCardBody>
+                  {card.url ? (
+                    <BoardCardHeader eyebrow={card.eyebrow} mark={card.kind === "figma" ? <FigmaMark /> : undefined} title={card.heading} href={card.url} hrefLabel={card.kind === "figma" ? Publr.t("Open in Figma") : Publr.t("Open link")}>
+                      {card.status === "pending" && (
+                        <Text as="p" variant="body-sm" tone="muted" classes="mt-1 block">
+                          {Publr.t("Pulling the frame…")}
+                        </Text>
+                      )}
+                      {card.status === "error" && (
+                        <Text as="p" variant="body-sm" tone="error" classes="mt-1 block">
+                          {card.error ?? ""}
+                        </Text>
+                      )}
+                      {card.colors && card.colors.length > 0 && <BoardCardSwatches colors={card.colors} classes="mt-2" />}
+                      {card.fonts && card.fonts.length > 0 && (
+                        <Text as="p" variant="body-sm" tone="muted" classes="mt-1.5 block">
+                          {card.fonts.join(" · ")}
+                        </Text>
+                      )}
+                    </BoardCardHeader>
+                  ) : (
+                    <Input
+                      type="url"
+                      size="sm"
+                      label={card.kind === "figma" ? Publr.t("Figma frame URL") : Publr.t("Link URL")}
+                      placeholder={card.kind === "figma" ? "https://www.figma.com/design/…?node-id=…" : "https://…"}
+                      onChange={(event: Event) => updateItem(card.id, card.kind === "figma" ? { url: valueOf(event).trim(), status: "pending" } : { url: valueOf(event).trim() })}
+                      onKeyDown={blurOnEnter}
+                    />
+                  )}
+                </BoardCardBody>
+              )}
+              {card.kind === "font" && (
+                <BoardCardBody>
+                  <BoardCardSpecimen eyebrow={card.eyebrow} family={card.family} face={card.face} file={card.file} />
+                </BoardCardBody>
+              )}
+              {card.kind === "note" && <BoardCardText variant="body" label={Publr.t("Note")} placeholder={Publr.t("Write a note…")} value={card.text} onInput={growInput} onChange={(event: Event) => updateItem(card.id, { text: valueOf(event) })} />}
+              <BoardCardText label={Publr.t("Annotation")} placeholder={Publr.t("Why this?")} value={card.note ?? ""} onInput={growInput} onChange={(event: Event) => updateItem(card.id, { note: valueOf(event) })} />
+            </BoardCard>
+          ))}
+        </Board>
+      </div>
+    </div>
+  );
+}

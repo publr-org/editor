@@ -1,0 +1,12 @@
+// The Figma mark, monochrome, for the moodboard's Figma affordances.
+export function FigmaMark() {
+  return (
+    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8.5 2h3.5v6.67H8.5A3.33 3.33 0 0 1 8.5 2Z" />
+      <path d="M12 2h3.5a3.33 3.33 0 0 1 0 6.67H12V2Z" />
+      <path d="M8.5 8.67H12v6.66H8.5a3.33 3.33 0 0 1 0-6.66Z" />
+      <circle cx="15.5" cy="12" r="3.33" />
+      <path d="M8.5 15.33H12V18.7A3.33 3.33 0 1 1 8.5 15.33Z" />
+    </svg>
+  );
+}
