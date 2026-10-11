@@ -1,0 +1,194 @@
+/* What the editor draws inside the canvas frame, on top of the site's own styles:
+   placeholders, block selection, editing affordances. Never serialized, never on a
+   published page. */
+
+:root {
+  --canvas-accent: #3858e9;
+  --canvas-accent-soft: rgb(56 88 233 / 0.08);
+  --canvas-placeholder: rgb(0 0 0 / 0.38);
+}
+
+html {
+  background: #fff;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+[data-canvas-root] {
+  outline: none;
+  padding: 2.5rem 2rem 30vh;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+[data-canvas-root][data-canvas-wide] {
+  max-width: none;
+  padding: 0;
+}
+
+[data-canvas-root][data-canvas-wide] > * + * {
+  margin-top: 0;
+}
+
+/* A template, a part or a pattern edited on its own: the blocks edge to edge on a sheet
+   the chrome sizes to them. */
+[data-canvas-root][data-canvas-isolated] {
+  padding: 0;
+  max-width: none;
+}
+
+body:has(> [data-canvas-root][data-canvas-isolated]) {
+  min-height: 0;
+}
+
+[data-canvas-root] > * + * {
+  margin-top: 1rem;
+}
+
+[contenteditable] {
+  outline: none;
+  cursor: text;
+}
+
+[contenteditable]:empty {
+  min-height: 1lh;
+}
+
+[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--canvas-placeholder);
+  pointer-events: none;
+}
+
+[data-canvas-block] {
+  position: relative;
+}
+
+[data-canvas-block][data-select-on-click],
+[data-canvas-block][data-canvas-raw] {
+  cursor: default;
+}
+
+[data-canvas-raw] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+[data-canvas-selected] {
+  outline: 2px solid var(--canvas-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+[data-canvas-selected] ::selection,
+[data-canvas-selected]::selection {
+  background: transparent;
+}
+
+[data-canvas-run] {
+  background: var(--canvas-accent-soft);
+}
+
+[data-canvas-hover]:not([data-canvas-selected]) {
+  outline: 1px dashed rgb(56 88 233 / 0.45);
+  outline-offset: 2px;
+}
+
+[data-canvas-media-empty] {
+  display: block;
+  min-height: 6rem;
+  min-width: 6rem;
+  background: repeating-linear-gradient(45deg, #f4f4f5, #f4f4f5 8px, #fafafa 8px, #fafafa 16px);
+  border: 1px dashed #d4d4d8;
+  border-radius: 4px;
+}
+
+[data-canvas-locked] [contenteditable="false"] {
+  cursor: default;
+}
+
+
+[data-canvas-isolated-out] {
+  display: none;
+}
+
+[data-canvas-template] {
+  min-height: 100vh;
+}
+
+[data-canvas-template] > :not(:has([data-canvas-root])),
+[data-canvas-part] {
+  cursor: pointer;
+}
+
+[data-canvas-template] [data-canvas-part]:hover,
+[data-canvas-part]:hover {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
+[data-canvas-root][data-canvas-in-template] {
+  padding: 0;
+  max-width: none;
+}
+
+/* Inside its template a page is the site's: its sections set their own spacing. */
+[data-canvas-root][data-canvas-in-template] > * + *,
+[data-canvas-root][data-canvas-isolated] > * + * {
+  margin-top: 0;
+}
+
+/* The slot the Document tab picked, in the projected template. */
+[data-canvas-slot-selected] {
+  outline: 2px solid #8b5cf6;
+  outline-offset: -2px;
+}
+
+[data-pb-block="template-slot"] {
+  display: block;
+  padding: 1.5rem;
+  border: 1.5px dashed #a78bfa;
+  background: rgb(139 92 246 / 0.06);
+  text-align: center;
+  color: #7c3aed;
+  font: 600 0.8125rem/1.4 ui-sans-serif, system-ui, sans-serif;
+}
+
+[data-pb-block="template-slot"]::before {
+  content: "Content";
+}
+[data-pb-block="template-slot"][data-publr-slot="title"]::before {
+  content: "Title";
+}
+[data-pb-block="template-slot"][data-publr-slot="featured-image"]::before {
+  content: "Featured image";
+}
+
+[data-pb-block="template-part"]:not(:has([data-canvas-part-content] > *))::before {
+  content: "Template part: " attr(data-publr-template-part);
+  display: block;
+  padding: 1rem;
+  border: 1px dashed #8b5cf6;
+  border-radius: 6px;
+  color: #7c3aed;
+  font-size: 0.875rem;
+}
+
+[data-canvas-root][data-canvas-inline] {
+  padding: 0.5rem 0.75rem;
+  max-width: none;
+  min-height: 0;
+}
+
+body:has([data-canvas-inline]) {
+  min-height: 0;
+}
+
+/* An empty caption shows its placeholder only while its block is picked: an image in a
+   layout keeps its own height. */
+[data-canvas-block]:not([data-canvas-selected]):not(:focus-within) > figcaption[data-placeholder]:empty {
+  display: none;
+}
