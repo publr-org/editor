@@ -51,6 +51,12 @@ function recordDocument(record: HTMLElement, languages: Languages): DocumentHost
     if (actions && !actions.hidden) actions.hidden = true;
   };
   const listeners = new Set<() => void>();
+  // The actions as the record editor last saved them; until a save, its first render's.
+  let saved: RecordFacts["actions"] | null = null;
+  record.addEventListener("publr:record-saved", (event) => {
+    saved = (event as CustomEvent<{ actions: RecordFacts["actions"] }>).detail.actions ?? null;
+    for (const listener of listeners) listener();
+  });
   let queued = false;
   new MutationObserver(() => {
     fold();
@@ -103,7 +109,7 @@ function recordDocument(record: HTMLElement, languages: Languages): DocumentHost
     actions(): DocumentAction[] {
       const list: DocumentAction[] = [];
       if (viewUrl()) list.push({ id: "view", label: "View" });
-      for (const action of facts().actions ?? []) {
+      for (const action of saved ?? facts().actions ?? []) {
         if (action.name === "do" && action.value === "purge") continue;
         list.push({ id: `${action.name}=${action.value}`, label: action.label, destructive: action.destructive, primary: action.primary });
       }

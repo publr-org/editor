@@ -18,7 +18,9 @@ How the core hosts the editor, as agreed on 2026-10-08 (`../.agents/specs/editor
   (status, actions, the other fields) is mounted in its Entry panel.
 - **Delivery.** The editor's ES modules are built into the Publr binary and served under
   `/admin/editor/`. They import the admin's own PublrJS runtime: the build rewrites bare
-  specifiers to `/admin/publr-jsx.js`, `/admin/publr.js` and `/admin/publr-<addon>.js`, so
+  specifiers to `publr-jsx.js`, `publr.js` and `publr-<addon>.js` in the admin's folder,
+  by a relative path (`../../../publr.js` from `editor/host/apps.js`) so an admin under a
+  base path (an environment, the browser build at a worker's scope) finds them too, and
   there is no import map. `ui/layouts/Document.ptsx` loads
   `/admin/editor/editor/host/admin.js` as a module on every admin page; nothing is inline.
 - **The site.** `data-editor-site` on the record's wrapper holds `{"styles", "theme"}`:

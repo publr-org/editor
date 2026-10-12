@@ -10,8 +10,9 @@
 //!
 //! With `--admin` as an eighth argument it writes the build Publr serves under
 //! `/admin/editor/`: bare `publr` specifiers point at the admin's own runtime files
-//! (`/admin/publr.js`, `/admin/publr-dom.js`, ...), so the page runs one PublrJS; no
-//! runtime copies and no harness pages; and a `files.zig` that embeds every file.
+//! (`editor/host/apps.js` imports `../../../publr.js`; relative, so a base path holds),
+//! so the page runs one PublrJS; no runtime copies and no harness pages; and a `files.zig`
+//! that embeds every file.
 //!
 //! Run from `zig build`; no node anywhere.
 const std = @import("std");
@@ -97,6 +98,7 @@ fn run(init: std.process.Init) !u8 {
     try write_default_theme(&gen, default_theme);
     try copy_file(&gen, try std.fs.path.join(arena, &.{ ui_dir, "gallery/app/styles/gallery.css" }), "palette.css");
     try copy_file(&gen, try std.fs.path.join(arena, &.{ editor_dir, "canvas/canvas.css" }), "editor/canvas/canvas.css");
+    try copy_file(&gen, try std.fs.path.join(arena, &.{ editor_dir, "canvas/canvas.html" }), "editor/canvas/canvas.html");
     try copy_file(&gen, try std.fs.path.join(arena, &.{ editor_dir, "harness/site.css" }), "editor/harness/site.css");
     try copy_file(&gen, try std.fs.path.join(arena, &.{ editor_dir, "harness/hearth.css" }), "editor/harness/hearth.css");
     try write_classes(&gen);
@@ -166,7 +168,8 @@ fn lower_file(gen: *Gen, root: []const u8, sub_path: []const u8, out_path: []con
         return;
     };
     if (std.mem.endsWith(u8, filename, ".ptsx")) try collect_classes(gen, source, filename);
-    try write_out(gen, out_path, try browser_specifiers(gen.arena, output.code, gen.admin));
+    const runtime_dir: ?[]const u8 = if (gen.admin) try runtime_dir_of(gen.arena, out_path) else null;
+    try write_out(gen, out_path, try browser_specifiers(gen.arena, output.code, runtime_dir));
     gen.lowered += 1;
 }
 
@@ -311,10 +314,24 @@ fn write_json_string(w: *std.Io.Writer, value: []const u8) !void {
     try w.writeByte('"');
 }
 
+/// The way from a file Publr serves at `<admin>/editor/<out_path>` up to the admin's own
+/// runtime files in `<admin>/`: relative, so it holds wherever the admin is served
+/// (`/admin`, or under a base path such as `/environments/dev/admin`).
+fn runtime_dir_of(arena: std.mem.Allocator, out_path: []const u8) ![]const u8 {
+    std.debug.assert(out_path.len > 0);
+    std.debug.assert(out_path[0] != '/');
+
+    const depth = std.mem.count(u8, out_path, "/") + 1;
+    const way = try arena.alloc(u8, depth * "../".len);
+    for (0..depth) |index| @memcpy(way[index * 3 ..][0..3], "../");
+    return way;
+}
+
 /// The compiler rewrites `.ptsx` imports to `.js` but passes TypeScript-style
 /// specifiers through; a browser resolves none of those, so every relative
-/// specifier in the output ends in `.js` exactly once.
-fn browser_specifiers(arena: std.mem.Allocator, code: []const u8, admin: bool) ![]const u8 {
+/// specifier in the output ends in `.js` exactly once. With `runtime_dir` (the
+/// admin build), bare `publr` specifiers point at the admin's runtime there.
+fn browser_specifiers(arena: std.mem.Allocator, code: []const u8, runtime_dir: ?[]const u8) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
     var rest = code;
@@ -333,12 +350,12 @@ fn browser_specifiers(arena: std.mem.Allocator, code: []const u8, admin: bool) !
                 }
             }
             try w.print("{s}.js", .{stem});
-        } else if (is_import and admin and std.mem.eql(u8, specifier, "publr-jsx")) {
-            try w.writeAll("/admin/publr-jsx.js");
-        } else if (is_import and admin and std.mem.eql(u8, specifier, "publr")) {
-            try w.writeAll("/admin/publr.js");
-        } else if (is_import and admin and std.mem.startsWith(u8, specifier, "publr/")) {
-            try w.print("/admin/publr-{s}.js", .{specifier["publr/".len..]});
+        } else if (is_import and runtime_dir != null and std.mem.eql(u8, specifier, "publr-jsx")) {
+            try w.print("{s}publr-jsx.js", .{runtime_dir.?});
+        } else if (is_import and runtime_dir != null and std.mem.eql(u8, specifier, "publr")) {
+            try w.print("{s}publr.js", .{runtime_dir.?});
+        } else if (is_import and runtime_dir != null and std.mem.startsWith(u8, specifier, "publr/")) {
+            try w.print("{s}publr-{s}.js", .{ runtime_dir.?, specifier["publr/".len..] });
         } else {
             try w.writeAll(specifier);
         }

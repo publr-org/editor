@@ -3,7 +3,7 @@
 // shows). Plain TypeScript the PTSX chrome calls; the chrome's own state lives in its
 // family store and is fed from here through `onUpdate`.
 import { Publr } from "publr-jsx";
-import { Canvas } from "../canvas/canvas";
+import { Canvas, canvasFrame, canvasPage } from "../canvas/canvas";
 import type { CanvasEvent } from "../canvas/canvas";
 import type { ThemeToken } from "../canvas/engine";
 import { downcast, fresh, upcastBlocks } from "../model/codec";
@@ -159,6 +159,9 @@ export class Session {
   editor: Editor;
   isolation: Isolation | null = null;
   canvas: Canvas | null = null;
+  /** The canvas frame is loading its page; the canvas is drawn once it has. */
+  private mounting = false;
+  private ended = false;
   private options: SessionOptions;
   private listeners = new Set<(update: Update) => void>();
   /** Rows the list view shows open; everything starts closed. */
@@ -559,9 +562,22 @@ export class Session {
     return this.editor.insertBlocks([block], target, { select: "block" })[0] ?? null;
   }
 
-  mount(host: HTMLElement): void {
-    if (this.canvas) return;
+  /** Draws the canvas in `host` once its frame has loaded the canvas page, then `ready`. */
+  mount(host: HTMLElement, ready?: (canvas: Canvas) => void): void {
+    if (this.canvas || this.mounting) return;
+    const frame = canvasFrame(host, canvasPage(this.options.canvasStylesheet));
+    this.mounting = true;
+    frame.addEventListener("load", () => {
+      this.mounting = false;
+      if (!frame.isConnected || this.ended) return;
+      this.draw(host, frame);
+      if (this.canvas) ready?.(this.canvas);
+    }, { once: true });
+  }
+
+  private draw(host: HTMLElement, frame: HTMLIFrameElement): void {
     this.canvas = new Canvas(host, this.editor, {
+      frameElement: frame,
       stylesheet: this.options.canvasStylesheet,
       siteStyles: this.options.siteStyles,
       theme: this.options.theme,
@@ -625,6 +641,7 @@ export class Session {
   }
 
   destroy(): void {
+    this.ended = true;
     this.canvas?.destroy();
     this.canvas = null;
     this.listeners.clear();

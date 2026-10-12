@@ -48,6 +48,9 @@ export type KeyClaim = (event: KeyboardEvent) => boolean;
 export type CanvasOptions = {
   /** URL of the canvas stylesheet (placeholders, selection). */
   stylesheet: string;
+  /** The frame to draw in, already showing the canvas page (`canvasPage`); a blank one is
+   * made when none is given. */
+  frameElement?: HTMLIFrameElement;
   /** Stylesheets the site's pages load, applied in the frame. */
   siteStyles?: readonly string[];
   /** The site's theme tokens the frame's classes compile against. */
@@ -74,6 +77,48 @@ type Drawn = { element: Element; key: string };
 const blockKey = (block: Block) =>
   JSON.stringify([block.type, block.fields, block.settings, block.classes, block.interactions, block.pattern ?? null]);
 
+/** The path the admin is served under (`<html data-publr-base>`), empty at the root. */
+const basePath = () => document.documentElement.getAttribute("data-publr-base") ?? "";
+
+/** A root path under the admin's base, once; anything else as it is. */
+function withBase(value: string): string {
+  const base = basePath();
+  const under = value === base || value.startsWith(base + "/") || value.startsWith(base + "?");
+  return base && value.startsWith("/") && !value.startsWith("//") && !under ? base + value : value;
+}
+
+/** The media an element shows, at addresses under the admin's base, as the site's pages
+ * write them: a block saves `/media/…`, which a project served under a path (an environment,
+ * the browser build) only reaches with the path. Only what is loaded, never a link: rich
+ * text is read back from the canvas, and its links must stay as written. */
+function underBase(element: Element): void {
+  if (!basePath()) return;
+  for (const node of [element, ...element.querySelectorAll("[src], [poster]")]) {
+    for (const name of ["src", "poster"]) {
+      const value = node.getAttribute(name);
+      if (value) node.setAttribute(name, withBase(value));
+    }
+  }
+}
+
+/** The canvas frame, in `host`: blank, or loading `src`. */
+export function canvasFrame(host: HTMLElement, src?: string): HTMLIFrameElement {
+  const frame = host.ownerDocument.createElement("iframe");
+  frame.title = "Editor canvas";
+  frame.style.display = "block";
+  frame.style.width = "100%";
+  frame.style.height = "100%";
+  frame.style.border = "0";
+  if (src) frame.src = src;
+  host.append(frame);
+  return frame;
+}
+
+/** The page the canvas frame loads, beside its stylesheet: a document at a real address, so
+ * a service worker serving the admin (the browser build) also serves what the frame loads,
+ * which a blank frame's requests would bypass. */
+export const canvasPage = (stylesheet: string) => new URL("canvas.html", new URL(stylesheet, document.baseURI)).href;
+
 export class Canvas {
   readonly frame: HTMLIFrameElement;
   readonly doc: Document;
@@ -96,13 +141,7 @@ export class Canvas {
     this.editor = editor;
     this.options = options;
     const doc = host.ownerDocument;
-    this.frame = doc.createElement("iframe");
-    this.frame.title = "Editor canvas";
-    this.frame.style.display = "block";
-    this.frame.style.width = "100%";
-    this.frame.style.height = "100%";
-    this.frame.style.border = "0";
-    host.append(this.frame);
+    this.frame = options.frameElement ?? canvasFrame(host);
 
     this.doc = this.frame.contentDocument!;
     const head = this.doc.head;
@@ -113,7 +152,7 @@ export class Canvas {
     for (const href of [...(options.siteStyles ?? []), options.stylesheet]) {
       const link = this.doc.createElement("link");
       link.rel = "stylesheet";
-      link.href = new URL(href, doc.baseURI).href;
+      link.href = new URL(withBase(href), doc.baseURI).href;
       head.append(link);
     }
     this.root = this.doc.createElement("div");
@@ -265,6 +304,7 @@ export class Canvas {
       element.setAttribute("data-canvas-block", "");
       element.setAttribute("data-canvas-raw", "");
       element.setAttribute("contenteditable", "false");
+      underBase(element);
       return element;
     }
     const type = blockType(block.type);
@@ -277,6 +317,7 @@ export class Canvas {
     const editable = this.editor.policy.isEditable(block);
     this.makeEditable(element, block, type, editable);
     if (block.type === "template-part") this.fillPart(element);
+    underBase(element);
     return element;
   }
 
