@@ -2,7 +2,9 @@
 // design system. Pick one to edit its library design in the full editor; the left panel
 // narrows them by category.
 import { Publr } from "publr-jsx";
-import { NavButton } from "../../../ui/src/components/NavButton/NavButton.ptsx";
+import { SidebarNavEyebrow } from "../../../ui/src/components/Sidebar/SidebarNavEyebrow.ptsx";
+import { SidebarNavItem } from "../../../ui/src/components/Sidebar/SidebarNavItem.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
 import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
 import { PreviewCard } from "../../../ui/src/components/PreviewCard/PreviewCard.ptsx";
 import { Text } from "../../../ui/src/components/Text/Text.ptsx";
@@ -34,22 +36,21 @@ export function PatternsPage() {
 /** The left panel's list while this page is open: the categories, with counts. */
 export function PatternsNav() {
   return (
-    <div class="min-h-0 flex-1 overflow-y-auto p-4" data-design-controls="patterns">
-      <div class="mb-3 flex items-center justify-between">
-        <Text as="p" variant="overline" tone="muted">
-          {Publr.t("Categories")}
-        </Text>
-        <Text variant="label-3xs" tone="muted">
-          {String(state.patternCount)}
-        </Text>
-      </div>
-      <div class="space-y-1">
-        {state.patternCategories.map((category) => (
-          <div data-design-pattern-category={category.name}>
-            <NavButton size="xs" label={category.name} badge={String(category.count)} current={category.selected} onClick={() => selectPatternCategory(category.name)} />
-          </div>
-        ))}
-      </div>
+    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-4" data-design-controls="patterns">
+      <SidebarNavEyebrow>{Publr.t("Categories")}</SidebarNavEyebrow>
+      {state.patternCategories.map((category) => (
+        <div data-design-pattern-category={category.name}>
+          <SidebarNavItem active={category.selected} onClick={() => selectPatternCategory(category.name)}>
+            <Icon name="pattern" size="sm" classes="shrink-0" />
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
+              {category.name}
+            </Text>
+            <Text as="span" variant="body-sm" tone="muted" classes="shrink-0 tabular-nums">
+              {String(category.count)}
+            </Text>
+          </SidebarNavItem>
+        </div>
+      ))}
     </div>
   );
 }

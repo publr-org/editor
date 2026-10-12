@@ -2,9 +2,9 @@
 // block the inserter offers; the open one is a real editor on its default document, with
 // the editor's own inline chrome and block inspector. Save default keeps it in the
 // design system (`blockDefaults`).
-import { EntryButton } from "../../../ui/src/components/EntryButton/EntryButton.ptsx";
-import { GlyphTile } from "../../../ui/src/components/GlyphTile/GlyphTile.ptsx";
+import { SidebarNavItem } from "../../../ui/src/components/Sidebar/SidebarNavItem.ptsx";
 import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { Text } from "../../../ui/src/components/Text/Text.ptsx";
 import { Toast } from "../../../ui/src/components/Toast/Toast.ptsx";
 import { state } from "../Builder.ptsx";
 import { blockEditorInto, selectBlock } from "./actions";
@@ -25,24 +25,18 @@ export function BlocksPage() {
 /** The left panel's list while this page is open: every block, with its category. */
 export function BlocksNav() {
   return (
-    <div class="min-h-0 flex-1 overflow-y-auto p-2" data-design-controls="components">
+    <div class="min-h-0 flex-1 overflow-y-auto px-3 pt-2 pb-4" data-design-controls="components">
       {state.blockItems.map((block) => (
         <div data-block-type={block.type}>
-          <EntryButton
-            title={block.label}
-            subtitle={block.category}
-            pressed={block.selected}
-            onClick={() => selectBlock(block.type)}
-            glyph={
-              block.icon ? (
-                <GlyphTile size="md" framed>
-                  <Icon name={block.icon} size="sm" />
-                </GlyphTile>
-              ) : (
-                <GlyphTile size="md" glyph={block.letter} framed />
-              )
-            }
-          />
+          <SidebarNavItem active={block.selected} onClick={() => selectBlock(block.type)}>
+            <Icon name={block.icon ? block.icon : "primitive-blocks"} size="sm" classes="shrink-0" />
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
+              {block.label}
+            </Text>
+            <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+              {block.category}
+            </Text>
+          </SidebarNavItem>
         </div>
       ))}
     </div>

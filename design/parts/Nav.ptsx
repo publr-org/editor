@@ -3,146 +3,81 @@
 // of their own (primitive blocks, patterns, templates) slide it in with a way back.
 import { Publr } from "publr-jsx";
 import { Button } from "../../../ui/src/components/Button/Button.ptsx";
-import { GlyphTile } from "../../../ui/src/components/GlyphTile/GlyphTile.ptsx";
 import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
-import { NavButton } from "../../../ui/src/components/NavButton/NavButton.ptsx";
+import type { IconName } from "../../../ui/src/components/Icon/Icon.ptsx";
+import { SidebarNavEyebrow } from "../../../ui/src/components/Sidebar/SidebarNavEyebrow.ptsx";
+import { SidebarNavItem } from "../../../ui/src/components/Sidebar/SidebarNavItem.ptsx";
 import { Text } from "../../../ui/src/components/Text/Text.ptsx";
 import { open, openHome, openMoodboard, state } from "../Builder.ptsx";
+import type { Page } from "../state";
 import { BlocksNav } from "../library/Blocks.ptsx";
 import { PatternsNav } from "../library/Patterns.ptsx";
 import { TemplatesNav } from "../library/Templates.ptsx";
 
-function Group({ label, first = false, children }: { label: string; first?: boolean; children?: JSX.Element }) {
+function Group({ label, children }: { label: string; children?: JSX.Element }) {
   return (
     <div>
-      <Text as="p" variant="overline" tone="muted" classes={first ? "mb-2" : "mt-4 mb-2"}>
+      <SidebarNavEyebrow>{label}</SidebarNavEyebrow>
+      {children}
+    </div>
+  );
+}
+
+// On a phone the list is a drawer: going to a page closes it.
+function go(page: Page): void {
+  open(page);
+  const drawer = document.getElementById("page-sidebar");
+  if (drawer?.matches(":popover-open")) drawer.hidePopover();
+}
+
+function Row({ label, page, icon }: { label: string; page: Page; icon: IconName }) {
+  return (
+    <SidebarNavItem active={state.page === page} onClick={() => go(page)}>
+      <Icon name={icon} size="sm" classes="shrink-0" />
+      <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
         {label}
       </Text>
-      <div class="space-y-0.5">{children}</div>
-    </div>
+    </SidebarNavItem>
   );
 }
 
 function Home() {
   return (
-    <div class="min-h-0 flex-1 overflow-y-auto p-4" data-builder-nav>
-      <div class="mb-4 space-y-0.5">
-        <NavButton label={Publr.t("Overview")} current={state.page === "overview"} glyph={<GlyphTile glyph="✦" framed />} onClick={() => open("overview")} />
-        <NavButton
-          label={Publr.t("Moodboard")}
-          trailing="external"
-          glyph={
-            <GlyphTile framed>
-              <Icon name="moodboard" size="xs" />
-            </GlyphTile>
-          }
-          onClick={() => openMoodboard()}
-        />
-      </div>
-      <Group label={Publr.t("Library")} first>
-        <NavButton
-          label={Publr.t("Token library")}
-          trailing="chevron"
-          current={state.page === "advanced"}
-          glyph={
-            <GlyphTile glyph="{ }" face="mono" />
-          }
-          onClick={() => open("advanced")}
-        />
-        <NavButton label={Publr.t("Fonts")} trailing="chevron" current={state.page === "fonts"} glyph={<GlyphTile glyph="Ag" face="serif" framed />} onClick={() => open("fonts")} />
-        <NavButton label={Publr.t("Icons")} trailing="chevron" current={state.page === "icons"} glyph={<GlyphTile glyph="◇" framed />} onClick={() => open("icons")} />
-        <NavButton
-          label={Publr.t("Container sizes")}
-          trailing="chevron"
-          current={state.page === "containers"}
-          glyph={
-            <GlyphTile>
-              <Icon name="container-sizes" size="md" />
-            </GlyphTile>
-          }
-          onClick={() => open("containers")}
-        />
+    <nav class="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-2 pb-4" aria-label={Publr.t("Styles")} data-builder-nav>
+      <Row label={Publr.t("Overview")} page="overview" icon="sparkles" />
+      <SidebarNavItem onClick={() => openMoodboard()}>
+        <Icon name="moodboard" size="sm" classes="shrink-0" />
+        <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
+          {Publr.t("Moodboard")}
+        </Text>
+        <Icon name="arrow-up-right" size="xs" classes="shrink-0" />
+      </SidebarNavItem>
+      <Group label={Publr.t("Library")}>
+        <Row label={Publr.t("Token library")} page="advanced" icon="token-library" />
+        <Row label={Publr.t("Fonts")} page="fonts" icon="fonts-icons" />
+        <Row label={Publr.t("Icons")} page="icons" icon="icon" />
+        <Row label={Publr.t("Container sizes")} page="containers" icon="container-sizes" />
       </Group>
       <Group label={Publr.t("Semantic layer")}>
-        <NavButton
-          label={Publr.t("Semantic colors")}
-          trailing="chevron"
-          current={state.page === "foundations"}
-          glyph={
-            <GlyphTile framed>
-              <Icon name="swatch-grid" size="xs" />
-            </GlyphTile>
-          }
-          onClick={() => open("foundations")}
-        />
-        <NavButton label={Publr.t("Typography")} trailing="chevron" current={state.page === "typography"} glyph={<GlyphTile glyph="Aa" framed />} onClick={() => open("typography")} />
-        <NavButton
-          label={Publr.t("Type scale")}
-          trailing="chevron"
-          current={state.page === "type-scale"}
-          glyph={
-            <GlyphTile framed>
-              <Icon name="scale-bars" size="xs" />
-            </GlyphTile>
-          }
-          onClick={() => open("type-scale")}
-        />
+        <Row label={Publr.t("Semantic colors")} page="foundations" icon="semantic-colors" />
+        <Row label={Publr.t("Typography")} page="typography" icon="element-typography" />
+        <Row label={Publr.t("Type scale")} page="type-scale" icon="scale-bars" />
       </Group>
       <Group label={Publr.t("Defaults")}>
-        <NavButton
-          label={Publr.t("Primitive blocks")}
-          trailing="chevron"
-          current={state.page === "components"}
-          glyph={
-            <GlyphTile framed>
-              <Icon name="pill" size="xs" />
-            </GlyphTile>
-          }
-          onClick={() => open("components")}
-        />
+        <Row label={Publr.t("Primitive blocks")} page="components" icon="primitive-blocks" />
       </Group>
       <Group label={Publr.t("System")}>
-        <NavButton
-          label={Publr.t("Breakpoints")}
-          trailing="chevron"
-          current={state.page === "breakpoints"}
-          glyph={
-            <GlyphTile>
-              <Icon name="device-desktop" size="md" />
-            </GlyphTile>
-          }
-          onClick={() => open("breakpoints")}
-        />
-        <NavButton
-          label={Publr.t("Patterns")}
-          trailing="chevron"
-          current={state.page === "patterns"}
-          glyph={
-            <GlyphTile framed>
-              <Icon name="layout-grid" size="xs" />
-            </GlyphTile>
-          }
-          onClick={() => open("patterns")}
-        />
-        <NavButton
-          label={Publr.t("Templates")}
-          trailing="chevron"
-          current={state.page === "templates"}
-          glyph={
-            <GlyphTile framed>
-              <Icon name="layout-rows" size="xs" />
-            </GlyphTile>
-          }
-          onClick={() => open("templates")}
-        />
+        <Row label={Publr.t("Breakpoints")} page="breakpoints" icon="responsive" />
+        <Row label={Publr.t("Patterns")} page="patterns" icon="pattern-library" />
+        <Row label={Publr.t("Templates")} page="templates" icon="layout-rows" />
       </Group>
-    </div>
+    </nav>
   );
 }
 
 function SectionHead() {
   return (
-    <div class="flex shrink-0 items-start gap-2 border-b border-border p-4" data-builder-section-head>
+    <div class="flex shrink-0 items-start gap-2 border-b border-sidebar-border px-3 py-3" data-builder-section-head>
       <Button hierarchy="secondary" size="sm" label={Publr.t("Back to styles")} onClick={() => openHome()}>
         <Icon name="chevron-left" size="sm" />
       </Button>
@@ -160,31 +95,45 @@ function SectionHead() {
 
 export function Nav() {
   return (
-    <aside class="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-border bg-card max-sm:hidden" aria-label={Publr.t("Styles")} data-design-styles-panel>
-      <div class="flex h-14 shrink-0 items-center border-b border-border px-4">
-        <Text as="h2" variant="heading-sm">
+    <aside
+      class="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-card text-sidebar-foreground max-md:w-full max-md:border-r-0"
+      aria-label={Publr.t("Styles")}
+      data-design-styles-panel
+      data-page-sidebar
+    >
+      <div class="relative flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5">
+        <Icon name="palette" size="sm" classes="shrink-0" />
+        <Text as="h2" variant="heading-sm" classes="truncate">
           {Publr.t("Styles")}
         </Text>
+        <Button
+          type="button"
+          hierarchy="tertiary"
+          size="sm"
+          label={Publr.t("Show {name}", { name: Publr.t("Styles") })}
+          title={Publr.t("Show {name}", { name: Publr.t("Styles") })}
+          popovertarget="page-sidebar"
+          classes="absolute top-3 right-3 md:hidden"
+        >
+          <Icon name="filter-lines" size="sm" />
+        </Button>
       </div>
-      {state.home && <Home />}
-      {!state.home && (
-        <div class="flex min-h-0 flex-1 flex-col" data-design-styles-section>
-          <SectionHead />
-          {state.page === "components" && <BlocksNav />}
-          {state.page === "patterns" && <PatternsNav />}
-          {state.page === "templates" && <TemplatesNav />}
-        </div>
-      )}
-      {state.home && (
-        <div class="shrink-0 border-t border-border p-3">
-          <NavButton
-            label={Publr.t("Settings")}
-            current={state.page === "settings"}
-            glyph={<Icon name="settings" size="sm" classes="text-muted-foreground" />}
-            onClick={() => open("settings")}
-          />
-        </div>
-      )}
+      <div id="page-sidebar" popover="auto" class="flex min-h-0 flex-1 flex-col">
+        {state.home && <Home />}
+        {!state.home && (
+          <div class="flex min-h-0 flex-1 flex-col" data-design-styles-section>
+            <SectionHead />
+            {state.page === "components" && <BlocksNav />}
+            {state.page === "patterns" && <PatternsNav />}
+            {state.page === "templates" && <TemplatesNav />}
+          </div>
+        )}
+        {state.home && (
+          <div class="shrink-0 border-t border-sidebar-border px-3 py-2">
+            <Row label={Publr.t("Settings")} page="settings" icon="settings" />
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

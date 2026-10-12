@@ -6,7 +6,7 @@
 import { mount } from "publr/dom";
 import { component } from "publr-jsx";
 import { send } from "publr/operations";
-import { Moodboard } from "../moodboard/Moodboard.ptsx";
+import { Moodboard, MoodboardBar } from "../moodboard/Moodboard.ptsx";
 import type { MoodboardItem } from "../moodboard/model";
 import { adoptIds, currentItems, retryFigma } from "../moodboard/store";
 import { adminMedia } from "./MediaPicker.ptsx";
@@ -69,13 +69,18 @@ export function mountMoodboard(element: HTMLElement): void {
   const changed = saver(app);
   // A token added in another tab (the design system's settings) pulls the failed frames.
   window.addEventListener("storage", (event) => event.key === FIGMA_TOKEN && retryFigma());
+  const editorHref = "/admin/design/templates";
+  const designHref = `/admin/design/system?app=${encodeURIComponent(app)}`;
+  // The board's way to the other apps goes in the admin's top bar, after the plugins'.
+  const slot = document.querySelector<HTMLElement>('[data-slot="top_bar"]');
   mount(
     element,
     () =>
       component(Moodboard, {
         items: items(element),
-        editorHref: "/admin/design/templates",
-        designHref: `/admin/design/system?app=${encodeURIComponent(app)}`,
+        editorHref,
+        designHref,
+        bar: slot ? "host" : "own",
         onChange: () => changed(),
         upload: (file: File) => media.upload(file).then((picked) => ({ src: picked.src, alt: picked.alt || undefined })),
         figmaToken: () => {
@@ -88,4 +93,10 @@ export function mountMoodboard(element: HTMLElement): void {
       }),
     {},
   );
+  if (slot) {
+    const bar = document.createElement("div");
+    bar.setAttribute("data-part", "moodboard-bar");
+    slot.append(bar);
+    mount(bar, () => component(MoodboardBar, { editorHref, designHref }), {});
+  }
 }

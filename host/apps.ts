@@ -8,7 +8,7 @@ import { component } from "publr-jsx";
 import { send } from "publr/operations";
 import { registerCoreBlocks } from "../blocks/index";
 import { isRegistered } from "../model/registry";
-import { DesignSystemBuilder } from "../design/Builder.ptsx";
+import { BuilderBar, DesignSystemBuilder } from "../design/Builder.ptsx";
 import { fromSaved, toSaved } from "../design/model/saved";
 import type { SavedSystem } from "../design/model/saved";
 import type { DesignSystem } from "../design/model/system";
@@ -88,6 +88,8 @@ export async function mountDesignSystem(element: HTMLElement, options: AppsOptio
   const data = element.dataset;
   const published = fromSaved(json<SavedSystem>(element, "data-system", { tokens: [], fonts: [], system: null, saved: false }));
   const media = adminMedia();
+  // The builder's draft state and actions go in the admin's top bar, after the plugins'.
+  const slot = document.querySelector<HTMLElement>('[data-slot="top_bar"]');
   fill(element);
   mount(
     element,
@@ -95,6 +97,7 @@ export async function mountDesignSystem(element: HTMLElement, options: AppsOptio
       component(DesignSystemBuilder, {
         system: published,
         app,
+        bar: slot ? "host" : "own",
         draftKey: `publr.design.draft.${app}`,
         siteStyles: options.siteStyles?.filter((href) => !href.endsWith("/_app/app.css")),
         moodboardCount: Number(data.moodboardCount ?? "0") || 0,
@@ -121,4 +124,10 @@ export async function mountDesignSystem(element: HTMLElement, options: AppsOptio
       }),
     {},
   );
+  if (slot) {
+    const bar = document.createElement("div");
+    bar.setAttribute("data-part", "builder-bar");
+    slot.append(bar);
+    mount(bar, () => component(BuilderBar, {}), {});
+  }
 }

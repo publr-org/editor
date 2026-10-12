@@ -20,7 +20,6 @@ import { Button } from "../../ui/src/components/Button/Button.ptsx";
 import { Heading } from "../../ui/src/components/Heading/Heading.ptsx";
 import { Icon } from "../../ui/src/components/Icon/Icon.ptsx";
 import { Input } from "../../ui/src/components/Input/Input.ptsx";
-import { Link } from "../../ui/src/components/Link/Link.ptsx";
 import { Text } from "../../ui/src/components/Text/Text.ptsx";
 import { FigmaMark } from "./FigmaMark.ptsx";
 import { PublrMark } from "./PublrMark.ptsx";
@@ -34,6 +33,9 @@ export type MoodboardProps = MoodboardOptions & {
   /** Where the bar's Editor and Design system icons lead; one not given is left out. */
   editorHref?: string;
   designHref?: string;
+  /** `host`: the page around the board has a top bar of its own, and the host mounts
+   * MoodboardBar into it; the board draws none. */
+  bar?: "own" | "host";
 };
 
 const picker = Publr.ref();
@@ -96,30 +98,43 @@ function Tools() {
   );
 }
 
+function Apps({ editorHref, designHref }: { editorHref?: string; designHref?: string }) {
+  return (
+    <nav aria-label={Publr.t("Publr apps")} class="flex items-center gap-0.5">
+      {editorHref && (
+        <Button hierarchy="quiet" size="sm" href={editorHref} title={Publr.t("Editor")} label={Publr.t("Open editor")}>
+          <Icon name="edit" size="sm" />
+        </Button>
+      )}
+      {designHref && (
+        <Button hierarchy="quiet" size="sm" href={designHref} title={Publr.t("Design system")} label={Publr.t("Open design system")}>
+          <Icon name="palette" size="sm" />
+        </Button>
+      )}
+    </nav>
+  );
+}
+
+/** The board's way to the other apps, for a top bar the host owns (`bar: "host"`). */
+export function MoodboardBar({ editorHref, designHref }: { editorHref?: string; designHref?: string }) {
+  return <Apps editorHref={editorHref} designHref={designHref} />;
+}
+
 export function Moodboard(props: MoodboardProps) {
   start(props);
   listen();
   show();
   return (
     <div data-moodboard-app class="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <header class="flex h-12 shrink-0 items-center border-b border-border bg-background px-3">
+      {props.bar !== "host" && (
+      <header class="flex h-14 shrink-0 items-center border-b border-border bg-background px-5">
         {props.mark && <PublrMark />}
         <Heading level={1} size="sm" classes="mr-auto truncate">
           {Publr.t("Moodboard")}
         </Heading>
-        <nav aria-label={Publr.t("Publr apps")} class="flex items-center gap-0.5">
-          {props.editorHref && (
-            <Link href={props.editorHref} tone="default" label={Publr.t("Open editor")} classes="flex size-9 items-center justify-center">
-              <Icon name="edit" size="sm" />
-            </Link>
-          )}
-          {props.designHref && (
-            <Link href={props.designHref} tone="default" label={Publr.t("Open design system")} classes="flex size-9 items-center justify-center">
-              <Icon name="palette" size="sm" />
-            </Link>
-          )}
-        </nav>
+        <Apps editorHref={props.editorHref} designHref={props.designHref} />
       </header>
+      )}
       <div ref={boardRoot} class="relative flex min-h-0 flex-1 flex-col">
         <Board
           label={Publr.t("Moodboard canvas")}

@@ -244,52 +244,78 @@ export async function build(): Promise<void> {
 
 // ── the frame's parts ───────────────────────────────────────────────────
 
+function Actions() {
+  return (
+    <div class="flex items-center gap-2">
+      {state.problem && (
+        <span data-builder-status>
+          <Status tone="error">
+            <Text variant="label-sm">{state.problem}</Text>
+          </Status>
+        </span>
+      )}
+      {state.dirty && (
+        <Button hierarchy="secondary" size="sm" disabled={state.saving} onClick={() => reset()}>
+          <span data-builder-reset>
+            <Text variant="label-md">{Publr.t("Reset")}</Text>
+          </span>
+        </Button>
+      )}
+      <nav class="flex items-center gap-0.5 max-md:hidden" aria-label={Publr.t("Publr apps")} data-app-nav="design">
+        <Button hierarchy="quiet" size="sm" title={Publr.t("Editor")} label={Publr.t("Open editor")} onClick={() => openEditor()}>
+          <Icon name="edit" size="sm" />
+        </Button>
+        <Button hierarchy="quiet" size="sm" title={Publr.t("Moodboard")} label={Publr.t("Open moodboard")} onClick={() => openMoodboard()}>
+          <Icon name="moodboard" size="sm" />
+        </Button>
+      </nav>
+      <Button hierarchy="secondary" size="sm" pressed={state.transfer} onClick={() => openTransfer()} classes="max-md:hidden">
+        <span data-builder-transfer-open>
+          <Text variant="label-md">{Publr.t("Import / export")}</Text>
+        </span>
+      </Button>
+      <Button hierarchy="primary" size="sm" disabled={state.saving} onClick={() => publish()}>
+        <span data-builder-publish>
+          <Text variant="label-md-strong">{state.publishLabel}</Text>
+        </span>
+      </Button>
+    </div>
+  );
+}
+
+function Draft() {
+  return (
+    <Badge>
+      <span data-builder-draft>{state.dirty ? Publr.t("Draft") : Publr.t("Published")}</span>
+    </Badge>
+  );
+}
+
 function TopBar() {
   return (
-    <header data-builder-bar class="flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-3">
-      <div class="flex min-w-0 items-center gap-2 pl-1">
+    <header data-builder-bar class="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-5">
+      <div class="flex min-w-0 items-center gap-2">
         <Text as="h1" variant="heading-sm" classes="truncate">
           {Publr.t("Site theme")}
         </Text>
-        <Badge>
-          <span data-builder-draft>{state.dirty ? Publr.t("Draft") : Publr.t("Published")}</span>
-        </Badge>
+        <Draft />
       </div>
-      <div class="flex items-center gap-2">
-        {state.problem && (
-          <span data-builder-status>
-            <Status tone="error">
-              <Text variant="label-sm">{state.problem}</Text>
-            </Status>
-          </span>
-        )}
-        {state.dirty && (
-          <Button hierarchy="secondary" size="md" disabled={state.saving} onClick={() => reset()}>
-            <span data-builder-reset>
-              <Text variant="label-md">{Publr.t("Reset")}</Text>
-            </span>
-          </Button>
-        )}
-        <nav class="flex items-center gap-0.5" aria-label={Publr.t("Publr apps")} data-app-nav="design">
-          <Button hierarchy="quiet" size="md" title={Publr.t("Editor")} label={Publr.t("Open editor")} onClick={() => openEditor()}>
-            <Icon name="edit" size="sm" />
-          </Button>
-          <Button hierarchy="quiet" size="md" title={Publr.t("Moodboard")} label={Publr.t("Open moodboard")} onClick={() => openMoodboard()}>
-            <Icon name="moodboard" size="sm" />
-          </Button>
-        </nav>
-        <Button hierarchy="secondary" size="md" pressed={state.transfer} onClick={() => openTransfer()}>
-          <span data-builder-transfer-open>
-            <Text variant="label-md">{Publr.t("Import / export")}</Text>
-          </span>
-        </Button>
-        <Button hierarchy="primary" size="md" disabled={state.saving} onClick={() => publish()}>
-          <span data-builder-publish>
-            <Text variant="label-md-strong">{state.publishLabel}</Text>
-          </span>
-        </Button>
-      </div>
+      <Actions />
     </header>
+  );
+}
+
+/** The builder's state and actions for a top bar the host owns (`bar: "host"`): whether
+ * the theme is a draft, then Reset, the other apps, Import / export and Publish. Mounted
+ * after the builder, it shares its state. */
+export function BuilderBar() {
+  return (
+    <div class="flex items-center gap-3" data-builder-bar>
+      <span class="contents max-md:hidden">
+        <Draft />
+      </span>
+      <Actions />
+    </div>
   );
 }
 
@@ -297,8 +323,8 @@ export function DesignSystemBuilder(given: BuilderProps) {
   start(given);
   return (
     <div data-design-builder class="flex h-full min-h-0 flex-col bg-card text-foreground">
-      <TopBar />
-      <div class="flex min-h-0 flex-1">
+      {given.bar !== "host" && <TopBar />}
+      <div class="flex min-h-0 flex-1 max-md:flex-col">
         <Nav />
         <main data-builder-main class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-card">
           {state.page === "overview" && <Overview />}

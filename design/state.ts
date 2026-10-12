@@ -103,6 +103,9 @@ export type BuilderProps = {
   onReady?: (instance: BuilderInstance) => void;
   /** The app's patterns, templates and parts, and how edits to them are kept. */
   library?: LibraryHost;
+  /** `host`: the page around the builder has a top bar of its own, and the host mounts
+   * BuilderBar into it; the builder draws none. */
+  bar?: "own" | "host";
 };
 
 /** What an area's actions reach: the instance they run under. Take it synchronously at

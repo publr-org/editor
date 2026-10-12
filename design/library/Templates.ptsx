@@ -2,7 +2,9 @@
 // and the parts themselves. Edit opens the template or the part in the full editor.
 import { Publr } from "publr-jsx";
 import { Heading } from "../../../ui/src/components/Heading/Heading.ptsx";
-import { NavButton } from "../../../ui/src/components/NavButton/NavButton.ptsx";
+import { SidebarNavEyebrow } from "../../../ui/src/components/Sidebar/SidebarNavEyebrow.ptsx";
+import { SidebarNavItem } from "../../../ui/src/components/Sidebar/SidebarNavItem.ptsx";
+import { Icon } from "../../../ui/src/components/Icon/Icon.ptsx";
 import { Notice } from "../../../ui/src/components/Notice/Notice.ptsx";
 import { PreviewCard } from "../../../ui/src/components/PreviewCard/PreviewCard.ptsx";
 import { Text } from "../../../ui/src/components/Text/Text.ptsx";
@@ -59,37 +61,32 @@ export function TemplatesPage() {
 /** The left panel's list while this page is open: content types, then template parts. */
 export function TemplatesNav() {
   return (
-    <div class="min-h-0 flex-1 overflow-y-auto p-4" data-design-controls="templates">
-      <div class="mb-3 flex items-center justify-between">
-        <Text as="p" variant="overline" tone="muted">
-          {Publr.t("Content types")}
-        </Text>
-        <Text variant="label-3xs" tone="muted">
-          {String(state.templateCount)}
-        </Text>
-      </div>
-      <div class="space-y-1">
-        {state.templateItems.map((template) => (
-          <div data-design-template={template.name}>
-            <NavButton size="xs" label={template.label} trailing="chevron" onClick={(event: MouseEvent) => editTemplate(template.name, event)} />
-          </div>
-        ))}
-      </div>
-      <div class="mt-6 mb-3 flex items-center justify-between">
-        <Text as="p" variant="overline" tone="muted">
-          {Publr.t("Template parts")}
-        </Text>
-        <Text variant="label-3xs" tone="muted">
-          {String(state.partCount)}
-        </Text>
-      </div>
-      <div class="space-y-1">
-        {state.partItems.map((part) => (
-          <div data-design-template-part={part.name}>
-            <NavButton size="xs" label={part.label} badge={part.area} onClick={(event: MouseEvent) => editPart(part.name, event)} />
-          </div>
-        ))}
-      </div>
+    <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-4" data-design-controls="templates">
+      <SidebarNavEyebrow>{Publr.t("Content types")}</SidebarNavEyebrow>
+      {state.templateItems.map((template) => (
+        <div data-design-template={template.name}>
+          <SidebarNavItem onClick={(event: MouseEvent) => editTemplate(template.name, event)}>
+            <Icon name="layout-rows" size="sm" classes="shrink-0" />
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
+              {template.label}
+            </Text>
+          </SidebarNavItem>
+        </div>
+      ))}
+      <SidebarNavEyebrow>{Publr.t("Template parts")}</SidebarNavEyebrow>
+      {state.partItems.map((part) => (
+        <div data-design-template-part={part.name}>
+          <SidebarNavItem onClick={(event: MouseEvent) => editPart(part.name, event)}>
+            <Icon name="layout" size="sm" classes="shrink-0" />
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
+              {part.label}
+            </Text>
+            <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+              {part.area}
+            </Text>
+          </SidebarNavItem>
+        </div>
+      ))}
     </div>
   );
 }
