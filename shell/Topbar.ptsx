@@ -2,7 +2,8 @@
 // Publr mark, the inserter, history and the list view on the left; the canvas viewport in
 // the middle; the sidebar, the other apps, the preview and the options on the right.
 // While a template, a part or a pattern is edited on its own, the bar takes the mode's
-// colour, names what is edited, and carries Cancel and the commit.
+// colour, names what is edited, and carries Cancel and the commit. On a phone the screen
+// is the viewport: one row of the tools, without the switcher and the other apps' links.
 import { Publr } from "publr-jsx";
 import { DropdownMenu } from "../../ui/src/components/Dropdown/Dropdown.ptsx";
 import { DropdownMenuCheckboxItem } from "../../ui/src/components/Dropdown/DropdownMenuCheckboxItem.ptsx";
@@ -48,10 +49,12 @@ export function Topbar() {
   return (
     <header
       data-topbar
-      class={["relative grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center", MODE_FILL[state.isolation?.kind ?? ""]]}
+      class={["relative grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center max-md:flex max-md:justify-between", MODE_FILL[state.isolation?.kind ?? ""]]}
     >
       <div class="flex min-w-0 items-center gap-0.5 justify-self-start">
-        <PublrMark />
+        <span class="contents max-md:hidden">
+          <PublrMark />
+        </span>
         <span ref={plusButton} class="contents">
           <ToolbarButton
             variant="primary"
@@ -91,7 +94,7 @@ export function Topbar() {
           </div>
         )}
       </div>
-      <ToolbarSegments label={Publr.t("Canvas viewport")} tone={state.isolation ? "inverse" : "default"} classes="justify-self-center">
+      <ToolbarSegments label={Publr.t("Canvas viewport")} tone={state.isolation ? "inverse" : "default"} classes="justify-self-center max-md:hidden">
         <ToolbarSegment tone={state.isolation ? "inverse" : "default"} label={Publr.t("Mobile")} icon="device-mobile" pressed={state.device === "mobile"} value={state.deviceLabel} onClick={() => setDevice("mobile")} />
         <ToolbarSegment tone={state.isolation ? "inverse" : "default"} label={Publr.t("Tablet")} icon="device-tablet" pressed={state.device === "tablet"} value={state.deviceLabel} onClick={() => setDevice("tablet")} />
         <ToolbarSegment tone={state.isolation ? "inverse" : "default"} label={Publr.t("Desktop")} icon="device-desktop" pressed={state.device === "desktop"} value={state.deviceLabel} onClick={() => setDevice("desktop")} />
@@ -117,12 +120,12 @@ export function Topbar() {
           <Icon name="sidebar-right" size="sm" />
         </ToolbarButton>
         {!state.isolation && state.hasDesign && (
-          <ToolbarButton title={Publr.t("Design system")} label={Publr.t("Open design system")} onClick={() => openApp("design")}>
+          <ToolbarButton title={Publr.t("Design system")} label={Publr.t("Open design system")} classes="max-md:hidden" onClick={() => openApp("design")}>
             <Icon name="palette" size="sm" />
           </ToolbarButton>
         )}
         {!state.isolation && state.hasMoodboard && (
-          <ToolbarButton title={Publr.t("Moodboard")} label={Publr.t("Open moodboard")} onClick={() => openApp("moodboard")}>
+          <ToolbarButton title={Publr.t("Moodboard")} label={Publr.t("Open moodboard")} classes="max-md:hidden" onClick={() => openApp("moodboard")}>
             <Icon name="moodboard" size="sm" />
           </ToolbarButton>
         )}

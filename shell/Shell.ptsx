@@ -352,6 +352,8 @@ export function start(props: EditorShellProps): void {
   state.hasMoodboard = !!apps.moodboard;
   state.dark = document.documentElement.classList.contains("dark");
   state.embedded = props.chrome === "embedded";
+  // A phone has room for the canvas alone: the settings open when asked.
+  if (phone()) state.sidebarOpen = false;
   session = new Session({
     content: props.content,
     policy: props.policy,
@@ -485,6 +487,7 @@ export const redo = () => session?.editor.redo();
 
 export function toggleLeft(panel: string): void {
   state.left = state.left === panel ? "" : panel;
+  if (state.left !== "" && phone()) state.sidebarOpen = false;
   state.query = "";
   if (state.left !== "inserter") libraryPlace = null;
   if (patternsBrowsing()) state.sidebarOpen = false;
@@ -829,6 +832,12 @@ function refreshFrames(): void {
 
 export function toggleSidebar(): void {
   state.sidebarOpen = !state.sidebarOpen;
+  if (state.sidebarOpen && phone()) state.left = "";
+}
+
+/** A phone's width, where the panels lie over the canvas one at a time. */
+function phone(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(max-width: 767.98px)").matches;
 }
 
 export function openApp(app: "design" | "moodboard"): void {
@@ -1908,7 +1917,7 @@ export function EditorShell(props: EditorShellProps) {
       )}
       {!state.embedded && <Topbar />}
       {state.embedded && props.header}
-      <div class="flex min-h-0 flex-1">
+      <div class="relative flex min-h-0 flex-1">
         <LeftRail />
         <div class="flex min-w-0 flex-1 flex-col">
           <div ref={area} data-canvas-area class="relative flex min-h-0 flex-1 flex-col overflow-hidden">

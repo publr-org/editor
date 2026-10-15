@@ -1,5 +1,6 @@
 // The left rail: one panel at a time. The block library (Blocks, Patterns, Media) or the
 // document overview (List View, Outline, Patterns), and the patterns flyout beside either.
+// On a phone a panel lies over the canvas.
 import { Publr } from "publr-jsx";
 import { CloseButton } from "../../ui/src/components/CloseButton/CloseButton.ptsx";
 import { PanelTab } from "../../ui/src/components/PanelTab/PanelTab.ptsx";
@@ -167,7 +168,7 @@ export function LeftRail() {
   return (
     <>
       {state.left === "inserter" && (
-        <aside data-inserter class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card" onKeyDown={panelKeys}>
+        <aside data-inserter class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[min(350px,100%)] max-md:shadow-2xl" onKeyDown={panelKeys}>
           <div class="flex shrink-0 items-center border-b border-border">
             <div class="flex flex-1" role="tablist" aria-label={Publr.t("Block library")}>
               <PanelTab variant="rail" label={Publr.t("Blocks")} selected={state.inserterTab === "blocks"} onClick={() => setInserterTab("blocks")} />
@@ -188,7 +189,7 @@ export function LeftRail() {
         </aside>
       )}
       {state.left === "list" && (
-        <aside data-list-view class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card" onKeyDown={panelKeys}>
+        <aside data-list-view class="flex w-[350px] shrink-0 flex-col border-r border-border bg-card max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[min(350px,100%)] max-md:shadow-2xl" onKeyDown={panelKeys}>
           <div class="flex shrink-0 items-center border-b border-border">
             <div class="flex flex-1" role="tablist" aria-label={Publr.t("Document overview")}>
               <PanelTab variant="rail" label={Publr.t("List View")} selected={state.listTab === "list"} onClick={() => setListTab("list")} />

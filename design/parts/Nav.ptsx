@@ -118,7 +118,13 @@ export function Nav() {
           <Icon name="filter-lines" size="sm" />
         </Button>
       </div>
-      <div id="page-sidebar" popover="auto" class="flex min-h-0 flex-1 flex-col">
+      {/* A drawer on a phone; beside the canvas on a wider screen, without the browser's
+          popover box, wherever the builder runs. */}
+      <div
+        id="page-sidebar"
+        popover="auto"
+        class="flex min-h-0 flex-1 flex-col md:static md:inset-auto md:m-0 md:h-auto md:w-auto md:border-0 md:bg-transparent md:p-0 md:text-inherit"
+      >
         {state.home && <Home />}
         {!state.home && (
           <div class="flex min-h-0 flex-1 flex-col" data-design-styles-section>

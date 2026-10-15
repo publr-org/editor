@@ -1,20 +1,28 @@
 // The right sidebar: the Document tab, and the Block tab with the active block's card
-// and its declared controls.
+// and its declared controls. On a phone, a sheet over the canvas's lower part.
 import { Publr } from "publr-jsx";
+import { CloseButton } from "../../ui/src/components/CloseButton/CloseButton.ptsx";
 import { PanelTab } from "../../ui/src/components/PanelTab/PanelTab.ptsx";
 import { DocumentPanel } from "./DocumentPanel.ptsx";
 import { PatternOverview } from "./Patterns.ptsx";
 import { DesignTab } from "./DesignTab.ptsx";
 import { BlockInspector } from "./BlockInspector.ptsx";
-import { setSidebar, state } from "./Shell.ptsx";
+import { setSidebar, state, toggleSidebar } from "./Shell.ptsx";
 
 export function Sidebar() {
   return (
-    <aside data-sidebar hidden={!state.sidebarOpen} class="relative flex w-80 shrink-0 flex-col border-l border-border bg-card">
+    <aside
+      data-sidebar
+      hidden={!state.sidebarOpen}
+      class="relative flex w-80 shrink-0 flex-col border-l border-border bg-card max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:h-[min(70%,36rem)] max-md:w-full max-md:border-t max-md:border-l-0 max-md:shadow-2xl"
+    >
       {!state.embedded && (
-        <div class="flex shrink-0 border-b border-border" role="tablist" aria-label={Publr.t("Editor settings")}>
-          <PanelTab variant="rail" id="sidebar-tab-document" panel="sidebar-document" label={state.documentTabLabel} selected={state.sidebar === "document"} onClick={() => setSidebar("document")} />
-          <PanelTab variant="rail" id="sidebar-tab-block" panel="sidebar-block" label={Publr.t("Block")} selected={state.sidebar === "block"} onClick={() => setSidebar("block")} />
+        <div class="flex shrink-0 items-center border-b border-border">
+          <div class="flex flex-1" role="tablist" aria-label={Publr.t("Editor settings")}>
+            <PanelTab variant="rail" id="sidebar-tab-document" panel="sidebar-document" label={state.documentTabLabel} selected={state.sidebar === "document"} onClick={() => setSidebar("document")} />
+            <PanelTab variant="rail" id="sidebar-tab-block" panel="sidebar-block" label={Publr.t("Block")} selected={state.sidebar === "block"} onClick={() => setSidebar("block")} />
+          </div>
+          <CloseButton label={Publr.t("Close settings")} classes="mr-2 md:hidden" onClick={() => toggleSidebar()} />
         </div>
       )}
       <div class="min-h-0 flex-1 overflow-auto">
