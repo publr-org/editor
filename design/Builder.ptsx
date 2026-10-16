@@ -326,7 +326,7 @@ export function DesignSystemBuilder(given: BuilderProps) {
       {given.bar !== "host" && <TopBar />}
       <div class="flex min-h-0 flex-1 max-md:flex-col">
         <Nav />
-        <main data-builder-main class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-card">
+        <div data-builder-main class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-card">
           {state.page === "overview" && <Overview />}
           {state.page === "advanced" && !state.transfer && <TokenLibraryPage />}
           {state.page === "advanced" && state.transfer && <TransferPage />}
@@ -341,7 +341,7 @@ export function DesignSystemBuilder(given: BuilderProps) {
           {state.page === "patterns" && <PatternsPage />}
           {state.page === "templates" && <TemplatesPage />}
           {state.page === "settings" && <SettingsPage />}
-        </main>
+        </div>
       </div>
       <RemoveDialog />
     </div>
